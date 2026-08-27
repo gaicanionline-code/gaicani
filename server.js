@@ -45,6 +45,13 @@ const server = http.createServer(app);
 // crash-loop this server had before — a narrow "block onrender.com
 // specifically" rule avoids that risk entirely.
 app.use((req, res, next) => {
+  // Temporary escape hatch for testing a fresh deploy on its raw .onrender.com
+  // URL before Cloudflare/DNS is pointed at it (e.g. during a Render account
+  // migration). Set ALLOW_DIRECT_ONRENDER=true in the service's environment
+  // variables to open this up, then remove it once you've cut over — leaving
+  // it on permanently defeats the whole point of this block.
+  if (process.env.ALLOW_DIRECT_ONRENDER === "true") return next();
+
   const host = (req.headers.host || "").toLowerCase();
   if (host.endsWith(".onrender.com")) {
     console.warn(`[BYPASS-BLOCKED] Direct onrender.com access rejected — host="${host}" ip="${getClientIP(req)}" path="${req.path}"`);
@@ -1206,12 +1213,15 @@ app.use(async (req, res, next) => {
   if (hasCaptchaCookie(req)) return next();
 
   // Geo-gate: only Georgian IPs may access the site. Everyone else gets a
-  // static "not available in your region" page — no captcha, no bypass.
+  // bare connection drop — no page content, no branding, nothing disclosed
+  // about what this site even is. (Primary enforcement should happen at
+  // Cloudflare's edge via a Country-based Custom Rule, which stops the
+  // request before it ever reaches this server at all — this is just the
+  // fallback in case that's ever misconfigured or bypassed.)
   const country = await getCountry(ip);
   if (country !== "GE") {
-    res.status(403);
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    return res.send(blockedCountryHTML());
+    res.status(403).end();
+    return;
   }
 
   setCaptchaCookie(res, ip);
