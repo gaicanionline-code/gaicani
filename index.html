@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+
+
+
+  
+<head>  
+
+
+  
+   
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>GAICANI — ანონიმური ჩათი უცნობებთან</title>
+  <meta name="description" content="GAICANI — უფასო ანონიმური ჩათი საქართველოში. გაიცანით შემთხვევით შერჩეული უცნობი ადამიანები, ესაუბრეთ ტექსტში, გააზიარეთ საერთო ინტერესები და იპოვეთ ახალი მეგობრები ანონიმურად, რეგისტრაციის გარეშე." />
+  <meta name="keywords" content="ანონიმური ჩათი, ჩათი უცნობებთან, GAICANI, გაიცანი, random chat, omegle georgia, ქართული ჩათი" />
+
+  <!-- Open Graph / link previews (Facebook, Messenger, WhatsApp, Discord, etc.) -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="GAICANI — ანონიმური ჩათი უცნობებთან" />
+  <meta property="og:description" content="გაიცანით შემთხვევით შერჩეული უცნობი ადამიანები და ესაუბრეთ ანონიმურად, სრულიად უფასოდ." />
+  <meta property="og:image" content="/Logo2.png" />
+  <meta property="og:url" content="https://gaicani.ge/" />
+
+  <!-- Twitter/X card -->
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="GAICANI — ანონიმური ჩათი უცნობებთან" />
+  <meta name="twitter:description" content="გაიცანით შემთხვევით შერჩეული უცნობი ადამიანები და ესაუბრეთ ანონიმურად, სრულიად უფასოდ." />
+
+  <!-- PWA / mobile chrome -->
+  <meta name="theme-color" content="#2b2d31" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="icon" type="image/png" href="/logo.png" />
+  <link rel="apple-touch-icon" href="/logo.png" />
+  <link rel="manifest" href="/manifest.json" />
+
+  <!-- Preconnect to Tenor CDN so GIF images load faster -->
+  <link rel="preconnect" href="https://media.tenor.com" />
+
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="games.css" />
+  <link rel="stylesheet" href="auth.css" />
+  <link rel="stylesheet" href="music.css" />
+  <link rel="stylesheet" href="style-MOBILE-FIX.css" />
+  <style>
+    /* ── Top-bar cleanup ─────────────────────────────────────────────
+       ✏️ Change Name, 🚩 Report and 🎮 Games now live in the ⋮ menu for
+       every user (not just registered ones) to save space. ინტ. stays
+       in the main bar for guests and only moves into the ⋮ menu once
+       registered (unchanged from before).
+       !important overrides any inline display set by script.js/games.js. */
+    #reportBtn,
+    #gameBtn,
+    #changeNameBtn { display: none !important; }
+    body.reg-user #interestsBtn { display: none !important; }
+  </style>
+</head>
+<body>
+
+
+
+  <script>
+    (function () {
+      var isAndroid = /Android/i.test(navigator.userAgent);
+      var dismissed = localStorage.getItem('desktopPromptDismissed');
+      var alreadyDesktop = localStorage.getItem('forceDesktop');
+
+      if (isAndroid && !dismissed && !alreadyDesktop) {
+        var el = document.getElementById('desktopPrompt');
+        el.style.display = 'flex';
+
+        document.getElementById('desktopPromptYes').onclick = function () {
+          localStorage.setItem('forceDesktop', 'true');
+          location.reload();
+        };
+        document.getElementById('desktopPromptNo').onclick = function () {
+          localStorage.setItem('desktopPromptDismissed', 'true');
+          el.style.display = 'none';
+        };
+      }
+    })();
+  </script>
+
+  
+  <div class="top-bar">
+    <div class="left-side">
+      <a href="/" class="site-name" id="logoHomeBtn" onclick="goToWelcome(); return false;">GAICANI</a>
+      <div id="onlineCount"></div>
+      <div id="partnerNameDisplay" class="partner-name-display"></div>
+      <button id="addFriendIconBtn" class="add-friend-icon-btn" style="display:none" title="მეგობრობის მოთხოვნის გაგზავნა">➕</button>
+      <div id="userNameDisplay" class="user-name-display" style="display:none"></div>
+
+      <!-- Three-dots menu — available to every user (guest or registered).
+           Change Name / Games / Report always show here; My Page,
+           Interests and Logout only apply once you're registered.
+           (🎵 Music lives in the main bar now, next to ინტ.) -->
+      <div class="reg-menu-container">
+        <button class="reg-menu-btn" id="regMenuBtn" title="მენიუ">⋮</button>
+        <div class="reg-menu-dropdown" id="regMenuDropdown" style="display:none">
+          <button class="reg-menu-item" id="regMenuChangeName" data-action="changeName">
+            <span class="reg-menu-icon">✏️</span>
+            <span class="reg-menu-label">სახელის შეცვლა</span>
+          </button>
+          <button class="reg-menu-item" id="regMenuGames" data-action="games">
+            <span class="reg-menu-icon">🎮</span>
+            <span class="reg-menu-label">Games</span>
+          </button>
+          <button class="reg-menu-item" id="regMenuReport" data-action="report">
+            <span class="reg-menu-icon">🚩</span>
+            <span class="reg-menu-label">Report</span>
+          </button>
+          <button class="reg-menu-item reg-only-item" id="regMenuInt" data-action="interests">
+            <span class="reg-menu-icon">ინტ</span>
+            <span class="reg-menu-label">ინტერესები</span>
+          </button>
+          <button class="reg-menu-item reg-only-item" id="regMenuDash" data-action="dashboard">
+            <span class="reg-menu-icon">👤</span>
+            <span class="reg-menu-label">ჩემი გვერდი</span>
+          </button>
+          <div class="reg-menu-divider reg-only-item"></div>
+          <button class="reg-menu-item reg-menu-logout reg-only-item" id="regMenuLogout" data-action="logout">
+            <span class="reg-menu-icon">🚪</span>
+            <span class="reg-menu-label">გამოსვლა</span>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="right-side">
+      <button id="myPageBtn" class="my-page-btn" style="display:none" onclick="window.location.href='/dashboard.html'">👤 ჩემი გვერდი</button>
+      <button class="interests-btn" id="interestsBtn" style="display:none"><span class="btn-icon btn-icon--int">ინტ.</span><span class="btn-label">ინტ</span></button>
+      <button class="music-btn" id="musicBtn" disabled title="მუსიკის მოსმენა ერთად"><span class="btn-icon">🎵</span><span class="btn-label">მუსიკა</span></button>
+      <button class="change-name-btn" id="changeNameBtn"><span class="btn-icon">✏️</span><span class="btn-label">სახელის შეცვლა</span></button>
+      <button class="report-button" id="reportBtn" disabled><span class="btn-icon">🚩</span><span class="btn-label">რეპორტი</span></button>
+      <button class="block-button" id="blockBtn" disabled><span class="btn-icon">🚫</span><span class="btn-label">ბლოკი</span><span class="ad-countdown-badge" id="blockAdBadge">5</span></button>
+      <button class="next-button" id="nextBtn"><span class="btn-icon">🔎</span><span class="btn-label">ძებნა</span><span class="ad-countdown-badge" id="nextAdBadge">5</span></button>
+    </div>
+  </div>
+
+  <!-- Partner registered banner — shows when both users in chat are registered -->
+  <div id="partner-reg-banner" style="display:none"></div>
+
+  <div class="chat-container" id="chat"></div>
+
+  <!-- Floating "go to start of chat" button — appears once a partner is matched -->
+
+  <!-- GIF Picker Panel -->
+  <div id="gifPicker" class="gif-picker" style="display:none">
+    <div class="gif-picker-header">
+      <textarea id="gifSearch" placeholder="🔍 Search GIFs..."
+                autocomplete="off" autocorrect="off" autocapitalize="off"
+                spellcheck="false" inputmode="search" enterkeyhint="search"
+                rows="1" maxlength="100"></textarea>
+      <button class="gif-picker-close" id="gifPickerClose">✕</button>
+    </div>
+    <div class="gif-results" id="gifResults">
+      <div class="gif-placeholder" id="gifLoading">✨ Loading trending GIFs...</div>
+    </div>
+    <div class="gif-powered">Powered by Tenor</div>
+  </div>
+
+  <!-- Typing indicator lives OUTSIDE the chat scroll area — always bottom-left -->
+  <div id="typingIndicator" class="typing-indicator" style="display:none">
+    <span></span><span></span><span></span>
+  </div>
+
+  <div class="chat-input">
+    <div id="replyPreview" class="reply-preview-bar" style="display:none">
+      <div class="reply-preview-inner">
+        <span class="reply-preview-label">↩</span>
+        <div class="reply-preview-body">
+          <span id="replyPreviewName" class="reply-preview-name"></span>
+          <span id="replyPreviewText" class="reply-preview-text"></span>
+        </div>
+      </div>
+      <button id="replyPreviewClose" class="reply-preview-close" title="Cancel reply">✕</button>
+    </div>
+    <div class="chat-input-row">
+      <textarea id="messageInput" placeholder="Type..."
+             autocomplete="off" autocorrect="off" autocapitalize="sentences"
+             spellcheck="false" inputmode="text" enterkeyhint="send"
+             rows="1" maxlength="2000" disabled></textarea>
+      <span id="charCount" class="char-count"></span>
+      <button id="questionBtn" class="question-btn" disabled title="Random question">?</button>
+      <button id="gifBtn" class="gif-btn" disabled title="Send a GIF">GIF</button>
+      <button id="photoBtn" class="photo-btn" disabled title="სურათის გაგზავნა"><img src="/icons8-gallery-48.png" alt="gallery" style="width:20px;height:20px;vertical-align:middle;pointer-events:none;" /></button>
+      <input type="file" id="photoInput" accept="image/*" style="display:none" />
+      <button id="sendBtn" disabled>SEND</button>
+    </div>
+  </div>
+
+  <!-- ── Combined Entry Modal ───────────────────────────────────────────────── -->
+  <div id="nameModal" class="modal">
+    <div class="modal-content">
+      <!-- Loading overlay shown while setName is processing -->
+      <div id="modalLoadingOverlay" style="display:none">
+        <div class="modal-loading-spinner"></div>
+        <div class="modal-loading-text">იტვირთება...</div>
+      </div>
+      <button id="nameModalClose" class="modal-close-btn" style="display:none" title="დახურვა">✕</button>
+      <img src="/Logo2.png" alt="GAICANI" class="modal-logo" />
+
+      <!-- ── Auth mode tabs ── -->
+      <div class="auth-tabs">
+        <button id="auth-tab-guest"  class="auth-tab active">🎭 სტუმარი</button>
+        <button id="auth-tab-login"  class="auth-tab">🔑 შესვლა</button>
+        <button id="auth-tab-signup" class="auth-tab">✨ რეგისტრაცია</button>
+      </div>
+
+      <!-- ════════ GUEST SECTION (original content) ════════ -->
+      <div id="auth-section-guest">
+        <!-- ── Welcome info block ── -->
+        <div class="modal-welcome">
+          <p class="modal-welcome-title">👋 მოგესალმებით!</p>
+          <p class="modal-welcome-desc">ამ საიტზე შეძლებთ შემთხვევით შერჩეულ უცნობ ადამიანს ესაუბროთ <strong>ანონიმურად</strong>.</p>
+          <div class="modal-features">
+            <div class="modal-feature-item">
+              <span class="modal-feature-icon modal-feature-icon--qbtn">?</span>
+              <span><strong></strong> — საიტი გისმევთ კითხვებს</span>
+            </div>
+            <div class="modal-feature-item">
+              <span class="modal-feature-icon modal-feature-icon--int">ინტ</span>
+              <span>საკუთარი თავის გაცნობა პარტნიორისთვის</span>
+            </div>
+            <div class="modal-feature-item">
+              <span class="modal-feature-icon">✏️</span>
+              <span>სახელის შეცვლა</span>
+            </div>
+            <div class="modal-feature-item">
+              <span class="modal-feature-icon">🚫</span>
+              <span>იუზერის დაბლოკვა</span>
+            </div>
+            <div class="modal-feature-item">
+              <span class="modal-feature-icon">🚩</span>
+              <span>რეპორტი</span>
+            </div>
+            <div class="modal-feature-item">
+              <span class="modal-feature-icon modal-feature-icon--game">🎮</span>
+              <span>მინი თამაშები</span>
+            </div>
+          </div>
+        </div>
+
+        <textarea id="nameInput" placeholder="შეიყვანეთ სახელი..."
+                 autocomplete="off" autocorrect="off" autocapitalize="sentences"
+                 spellcheck="false" inputmode="text" enterkeyhint="go"
+                 rows="1" maxlength="20"></textarea>
+        <div id="nameError" class="name-error"></div>
+        <p class="safety-age-confirm">
+          საუბრის დაწყებით ადასტურებთ რომ ხართ <strong>18+</strong> და ეთანხმებით
+          <a href="/terms.html" target="_blank" class="safety-link">Terms of Service</a>-ს
+          და
+          <a href="/privacy.html" target="_blank" class="safety-link">Privacy Policy</a>-ს.
+        </p>
+        <button id="saveNameBtn">საუბრის დაწყება</button>
+      </div><!-- /auth-section-guest -->
+
+      <!-- ════════ SIGN-IN SECTION ════════ -->
+      <div id="auth-section-login" style="display:none">
+        <p style="text-align:center;color:#b5bac1;font-size:.85em;margin:0 0 16px;">
+          შედი შენი ანგარიშით — სახელი დაცულია,<br>მეგობრებს მოუგზავნე Private Chat.
+        </p>
+        <div class="auth-form-group">
+          <input id="login-username" class="auth-input" type="text"
+                 placeholder="სახელი" autocomplete="username"
+                 autocorrect="off" autocapitalize="none" spellcheck="false" maxlength="20" />
+          <input id="login-password" class="auth-input" type="password"
+                 placeholder="პაროლი" autocomplete="current-password" maxlength="100" />
+        </div>
+        <div id="login-error" class="auth-form-error"></div>
+        <button id="login-btn" class="auth-submit-btn">შესვლა</button>
+        <p class="auth-form-note">
+          ანგარიში არ გაქვს?
+          <a href="#" onclick="document.getElementById('auth-tab-signup').click();return false;">
+            დარეგისტრირდი
+          </a>
+        </p>
+      </div><!-- /auth-section-login -->
+
+      <!-- ════════ SIGN-UP SECTION ════════ -->
+      <div id="auth-section-signup" style="display:none">
+        <p style="text-align:center;color:#b5bac1;font-size:.85em;margin:0 0 16px;">
+          დაარეგისტრირე სახელი — მხოლოდ შენ შეძლებ მის გამოყენებას.<br>
+          მეგობრებს ჩატის დროს Private Message გაუგზავნე.
+        </p>
+        <div class="auth-form-group">
+          <input id="signup-username" class="auth-input" type="text"
+                 placeholder="სახელი (2–20 სიმბოლო)" autocomplete="username"
+                 autocorrect="off" autocapitalize="none" spellcheck="false" maxlength="20" />
+          <input id="signup-password" class="auth-input" type="password"
+                 placeholder="პაროლი (მინ. 6 სიმბოლო)" autocomplete="new-password" maxlength="100" />
+          <input id="signup-confirm" class="auth-input" type="password"
+                 placeholder="გაიმეორე პაროლი" autocomplete="new-password" maxlength="100" />
+        </div>
+
+        <div class="avatar-picker-label">აირჩიე პროფილის სურათი</div>
+        <div id="signup-avatar-grid" class="avatar-picker-grid"></div>
+
+        <div id="signup-error" class="auth-form-error"></div>
+        <button id="signup-btn" class="auth-submit-btn">რეგისტრაცია</button>
+        <p class="auth-form-note">
+          უკვე გაქვს ანგარიში?
+          <a href="#" onclick="document.getElementById('auth-tab-login').click();return false;">
+            შედი
+          </a><br>
+          რეგისტრაციით ეთანხმები
+          <a href="/terms.html" target="_blank">Terms</a> &
+          <a href="/privacy.html" target="_blank">Privacy</a>.
+        </p>
+      </div><!-- /auth-section-signup -->
+
+    </div>
+  </div>
+
+  <!-- ── Bio / Interests Popup ──────────────────────────────────────────────── -->
+  <div id="bioPopup" class="bio-popup" style="display:none">
+    <div class="bio-popup-content">
+      <button id="bioCloseBtn" class="bio-popup-close" title="დახურვა">✕</button>
+      <p class="bio-popup-title">მოკლედ მოუყევით თქვენს თავზე ახალ პარტნიორს</p>
+      <div class="bio-input-wrap">
+        <textarea id="bioInput" class="bio-textarea" maxlength="60"
+                  placeholder="მაქს. 60 სიმბოლო..." rows="2"></textarea>
+        <span id="bioCharCount" class="bio-char-count">0/60</span>
+      </div>
+      <div class="bio-popup-actions">
+        <button id="bioClearBtn" class="bio-clear-btn">გასუფთავება</button>
+        <button id="bioSaveBtn" class="bio-save-btn">შენახვა</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Friends Panel ──────────────────────────────────────────────────────── -->
+  <div id="friends-panel" style="display:none">
+    <div class="fp-header">
+      <span class="fp-title">👥 მეგობრები</span>
+      <button id="friends-panel-close" class="fp-close" title="დახურვა">✕</button>
+    </div>
+    <div id="friends-list"></div>
+  </div>
+
+  <!-- ── Private Chat Panel ─────────────────────────────────────────────────── -->
+  <div id="priv-panel" style="display:none">
+    <div class="pc-header">
+      <button id="priv-close" title="დახურვა">✕</button>
+      <span id="priv-title">🔒 Private Chat</span>
+      <span id="priv-expiry"></span>
+    </div>
+    <div id="priv-messages"></div>
+    <div class="pc-input-row">
+      <textarea id="priv-input" placeholder="შეტყობინება..."
+                rows="1" maxlength="2000"
+                autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+      <button id="priv-send">SEND</button>
+    </div>
+  </div>
+
+  <!-- ── Dashboard / My Page Panel ─────────────────────────────────────────── -->
+  <div id="dashboard-panel" style="display:none">
+    <div class="dash-overlay" id="dashOverlay"></div>
+    <div class="dash-sheet">
+      <div class="dash-header">
+        <span class="dash-title">👤 ჩემი გვერდი</span>
+        <button class="dash-close" id="dashClose" title="დახურვა">✕</button>
+      </div>
+
+      <!-- User info card -->
+      <div class="dash-user-card" id="dashUserCard">
+        <div class="dash-avatar" id="dashAvatar">?</div>
+        <div class="dash-user-info">
+          <div class="dash-username" id="dashUsername">—</div>
+          <div class="dash-user-meta">რეგისტრირებული მომხმარებელი</div>
+          <button class="dash-change-avatar-btn" id="dashChangeAvatarBtn">🖼️ სურათის შეცვლა</button>
+        </div>
+      </div>
+
+      <!-- Avatar picker (hidden until "სურათის შეცვლა" is clicked) -->
+      <div id="avatarPickerPanel" class="avatar-picker-panel" style="display:none">
+        <div class="avatar-picker-label">აირჩიე ახალი პროფილის სურათი</div>
+        <div id="dash-avatar-grid" class="avatar-picker-grid"></div>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="dash-actions">
+        <button class="dash-action-btn dash-action-primary" id="dashRandomChat">
+          🔎 შემთხვევითი ჩატი
+        </button>
+      </div>
+
+      <!-- Friends section -->
+      <div class="dash-section">
+        <div class="dash-section-label">👥 მეგობრები <span id="dashFriendCount" class="dash-badge">0</span></div>
+        <div id="dash-friends-list" class="dash-friends-list">
+          <div class="dash-empty">ჯერ მეგობრები არ გყავს.<br>
+            <small>ჩატის დროს ➕ ღილაკზე დააჭირე.</small>
+          </div>
+        </div>
+      </div>
+
+      <!-- Blocked users (session) section -->
+      <div class="dash-section" id="dashBlockedSection" style="display:none">
+        <div class="dash-section-label">🚫 დაბლოკილი (სესია) <span id="dashBlockedCount" class="dash-badge">0</span></div>
+        <div id="dash-blocked-list" class="dash-friends-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Notification container (toasts + friend requests) ─────────────────── -->
+  <div id="notif-container"></div>
+
+
+
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="script.js"></script>
+  <script src="games.js"></script>
+  <script src="music.js"></script>
+  <script src="auth-client.js"></script>
+  <script src="keyboard-handler.js"></script>
+
+
+
+<script src="/keyboard-handler.js"></script>
+
+</body>
+</html>
