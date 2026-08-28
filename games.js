@@ -486,6 +486,10 @@
     // 8b.  🎭 TRUTH OR DARE  (სიმართლე თუ დარი)
     // ────────────────────────────────────────────────────────────
     function renderTOD(state) {
+      if (!state) {
+        el('gameContent').innerHTML = `<div class="tod-status">⚠️ თამაშის მონაცემები ვერ ჩაიტვირთა. სცადეთ თამაშის თავიდან დაწყება.</div>`;
+        return;
+      }
       const myTurn = state.currentTurnSocketId === socket.id;
 
       // ── Phase 1: current player is choosing Truth or Dare ──────
