@@ -27,7 +27,6 @@
       ttt:  '❌⭕  Tic Tac Toe',
       rps:  '✊✋✌️  Rock Paper Scissors',
       math: '🔢  Math Duel',
-      truthordare: '🎭  სიმართლე თუ დარი',
     };
     const RPS_EMOJI  = { rock: '✊', paper: '✋', scissors: '✌️' };
     const RPS_LABELS = { rock: 'ჭა', paper: 'ქაღალდი', scissors: 'მაკრატელი' };
@@ -61,9 +60,8 @@
         '<span class="btn-icon game-btn-icon">🎮</span>' +
         '<span class="btn-label">თამაში</span>';
 
-      // Always sits left of 🎵 Music (and left of ✏️ Change Name) in the
-      // main bar, on both desktop and mobile — no ⋮ menu involved.
-      const anchor = el('changeNameBtn') || el('musicBtn');
+      // Desktop: before changeNameBtn  |  Mobile: after interestsBtn
+      const anchor = el('changeNameBtn');
       rightSide.insertBefore(btn, anchor);
 
       btn.addEventListener('click', toggleGameMenu);
@@ -103,13 +101,6 @@
             <div class="game-menu-info">
               <strong>Math Duel</strong>
               <small>პირველი სწორი პასუხი იგებს</small>
-            </div>
-          </button>
-          <button class="game-menu-item" data-game="truthordare">
-            <span class="game-menu-icon">🎭</span>
-            <div class="game-menu-info">
-              <strong>სიმართლე თუ დარი</strong>
-              <small>კითხვები და გამოწვევები — მხოლოდ ჩატში</small>
             </div>
           </button>
         </div>`;
@@ -281,7 +272,6 @@
       if (gameType === 'ttt')  renderTTT(state, role);
       else if (gameType === 'rps')  renderRPS();
       else if (gameType === 'math') renderMath(state);
-      else if (gameType === 'truthordare') renderTOD(state, role);
 
       showOverlay();
     });
@@ -483,53 +473,6 @@
     }
 
     // ────────────────────────────────────────────────────────────
-    // 8b.  🎭 TRUTH OR DARE  (სიმართლე თუ დარი)
-    // One-shot round: the ACCEPTER ("chooser") picks Truth or Dare,
-    // gets one random prompt, both see it — round over. 🔄 rematch
-    // (already wired generically in the overlay) starts a fresh one.
-    // ────────────────────────────────────────────────────────────
-    function renderTOD(state, role) {
-      if (!state) {
-        el('gameContent').innerHTML = `<div class="tod-status">⚠️ თამაშის მონაცემები ვერ ჩაიტვირთა. სცადეთ თამაშის თავიდან დაწყება.</div>`;
-        return;
-      }
-
-      const isChooser = role === 'chooser';
-
-      if (!state.chosen) {
-        el('gameContent').innerHTML = `
-          <div class="tod-status" id="todStatus">
-            ${isChooser ? '🎯 შენ ირჩევ — სიმართლე თუ დარი?' : '⏳ მოწინააღმდეგე ირჩევს...'}
-          </div>
-          <div class="tod-choices">
-            <button class="tod-choice-btn tod-choice-btn--truth" id="todTruthBtn" ${isChooser ? '' : 'disabled'}>
-              <span class="tod-choice-emoji">🤫</span>
-              <span class="tod-choice-label">სიმართლე</span>
-            </button>
-            <button class="tod-choice-btn tod-choice-btn--dare" id="todDareBtn" ${isChooser ? '' : 'disabled'}>
-              <span class="tod-choice-emoji">😈</span>
-              <span class="tod-choice-label">დარი</span>
-            </button>
-          </div>`;
-
-        if (isChooser) {
-          el('todTruthBtn').addEventListener('click', () => socket.emit('game:move', { choice: 'truth' }));
-          el('todDareBtn').addEventListener('click',  () => socket.emit('game:move', { choice: 'dare'  }));
-        }
-        return;
-      }
-
-      // Prompt already chosen — show it to both players.
-      const isTruth = state.choice === 'truth';
-      el('gameContent').innerHTML = `
-        <div class="tod-prompt-card ${isTruth ? 'tod-prompt-card--truth' : 'tod-prompt-card--dare'}">
-          <div class="tod-prompt-tag">${isTruth ? '🤫 სიმართლე' : '😈 დარი'}</div>
-          <div class="tod-prompt-text">${state.prompt || ''}</div>
-        </div>
-        <div class="tod-status">✅ დასრულდა — დახურეთ ან დააჭირეთ 🔄 ხელახლა თამაშისთვის</div>`;
-    }
-
-    // ────────────────────────────────────────────────────────────
     // 9.  Unified socket update handler
     // ────────────────────────────────────────────────────────────
     socket.on('game:update', data => {
@@ -537,7 +480,6 @@
       if (currentGame.type === 'ttt')  updateTTT(data);
       else if (currentGame.type === 'rps')  updateRPS(data);
       else if (currentGame.type === 'math') updateMath(data);
-      else if (currentGame.type === 'truthordare') renderTOD(data, currentGame.role);
     });
 
     socket.on('game:partnerLeft', () => {

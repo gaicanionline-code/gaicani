@@ -4422,18 +4422,14 @@ io.on("connection", (socket) => {
     const gameId = `${toId}:${socket.id}`;
     const players = [toId, socket.id];
 
-      let state;
+    let state;
     if (gameType === "ttt") {
       state = { board: Array(9).fill(null), currentTurnSocketId: toId };
     } else if (gameType === "rps") {
       state = { choices: {} };
     } else if (gameType === "math") {
       state = { question: generateMathQuestion(), answered: false };
-    } else {
-      return;
     }
-
-    const game = { id: gameId, type: gameType, players, state };
 
     const game = { id: gameId, type: gameType, players, state };
     gameById.set(gameId, game);

@@ -73,82 +73,6 @@ function getRPSWinner(c1, c2) {
   return 'p2';
 }
 
-/* ── 🎭 TRUTH OR DARE — Georgian content pools ────────────────────
-   TRUTHS: personal questions (same tone/list as facts.txt/questions.txt).
-   DARES:  online-only challenges — everything is doable purely through
-   the chat window (typing, emoji, quick word games), nothing physical
-   or off-platform, so it's safe for two strangers chatting online. ── */
-const TOD_TRUTHS = [
-  'რას ვერ აპატიებთ საუკეთესო მეგობარს?',
-  'საუკეთესო საჩუქარი, რომელიც მიგიღიათ მეგობრებისგან?',
-  'რითი აფასებთ ადამიანებს?',
-  'რა გაღიზიანებთ ყველაზე მეტად ადამიანებში?',
-  'რა მეტსახელს გიწოდებდნენ მშობლები ბავშვობაში?',
-  'რა თვისებით ამაყობთ ყველაზე მეტად საკუთარ თავში?',
-  'ვინ გინდოდათ გამხდარიყავით ბავშვობაში?',
-  'რომელი მოგონება გითბობთ სულს მძიმე დღეებში?',
-  'რაზე გეცინებათ გულიანად?',
-  'როგორ აგვარებთ კონფლიქტებს?',
-  'თქვენი საყვარელი პერსონაჟი წიგნიდან ან ფილმიდან?',
-  'როგორია თქვენი საოცნებო სამსახური?',
-  'რა არის თქვენი ყველაზე დიდი მიღწევა?',
-  'ბოლოს რატომ იტირეთ?',
-  'რისი შეცვლა გსურდათ წარსულში?',
-  'რომელი თვისების შეცვლას ისურვებდით საკუთარ თავში?',
-  'რა არის თქვენი ყველაზე უცნაური ფობია?',
-  'რომელ სამ ზედსართავ სახელს გამოიყენებდით საკუთარი თავის დასახასიათებლად?',
-  'როგორია თქვენი იდეალური დილა?',
-  'რა არის გადაჭარბებული ჩვენს საზოგადოებაში?',
-  'რომელ კითხვაზე არ უპასუხებდით არასოდეს?',
-  'რა არის თქვენთვის ყველაზე გაუგებარი რამ მსოფლიოში?',
-  'რა არის თქვენი ყველაზე გიჟური ოცნება?',
-  'რა იყო შენი პირველი შთაბეჭდილება ამ ჩატზე?',
-  'დიდი წვეულებები გირჩევნია თუ ვიწრო წრეში მეგობრებთან ყოფნა?',
-  'რა არის შენი მთავარი წესი ცხოვრებაში?',
-  'რისი გეშინია ყველაზე მეტად?',
-  'რომელი სუპერძალა გინდოდა რომ გქონდეს და რატომ?',
-  'რას აკეთებდი, რომ არავინ გიცნობდეს?',
-  'ბოლო რაზე იცინე ისე, რომ თვალებში ცრემლი მოგივიდა?',
-];
-
-const TOD_DARES = [
-  'დაწერე შენი სახელი პირიქით, ასოების უკუღმა.',
-  'გამოგზავნე 5 ემოჯი, რომლებიც ახლანდელ განწყობას აღწერს.',
-  'დაწერე მოკლე წინადადება მხოლოდ ემოჯებით და მოწინააღმდეგემ გამოიცნოს.',
-  'დაწერე 3 სიტყვა, რომლებიც პირველი მოგივიდა თავში.',
-  'მოწინააღმდეგეს გაუკეთე გულწრფელი კომპლიმენტი.',
-  'დაწერე ხუმრობა (ხუმრობა/анекдот) ისე, რომ მოწინააღმდეგემ გაიცინოს.',
-  'დაწერე შენი შემდეგი 3 შეტყობინება მხოლოდ დიდი ასოებით.',
-  'აღწერე დღევანდელი დღე ერთი წინადადებით — მაგრამ ბოლოში-ვე უნდა დაარიფებდე.',
-  'დაწერე ცნობილი ფილმის ან სერიალის სახელი ასოებით არეულად, ისე რომ გამოიცნონ.',
-  'გამოთქვი (დაწერე) ვინმეს სახელი, ვისზეც ახლა ფიქრობ — ინიციალებით.',
-  'დაწერე 5 წამის განმავლობაში ისე სწრაფად როგორც შეგიძლია — რაც არ უნდა გამოვიდეს.',
-  'აღწერე შენი დღევანდელი განწყობა მხოლოდ ერთი ფერით.',
-  'დაწერე პატარა კომპლიმენტი საკუთარ თავზე — რაზეც ამაყობ.',
-  'გამოიცანი მოწინააღმდეგის საყვარელი ფერი და დაწერე რატომ ასე ფიქრობ.',
-  'დაწერე „მადლობა“ 5 სხვადასხვა ენაზე.',
-  'დაწერე შენი დღის ერთი უცნაური დეტალი.',
-  'შექმენი პატარა 4-სტრიქონიანი რითმა ნებისმიერ თემაზე.',
-  'დაწერე შენი ტოპ-3 საყვარელი სიმღერა ახლა.',
-  'აღწერე საკუთარი თავი ერთი ცხოველით და ახსენი რატომ.',
-  'დაწერე წინადადება, რომელშიც ყველა სიტყვა ერთი ასოთი იწყება.',
-  'გამოთქვი ერთი რამ, რაზეც დღეს მადლიერი ხარ.',
-  'დაწერე ერთი ტვიტის ზომის (280 სიმბოლომდე) ისტორია ამ ჩატის შესახებ.',
-  'გამოგზავნე ემოჯი-სერია, რომელიც შენი ბოლო კვირას აღწერს.',
-  'დაწერე რომელიმე სიმღერის ერთი სტრიქონი შენი სიტყვებით (არა ორიგინალი ტექსტი).',
-  'დაასახელე ერთი წიგნი ან ფილმი, რომელიც ყველას ურჩევდი.',
-];
-
-// Avoids repeating the same prompt twice in a row within one game.
-function pickTodPrompt(pool, lastText) {
-  if (pool.length === 1) return pool[0];
-  let text;
-  do {
-    text = pool[rand(0, pool.length - 1)];
-  } while (text === lastText);
-  return text;
-}
-
 
 /* ── STEP 3 – Paste these handlers inside  io.on('connection', socket => { ─ */
 
@@ -183,14 +107,6 @@ function pickTodPrompt(pool, lastText) {
       state = { choices: {} };
     } else if (gameType === 'math') {
       state = { question: generateMathQuestion(), answered: false };
-    } else if (gameType === 'tod') {
-      state = {
-        currentTurnSocketId: toId,   // requester goes first
-        prompt: null,                // { type: 'truth'|'dare', text }
-        round: 1,
-        lastTruth: null,
-        lastDare: null,
-      };
     }
 
     const game = { id: gameId, type: gameType, players, state };
@@ -297,46 +213,6 @@ function pickTodPrompt(pool, lastText) {
         cleanupGame(game);
       } else {
         socket.emit('game:update', { wrong: true });
-      }
-
-    // ── TRUTH OR DARE ──────────────────────────────────────────────
-    } else if (game.type === 'tod') {
-      const st = game.state;
-
-      // Only the current player may act, and only in the right phase.
-      if (st.currentTurnSocketId !== socket.id) return;
-
-      if (!st.prompt && (data.choice === 'truth' || data.choice === 'dare')) {
-        // Phase 1 → 2: they picked truth or dare, hand them a prompt.
-        if (data.choice === 'truth') {
-          st.prompt    = { type: 'truth', text: pickTodPrompt(TOD_TRUTHS, st.lastTruth) };
-          st.lastTruth = st.prompt.text;
-        } else {
-          st.prompt   = { type: 'dare', text: pickTodPrompt(TOD_DARES, st.lastDare) };
-          st.lastDare = st.prompt.text;
-        }
-
-        const update = {
-          currentTurnSocketId: st.currentTurnSocketId,
-          prompt: st.prompt,
-          round:  st.round,
-        };
-        socket.emit('game:update', update);
-        if (partnerSocket) partnerSocket.emit('game:update', update);
-
-      } else if (st.prompt && data.done === true) {
-        // Phase 2 → 1: they finished it — pass the turn to the other player.
-        st.prompt = null;
-        st.round  = (st.round || 1) + 1;
-        st.currentTurnSocketId = partnerId;
-
-        const update = {
-          currentTurnSocketId: st.currentTurnSocketId,
-          prompt: null,
-          round:  st.round,
-        };
-        socket.emit('game:update', update);
-        if (partnerSocket) partnerSocket.emit('game:update', update);
       }
     }
   });
