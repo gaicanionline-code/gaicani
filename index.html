@@ -54,6 +54,16 @@
        !important overrides any inline display set by script.js/games.js. */
     #reportBtn { display: none !important; }
     body.reg-user #interestsBtn { display: none !important; }
+
+    /* Registered users can't rename themselves in random chat (their
+       registered username is fixed), so ✏️ სახელის შეცვლა doesn't apply
+       to them — remove it entirely. 🎮 Games and 🎵 Music move into the
+       ⋮ menu for them too (added as reg-only-item entries above), so their
+       main-bar icons are hidden here; guests keep Games/Music as regular
+       icons in the main row. Applies on both desktop and mobile. */
+    body.reg-user #changeNameBtn,
+    body.reg-user #gameBtn,
+    body.reg-user #musicBtn { display: none !important; }
   </style>
 </head>
 <body>
@@ -92,15 +102,26 @@
       <div id="userNameDisplay" class="user-name-display" style="display:none"></div>
 
       <!-- Three-dots menu — available to every user (guest or registered).
-           Change Name / Games / Report always show here; My Page,
-           Interests and Logout only apply once you're registered.
-           (🎵 Music lives in the main bar now, next to ინტ.) -->
+           🚩 Report always shows here for everyone. For registered users,
+           🎮 Games and 🎵 Music also move in here (their main-bar icons are
+           hidden via body.reg-user CSS) since ✏️ Change Name doesn't apply
+           to them at all. Guests keep Games/Music as regular icons in the
+           main bar. My Page, Interests and Logout only apply once
+           you're registered. -->
       <div class="reg-menu-container">
         <button class="reg-menu-btn" id="regMenuBtn" title="მენიუ">⋮</button>
         <div class="reg-menu-dropdown" id="regMenuDropdown" style="display:none">
           <button class="reg-menu-item" id="regMenuReport" data-action="report">
             <span class="reg-menu-icon">🚩</span>
             <span class="reg-menu-label">Report</span>
+          </button>
+          <button class="reg-menu-item reg-only-item" id="regMenuGames" data-action="games">
+            <span class="reg-menu-icon">🎮</span>
+            <span class="reg-menu-label">Games</span>
+          </button>
+          <button class="reg-menu-item reg-only-item" id="regMenuMusic" data-action="music">
+            <span class="reg-menu-icon">🎵</span>
+            <span class="reg-menu-label">მუსიკა</span>
           </button>
           <button class="reg-menu-item reg-only-item" id="regMenuInt" data-action="interests">
             <span class="reg-menu-icon">ინტ</span>

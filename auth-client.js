@@ -876,6 +876,19 @@
     }
   });
 
+  // 🎵 Music — same logic as the main music button (registered users only;
+  // their music icon lives in this menu instead of the top bar)
+  $("regMenuMusic")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeRegMenu();
+    const musicBtn = $("musicBtn");
+    if (musicBtn && !musicBtn.disabled) {
+      musicBtn.click();
+    } else {
+      showToast("🎵 მუსიკა მხოლოდ ჩატის დროს ხელმისაწვდომია");
+    }
+  });
+
   // ინტერესები (Interests)
   $("regMenuInt")?.addEventListener("click", () => {
     closeRegMenu();
