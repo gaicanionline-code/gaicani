@@ -27,6 +27,7 @@
       ttt:  '❌⭕  Tic Tac Toe',
       rps:  '✊✋✌️  Rock Paper Scissors',
       math: '🔢  Math Duel',
+      tod:  '🎭  სიმართლე თუ დარი',
     };
     const RPS_EMOJI  = { rock: '✊', paper: '✋', scissors: '✌️' };
     const RPS_LABELS = { rock: 'ჭა', paper: 'ქაღალდი', scissors: 'მაკრატელი' };
@@ -102,6 +103,13 @@
             <div class="game-menu-info">
               <strong>Math Duel</strong>
               <small>პირველი სწორი პასუხი იგებს</small>
+            </div>
+          </button>
+          <button class="game-menu-item" data-game="tod">
+            <span class="game-menu-icon">🎭</span>
+            <div class="game-menu-info">
+              <strong>სიმართლე თუ დარი</strong>
+              <small>კითხვები და გამოწვევები — მხოლოდ ჩატში</small>
             </div>
           </button>
         </div>`;
@@ -273,6 +281,7 @@
       if (gameType === 'ttt')  renderTTT(state, role);
       else if (gameType === 'rps')  renderRPS();
       else if (gameType === 'math') renderMath(state);
+      else if (gameType === 'tod')  renderTOD(state);
 
       showOverlay();
     });
@@ -474,6 +483,55 @@
     }
 
     // ────────────────────────────────────────────────────────────
+    // 8b.  🎭 TRUTH OR DARE  (სიმართლე თუ დარი)
+    // ────────────────────────────────────────────────────────────
+    function renderTOD(state) {
+      const myTurn = state.currentTurnSocketId === socket.id;
+
+      // ── Phase 1: current player is choosing Truth or Dare ──────
+      if (!state.prompt) {
+        el('gameContent').innerHTML = `
+          <div class="tod-round">რაუნდი ${state.round || 1}</div>
+          <div class="tod-status" id="todStatus">
+            ${myTurn ? '🎯 შენი რიგია — აირჩიე!' : '⏳ მოწინააღმდეგე ირჩევს...'}
+          </div>
+          <div class="tod-choices">
+            <button class="tod-choice-btn tod-choice-btn--truth" id="todTruthBtn" ${myTurn ? '' : 'disabled'}>
+              <span class="tod-choice-emoji">🤫</span>
+              <span class="tod-choice-label">სიმართლე</span>
+            </button>
+            <button class="tod-choice-btn tod-choice-btn--dare" id="todDareBtn" ${myTurn ? '' : 'disabled'}>
+              <span class="tod-choice-emoji">😈</span>
+              <span class="tod-choice-label">დარი</span>
+            </button>
+          </div>`;
+
+        if (myTurn) {
+          el('todTruthBtn').addEventListener('click', () => socket.emit('game:move', { choice: 'truth' }));
+          el('todDareBtn').addEventListener('click',  () => socket.emit('game:move', { choice: 'dare'  }));
+        }
+        return;
+      }
+
+      // ── Phase 2: prompt is shown, waiting for the current player to finish it ──
+      const isTruth = state.prompt.type === 'truth';
+      el('gameContent').innerHTML = `
+        <div class="tod-round">რაუნდი ${state.round || 1}</div>
+        <div class="tod-prompt-card ${isTruth ? 'tod-prompt-card--truth' : 'tod-prompt-card--dare'}">
+          <div class="tod-prompt-tag">${isTruth ? '🤫 სიმართლე' : '😈 დარი'}</div>
+          <div class="tod-prompt-text">${state.prompt.text}</div>
+        </div>
+        <div class="tod-status" id="todStatus">
+          ${myTurn ? 'შეასრულე ან უპასუხე ჩატში, შემდეგ დააჭირე ღილაკს 👇' : '⏳ ელოდება მოწინააღმდეგის პასუხს/შესრულებას...'}
+        </div>
+        ${myTurn ? '<button class="tod-done-btn" id="todDoneBtn">✅ შესრულებულია — შემდეგი რიგი</button>' : ''}`;
+
+      if (myTurn) {
+        el('todDoneBtn').addEventListener('click', () => socket.emit('game:move', { done: true }));
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────
     // 9.  Unified socket update handler
     // ────────────────────────────────────────────────────────────
     socket.on('game:update', data => {
@@ -481,6 +539,7 @@
       if (currentGame.type === 'ttt')  updateTTT(data);
       else if (currentGame.type === 'rps')  updateRPS(data);
       else if (currentGame.type === 'math') updateMath(data);
+      else if (currentGame.type === 'tod')  renderTOD(data);
     });
 
     socket.on('game:partnerLeft', () => {
