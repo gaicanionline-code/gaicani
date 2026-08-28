@@ -46,14 +46,13 @@
   <link rel="stylesheet" href="style-MOBILE-FIX.css" />
   <style>
     /* ── Top-bar cleanup ─────────────────────────────────────────────
-       ✏️ Change Name, 🚩 Report and 🎮 Games now live in the ⋮ menu for
-       every user (not just registered ones) to save space. ინტ. stays
-       in the main bar for guests and only moves into the ⋮ menu once
-       registered (unchanged from before).
+       🚩 Report still lives in the ⋮ menu to save space. ✏️ Change Name
+       and 🎮 Games now sit in the main bar next to 🎵 Music (both on
+       desktop and mobile) instead of being tucked into the ⋮ menu.
+       ინტ. stays in the main bar for guests and only moves into the
+       ⋮ menu once registered (unchanged from before).
        !important overrides any inline display set by script.js/games.js. */
-    #reportBtn,
-    #gameBtn,
-    #changeNameBtn { display: none !important; }
+    #reportBtn { display: none !important; }
     body.reg-user #interestsBtn { display: none !important; }
   </style>
 </head>
@@ -99,14 +98,6 @@
       <div class="reg-menu-container">
         <button class="reg-menu-btn" id="regMenuBtn" title="მენიუ">⋮</button>
         <div class="reg-menu-dropdown" id="regMenuDropdown" style="display:none">
-          <button class="reg-menu-item" id="regMenuChangeName" data-action="changeName">
-            <span class="reg-menu-icon">✏️</span>
-            <span class="reg-menu-label">სახელის შეცვლა</span>
-          </button>
-          <button class="reg-menu-item" id="regMenuGames" data-action="games">
-            <span class="reg-menu-icon">🎮</span>
-            <span class="reg-menu-label">Games</span>
-          </button>
           <button class="reg-menu-item" id="regMenuReport" data-action="report">
             <span class="reg-menu-icon">🚩</span>
             <span class="reg-menu-label">Report</span>

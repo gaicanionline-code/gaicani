@@ -83,7 +83,8 @@ html, body {
   .report-button,
   .next-button,
   .interests-btn,
-  .music-btn {
+  .music-btn,
+  .game-btn {
     padding: 0 !important;
     width: 38px !important;
     height: 38px !important;
@@ -161,7 +162,8 @@ html, body {
   .block-button,
   .report-button,
   .interests-btn,
-  .music-btn {
+  .music-btn,
+  .game-btn {
     width: 32px !important;
     height: 32px !important;
     font-size: 0.95em !important;
