@@ -46,14 +46,12 @@
   <link rel="stylesheet" href="style-MOBILE-FIX.css" />
   <style>
     /* ── Top-bar cleanup ─────────────────────────────────────────────
-       ✏️ Change Name, 🚩 Report and 🎮 Games now live in the ⋮ menu for
-       every user (not just registered ones) to save space. ინტ. stays
-       in the main bar for guests and only moves into the ⋮ menu once
-       registered (unchanged from before).
+       🚩 Report still lives in the ⋮ menu to save space.
+       ✏️ Change Name and 🎮 Games now stay directly in the main bar,
+       to the left of 🎵 Music, on both mobile and desktop — no need
+       to open the ⋮ menu for them.
        !important overrides any inline display set by script.js/games.js. */
-    #reportBtn,
-    #gameBtn,
-    #changeNameBtn { display: none !important; }
+    #reportBtn { display: none !important; }
     body.reg-user #interestsBtn { display: none !important; }
   </style>
 </head>
@@ -99,14 +97,9 @@
       <div class="reg-menu-container">
         <button class="reg-menu-btn" id="regMenuBtn" title="მენიუ">⋮</button>
         <div class="reg-menu-dropdown" id="regMenuDropdown" style="display:none">
-          <button class="reg-menu-item" id="regMenuChangeName" data-action="changeName">
-            <span class="reg-menu-icon">✏️</span>
-            <span class="reg-menu-label">სახელის შეცვლა</span>
-          </button>
-          <button class="reg-menu-item" id="regMenuGames" data-action="games">
-            <span class="reg-menu-icon">🎮</span>
-            <span class="reg-menu-label">Games</span>
-          </button>
+          <!-- ✏️ Change Name and 🎮 Games now live directly in the main
+               bar (left of 🎵 Music) — removed from here to avoid a
+               duplicate control. -->
           <button class="reg-menu-item" id="regMenuReport" data-action="report">
             <span class="reg-menu-icon">🚩</span>
             <span class="reg-menu-label">Report</span>
@@ -130,8 +123,8 @@
     <div class="right-side">
       <button id="myPageBtn" class="my-page-btn" style="display:none" onclick="window.location.href='/dashboard.html'">👤 ჩემი გვერდი</button>
       <button class="interests-btn" id="interestsBtn" style="display:none"><span class="btn-icon btn-icon--int">ინტ.</span><span class="btn-label">ინტ</span></button>
-      <button class="music-btn" id="musicBtn" disabled title="მუსიკის მოსმენა ერთად"><span class="btn-icon">🎵</span><span class="btn-label">მუსიკა</span></button>
       <button class="change-name-btn" id="changeNameBtn"><span class="btn-icon">✏️</span><span class="btn-label">სახელის შეცვლა</span></button>
+      <button class="music-btn" id="musicBtn" disabled title="მუსიკის მოსმენა ერთად"><span class="btn-icon">🎵</span><span class="btn-label">მუსიკა</span></button>
       <button class="report-button" id="reportBtn" disabled><span class="btn-icon">🚩</span><span class="btn-label">რეპორტი</span></button>
       <button class="block-button" id="blockBtn" disabled><span class="btn-icon">🚫</span><span class="btn-label">ბლოკი</span><span class="ad-countdown-badge" id="blockAdBadge">5</span></button>
       <button class="next-button" id="nextBtn"><span class="btn-icon">🔎</span><span class="btn-label">ძებნა</span><span class="ad-countdown-badge" id="nextAdBadge">5</span></button>
