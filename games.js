@@ -60,8 +60,9 @@
         '<span class="btn-icon game-btn-icon">🎮</span>' +
         '<span class="btn-label">თამაში</span>';
 
-      // Desktop: before changeNameBtn  |  Mobile: after interestsBtn
-      const anchor = el('changeNameBtn');
+      // Always sits left of 🎵 Music (and left of ✏️ Change Name) in the
+      // main bar, on both desktop and mobile — no ⋮ menu involved.
+      const anchor = el('changeNameBtn') || el('musicBtn');
       rightSide.insertBefore(btn, anchor);
 
       btn.addEventListener('click', toggleGameMenu);
