@@ -280,6 +280,7 @@
     #fc-input:focus { border-color: rgba(88,101,242,0.6); box-shadow: 0 0 0 3px rgba(88,101,242,0.15); }
 
     #fc-send {
+      position: relative;
       flex-shrink: 0;
       width: 40px; height: 40px;
       border-radius: 50%;
@@ -298,6 +299,26 @@
     #fc-send:hover { box-shadow: 0 3px 14px rgba(88,101,242,0.55); }
     #fc-send:active { transform: scale(0.93); }
     #fc-send:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
+
+    /* ── Ad countdown badge — same visual language as .ad-countdown-badge
+       in style.css (random chat page), reused here for private messaging. */
+    #fc-send-ad-badge {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 4px;
+      border-radius: 999px;
+      background: #f23f42;
+      color: #fff;
+      font-size: 0.68em;
+      font-weight: 800;
+      line-height: 18px;
+      text-align: center;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+      pointer-events: none;
+    }
 
     /* ── EMPTY STATE ── */
     #fc-empty {
@@ -704,7 +725,7 @@
     <button class="fc-extra-btn" id="fc-question-btn" title="შემთხვევითი კითხვა">?</button>
     <textarea id="fc-input" placeholder="შეტყობინება..." rows="1" maxlength="2000"></textarea>
     <span id="fc-char-count" class="fc-char-count"></span>
-    <button id="fc-send" title="გაგზავნა">➤</button>
+    <button id="fc-send" title="გაგზავნა">➤<span id="fc-send-ad-badge">5</span></button>
   </div>
 
   <!-- GIF PICKER -->
@@ -1221,6 +1242,42 @@
     if (row) row.remove();
   }
 
+  /* ── Ad-click countdown (every 5th sent private message) ──────────────
+     Same principle as the AD_EVERY_N_CLICKS counter on the random-chat
+     page (script.js): a persistent localStorage counter, a badge showing
+     how many messages remain, and opening the ad in a new tab on every
+     5th send — the user's own send flow keeps running normally. Uses its
+     own storage key so it never shares/collides with the random-chat
+     "next"/"block" counters. */
+  const FC_AD_REDIRECT_URL   = "https://omg10.com/4/11150018";
+  const FC_AD_EVERY_N_MSGS   = 5;
+  const FC_AD_COUNT_KEY      = "gaicani_ad_count_privmsg";
+  const elSendAdBadge        = $("fc-send-ad-badge");
+
+  function fcGetAdCount() {
+    const v = parseInt(localStorage.getItem(FC_AD_COUNT_KEY) || "0", 10);
+    return Number.isFinite(v) ? v : 0;
+  }
+  function fcSetAdCount(val) {
+    try { localStorage.setItem(FC_AD_COUNT_KEY, String(val)); } catch (_) {}
+  }
+  function fcRemainingUntilAd() {
+    const c = fcGetAdCount() % FC_AD_EVERY_N_MSGS;
+    return FC_AD_EVERY_N_MSGS - c;
+  }
+  function fcUpdateAdBadge() {
+    if (elSendAdBadge) elSendAdBadge.textContent = String(fcRemainingUntilAd());
+  }
+  function fcTickAdCounter() {
+    const next = fcGetAdCount() + 1;
+    fcSetAdCount(next);
+    if (next % FC_AD_EVERY_N_MSGS === 0) {
+      window.open(FC_AD_REDIRECT_URL, "_blank", "noopener,noreferrer");
+    }
+    fcUpdateAdBadge(); // badge naturally shows "5" again once next % 5 === 0
+  }
+  fcUpdateAdBadge(); // initialize on page load
+
   /* ── Send message ────────────────────────────────────────────── */
   function sendMessage() {
     const text = elInput.value.trim();
@@ -1241,6 +1298,8 @@
 
     /* Optimistic local append */
     appendMessage({ id: msgId, from: myUsername, text, ts: new Date().toISOString(), replyTo: currentReply });
+
+    fcTickAdCounter();
 
     clearFCReplyTo();
     updateFCCharCount();
