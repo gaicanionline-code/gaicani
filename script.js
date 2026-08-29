@@ -270,6 +270,23 @@ function addSystemHintMessage(text, extraClass) {
 }
 function addSystemBigMessage(text)         { _appendInfoMessage(text, "system-message-big"); }
 
+// ── Registration promo card (shown once per random-chat session start) ──────
+function addRegisterPromoCard() {
+  const el = document.createElement("div");
+  el.className = "register-promo-card";
+  el.innerHTML = `
+    <div class="register-promo-title">🚀 დარეგისტრირდი ახლავე!</div>
+    <div class="register-promo-line">📸 აირჩიე ფოტოები • 👤 დაამატე ადამიანები • 💬 მიწერე როცა გინდა • ❤️ გაიცანი ახალი ადამიანები.</div>
+  `;
+  el.addEventListener("click", () => {
+    const nm = document.getElementById("nameModal");
+    if (nm) nm.style.display = "flex";
+    document.getElementById("auth-tab-signup")?.click();
+  });
+  chat.appendChild(el);
+  scheduleScroll();
+}
+
 // ── System message with an inline image (used for the press-counter hint) ──
 function addSystemImageMessage(imgSrc, altText) {
   const el       = document.createElement("div");
@@ -1560,6 +1577,7 @@ socket.on("nameAccepted", (acceptedName) => {
     addSystemImageMessage("/ad-buttons-example.png", "ღილაკების მაგალითი");
     addSystemHintMessage("ღილაკების მარჯვნივ მოცემული რიცხვები გიჩვენებთ, რამდენი კლიკი დაგრჩათ რეკლამის გამოჩენამდე. ბოდიშს გიხდით დისკომფორტისთვის");
     addSystemBigMessage("წარმატებები უცნაური მეგობრის პოვნაში 🍀🤪");
+    addRegisterPromoCard();
   } else if (isReconnecting) {
     isReconnecting = false;
     _reconnectNameRetries = 0; // reset retry counter on success
