@@ -426,12 +426,11 @@
   });
 
   elRestartBtn.addEventListener("click", () => {
-    showAdGate(() => {
-      state = STATE.IDLE;
-      resetGame();
-      drawFrame(0);
-      showOverlay(elStartOverlay);
-    });
+    hideOverlay(elGameOverOverlay);
+    state = STATE.IDLE;
+    resetGame();
+    drawFrame(0);
+    showOverlay(elStartOverlay);
   });
 
   /* ══════════════════════════════════════════════════════════════════
