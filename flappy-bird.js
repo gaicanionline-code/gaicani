@@ -414,10 +414,53 @@
   }
 
   /* ══════════════════════════════════════════════════════════════════
+     Start overlay — two stages:
+       1) "tap" — whole screen is a tap target; tapping opens the ad in
+          a new tab and reveals stage 2. Doesn't start the game yet.
+       2) "ready" — a dedicated start button; only pressing IT starts
+          the game.
+     Every time we return to idle (first load, and after each restart)
+     we go back to stage 1, so the ad is shown again before every game.
+     ══════════════════════════════════════════════════════════════════ */
+  const START_STAGE_TAP   = "tap";
+  const START_STAGE_READY = "ready";
+  let startStage = START_STAGE_TAP;
+
+  function renderStartOverlay(stage) {
+    if (stage === START_STAGE_READY) {
+      elStartOverlay.innerHTML = `
+        <div class="fb-overlay-title">მზად ხარ?</div>
+        <div class="fb-overlay-sub">დააჭირე დასაწყებად</div>
+        <button class="fb-restart-btn" id="fbStartGameBtn">▶️ თამაშის დაწყება</button>
+      `;
+      const btn = $("fbStartGameBtn");
+      if (btn) btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        startPlaying();
+      });
+    } else {
+      elStartOverlay.innerHTML = `
+        <div class="fb-overlay-title">მზად ხარ?</div>
+        <div class="fb-overlay-sub">შეხებით ან <strong>Space</strong>-ით ფრინავს აფრენ. მოერიდე მილებს!</div>
+        <div class="fb-tap-hint">▲ შეეხე დასაწყებად ▲</div>
+      `;
+    }
+  }
+  renderStartOverlay(startStage);
+
+  /* ══════════════════════════════════════════════════════════════════
      Input
      ══════════════════════════════════════════════════════════════════ */
   function handleFlapInput() {
-    if (state === STATE.IDLE) { startPlaying(); return; }
+    if (state === STATE.IDLE) {
+      if (startStage === START_STAGE_TAP) {
+        window.open(AD_REDIRECT_URL, "_blank", "noopener,noreferrer");
+        startStage = START_STAGE_READY;
+        renderStartOverlay(START_STAGE_READY);
+      }
+      // In the "ready" stage only the dedicated button starts the game.
+      return;
+    }
     if (state === STATE.PLAYING) { bird.vel = FB_CFG.FLAP_VELOCITY; }
   }
   elCanvasBox.addEventListener("pointerdown", (e) => { e.preventDefault(); handleFlapInput(); });
@@ -426,12 +469,12 @@
   });
 
   elRestartBtn.addEventListener("click", () => {
-    window.open(AD_REDIRECT_URL, "_blank", "noopener,noreferrer");
-
     hideOverlay(elGameOverOverlay);
     state = STATE.IDLE;
     resetGame();
     drawFrame(0);
+    startStage = START_STAGE_TAP;
+    renderStartOverlay(START_STAGE_TAP);
     showOverlay(elStartOverlay);
   });
 
