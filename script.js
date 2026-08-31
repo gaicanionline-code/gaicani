@@ -312,14 +312,55 @@ function addSystemHintMessage(text, extraClass) {
 }
 function addSystemBigMessage(text)         { _appendInfoMessage(text, "system-message-big"); }
 
+// ── Red scrolling banner styles for the ad-free promo line (injected once) ──
+function ensurePromoAdBannerStyles() {
+  if (document.getElementById("promo-ad-banner-style")) return;
+  const style = document.createElement("style");
+  style.id = "promo-ad-banner-style";
+  style.textContent = `
+    .register-promo-ad-banner {
+      background: #f23f42;
+      color: #fff;
+      font-weight: 800;
+      font-size: 1.08em;
+      padding: 11px 0;
+      margin-top: 10px;
+      border-radius: 8px;
+      overflow: hidden;
+      white-space: nowrap;
+      position: relative;
+      box-shadow: 0 2px 10px rgba(242,63,66,0.4);
+    }
+    .register-promo-ad-banner a {
+      color: #fff;
+      text-decoration: underline;
+      font-weight: 800;
+    }
+    .register-promo-ad-banner-track {
+      display: inline-block;
+      padding-left: 100%;
+      animation: promoAdBannerScroll 14s linear infinite;
+    }
+    @keyframes promoAdBannerScroll {
+      0%   { transform: translateX(0); }
+      100% { transform: translateX(-100%); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .register-promo-ad-banner-track { animation: none; padding-left: 0; white-space: normal; }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 // ── Registration promo card (shown once per random-chat session start) ──────
 function addRegisterPromoCard() {
+  ensurePromoAdBannerStyles();
   const el = document.createElement("div");
   el.className = "register-promo-card";
   el.innerHTML = `
     <div class="register-promo-title">🚀 დარეგისტრირდი ახლავე!</div>
     <div class="register-promo-line">📸 აირჩიე ფოტოები • 👤 დაამატე ადამიანები • 💬 მიწერე როცა გინდა • ❤️ გაიცანი ახალი ადამიანები.</div>
-    <div class="register-promo-line register-promo-line--ads">თუ აღარ გსურთ რეკლამების ნახვა დარეგისტრირდით ითამაშეთ <a href="/flappy-bird.html" id="registerPromoFlappyLink">🐦 მფრინავი ჩიტი</a> ადით 150 ან მეტ ქულაზე და გამორთეთ რეკლამები!</div>
+    <div class="register-promo-ad-banner"><span class="register-promo-ad-banner-track">თუ აღარ გსურთ რეკლამების ნახვა დარეგისტრირდით ითამაშეთ <a href="/flappy-bird.html" id="registerPromoFlappyLink">🐦 მფრინავი ჩიტი</a> ადით 150 ან მეტ ქულაზე და გამორთეთ რეკლამები!</span></div>
   `;
   el.addEventListener("click", () => {
     const nm = document.getElementById("nameModal");
