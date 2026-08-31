@@ -348,6 +348,17 @@ function ensurePromoAdBannerStyles() {
     @media (prefers-reduced-motion: reduce) {
       .register-promo-ad-banner-track { animation: none; padding-left: 0; white-space: normal; }
     }
+    .register-promo-ad-line2 {
+      color: #fff;
+      background: #f23f42;
+      font-weight: 800;
+      font-size: 1.15em;
+      text-align: center;
+      padding: 10px 8px;
+      margin-top: 6px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(242,63,66,0.4);
+    }
   `;
   document.head.appendChild(style);
 }
@@ -360,15 +371,13 @@ function addRegisterPromoCard() {
   el.innerHTML = `
     <div class="register-promo-title">🚀 დარეგისტრირდი ახლავე!</div>
     <div class="register-promo-line">📸 აირჩიე ფოტოები • 👤 დაამატე ადამიანები • 💬 მიწერე როცა გინდა • ❤️ გაიცანი ახალი ადამიანები.</div>
-    <div class="register-promo-ad-banner"><span class="register-promo-ad-banner-track">თუ აღარ გსურთ რეკლამების ნახვა დარეგისტრირდით ითამაშეთ <a href="/flappy-bird.html" id="registerPromoFlappyLink">🐦 მფრინავი ჩიტი</a> ადით 150 ან მეტ ქულაზე და გამორთეთ რეკლამები!</span></div>
+    <div class="register-promo-ad-banner"><span class="register-promo-ad-banner-track">თუ აღარ გსურთ რეკლამების ნახვა დარეგისტრირდით ითამაშეთ 🐦 მფრინავი ჩიტი ადით 150 ან მეტ ქულაზე და გამორთეთ რეკლამები!</span></div>
+    <div class="register-promo-ad-line2">ითამაშე და გათიშე რეკლამები</div>
   `;
   el.addEventListener("click", () => {
     const nm = document.getElementById("nameModal");
     if (nm) nm.style.display = "flex";
     document.getElementById("auth-tab-signup")?.click();
-  });
-  el.querySelector("#registerPromoFlappyLink")?.addEventListener("click", (e) => {
-    e.stopPropagation(); // let it navigate to flappy-bird.html instead of opening the signup modal
   });
   chat.appendChild(el);
   scheduleScroll();
