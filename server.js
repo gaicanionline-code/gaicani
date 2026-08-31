@@ -3456,6 +3456,42 @@ const authTokens        = new Map(); // token → { usernameLower, expiry }
 const privateRooms      = new Map(); // roomId → { messages, createdAt, expiresAt }
 const onlineRegSockets  = new Map(); // lowerUsername → Set<socketId>
 
+// ── Flappy Bird ("მფრინავი ჩიტი") state ────────────────────────────────────
+const flappySessions   = new Map(); // sessionId → { usernameLower, socketId, startAt, submitted }
+const flappyLastSubmit = new Map(); // usernameLower → timestamp (simple per-user rate limit)
+
+// Keep numerically identical to FB_CFG in flappy-bird.js — the server doesn't
+// re-simulate the game, it only uses these to compute the fastest a given
+// score could physically have been reached (anti-cheat, see flappy:submitScore).
+const FLAPPY_CFG = {
+  GAP_START: 170, GAP_MIN: 108, GAP_DECAY: 2.2,
+  SPEED_START: 220, SPEED_MAX: 430, SPEED_GROWTH: 4,
+  SPACING_START: 300, SPACING_MIN: 210, SPACING_DECAY: 1.5,
+};
+function flappySpeedForScore(s)   { return Math.min(FLAPPY_CFG.SPEED_MAX, FLAPPY_CFG.SPEED_START + s * FLAPPY_CFG.SPEED_GROWTH); }
+function flappySpacingForScore(s) { return Math.max(FLAPPY_CFG.SPACING_MIN, FLAPPY_CFG.SPACING_START - s * FLAPPY_CFG.SPACING_DECAY); }
+function flappyMinTimeMs(score) {
+  let t = 0;
+  for (let n = 0; n < score; n++) t += flappySpacingForScore(n) / flappySpeedForScore(n);
+  return t * 1000;
+}
+function flappyGenSessionId() {
+  return `fb_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+function getFlappyTop3() {
+  const rows = [];
+  for (const [lc, u] of registeredUsers) {
+    if (u.flappyHighScore) {
+      rows.push({ id: lc, username: u.username, score: u.flappyHighScore, achievedAt: u.flappyHighScoreAt || null });
+    }
+  }
+  rows.sort((a, b) => b.score - a.score);
+  return rows.slice(0, 3);
+}
+function broadcastFlappyLeaderboard() {
+  io.emit("flappy:leaderboardUpdate", getFlappyTop3());
+}
+
 // Returns { username, avatar } for every registered user who currently has at
 // least one live socket connected (i.e. actually online right now), excluding
 // the given username. Used to populate the "who's online" list in the
@@ -3610,6 +3646,13 @@ setInterval(() => {
   for (const [t, e] of authTokens) if (now >= e.expiry) authTokens.delete(t);
 }, 60 * 60 * 1000);
 
+setInterval(() => {
+  const now = Date.now();
+  for (const [sid, s] of flappySessions) {
+    if (now - s.startAt > 30 * 60 * 1000) flappySessions.delete(sid); // 30 min = generous max game length
+  }
+}, 60 * 60 * 1000);
+
 // ── REST endpoints ────────────────────────────────────────────────────────────
 const authLimiter = rateLimit({ windowMs: 15 * 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
 
@@ -3653,6 +3696,11 @@ app.post("/api/auth/register", authLimiter, express.json({ limit: "5kb" }), asyn
   authTokens.set(token, { usernameLower: lc, expiry: Date.now() + AUTH_TOKEN_TTL });
 
   res.status(201).json({ success: true, token, username: user.username, avatar: user.avatar, bio: user.bio });
+});
+
+// GET /api/flappy/leaderboard — public, no auth: anyone can see the top 3.
+app.get("/api/flappy/leaderboard", (req, res) => {
+  res.json({ top3: getFlappyTop3() });
 });
 
 // GET /api/auth/avatars — list the predefined avatar options
@@ -4154,6 +4202,89 @@ io.on("connection", (socket) => {
     });
   });
 
+  // ── flappy:start — begin a new anti-cheat session for "მფრინავი ჩიტი" ────
+  socket.on("flappy:start", () => {
+    if (!socket._regUser) {
+      socket.emit("flappy:error", { error: "საჭიროა შესვლა" });
+      return;
+    }
+    const sessionId = flappyGenSessionId();
+    flappySessions.set(sessionId, {
+      usernameLower: socket._regUser.usernameLower,
+      socketId: socket.id,
+      startAt: Date.now(),
+      submitted: false,
+    });
+    socket.emit("flappy:sessionStarted", { sessionId });
+  });
+
+  // ── flappy:submitScore — validate + record a finished game's score ───────
+  socket.on("flappy:submitScore", ({ sessionId, score }) => {
+    if (!socket._regUser) return;
+
+    const numScore = Number(score);
+    if (!Number.isFinite(numScore) || !Number.isInteger(numScore) || numScore < 0) return;
+
+    const session = flappySessions.get(sessionId);
+    if (!session || session.usernameLower !== socket._regUser.usernameLower) {
+      socket.emit("flappy:scoreResult", { accepted: false, reason: "invalid_session" });
+      return;
+    }
+    if (session.submitted) {
+      socket.emit("flappy:scoreResult", { accepted: false, reason: "already_submitted" });
+      return;
+    }
+
+    const lastSubmit = flappyLastSubmit.get(socket._regUser.usernameLower) || 0;
+    if (Date.now() - lastSubmit < 2000) {
+      socket.emit("flappy:scoreResult", { accepted: false, reason: "rate_limited" });
+      return;
+    }
+
+    if (numScore > 5000) {
+      socket.emit("flappy:scoreResult", { accepted: false, reason: "implausible" });
+      return;
+    }
+
+    const elapsed      = Date.now() - session.startAt;
+    const minPlausible = flappyMinTimeMs(numScore) * 0.75;
+    if (numScore > 0 && elapsed < minPlausible) {
+      socket.emit("flappy:scoreResult", { accepted: false, reason: "too_fast" });
+      console.log(`[FLAPPY] Rejected implausible score: ${socket._regUser.username} claimed ${numScore} in ${elapsed}ms (needs >= ${minPlausible.toFixed(0)}ms)`);
+      return;
+    }
+
+    session.submitted = true;
+    flappyLastSubmit.set(socket._regUser.usernameLower, Date.now());
+
+    const user = registeredUsers.get(socket._regUser.usernameLower);
+    if (!user) return;
+
+    const prevBest  = user.flappyHighScore || 0;
+    const isNewBest = numScore > prevBest;
+    if (isNewBest) {
+      user.flappyHighScore   = numScore;
+      user.flappyHighScoreAt = new Date().toISOString();
+      saveAuthUsers();
+    }
+
+    socket.emit("flappy:scoreResult", {
+      accepted: true,
+      score: numScore,
+      personalBest: user.flappyHighScore || 0,
+      isNewBest,
+    });
+
+    if (isNewBest) {
+      const top3 = getFlappyTop3();
+      if (top3.some(r => r.id === socket._regUser.usernameLower)) {
+        broadcastFlappyLeaderboard();
+      }
+    }
+
+    flappySessions.delete(sessionId);
+  });
+
   // ── Remove friend ────────────────────────────────────────────────────────
   socket.on("friend:remove", ({ friendUsername }) => {
     if (!socket._regUser || !friendUsername) return;
@@ -4559,6 +4690,7 @@ io.on("connection", (socket) => {
     }
 
     cleanupGameForSocket(socket.id);
+    for (const [sid, s] of flappySessions) if (s.socketId === socket.id) flappySessions.delete(sid);
   });
 });
 
