@@ -104,12 +104,19 @@ const AD_REDIRECT_URL   = "https://omg10.com/4/11150018";
 const AD_EVERY_N_CLICKS = 5;
 const AD_COUNT_KEYS = { next: "gaicani_ad_count_next", block: "gaicani_ad_count_block" };
 
-// ── Ad exemption — shared localStorage key (same one flappy-bird.js writes
-// to on a 20+ score). While active, ads are skipped everywhere on the site
-// and the badges show a live countdown instead of the click counter.
-const AD_EXEMPT_KEY = "gaicani_ad_exempt_until";
+// ── Ad exemption — scoped to THIS registered username only (not IP, not
+// device-wide). Same key convention as flappy-bird.js: includes the
+// lowercased username, so it only ever applies to that one account.
+// Guests (no username in localStorage) are never exempt.
+const AD_EXEMPT_LS_USER_KEY = "gaicani_auth_user";
+function adExemptKeyFor(username) {
+  return `gaicani_ad_exempt_until:${String(username || "").toLowerCase().trim()}`;
+}
 function getAdExemptUntil() {
-  const v = parseInt(localStorage.getItem(AD_EXEMPT_KEY) || "0", 10);
+  let username = null;
+  try { username = localStorage.getItem(AD_EXEMPT_LS_USER_KEY); } catch (_) {}
+  if (!username) return 0;
+  const v = parseInt(localStorage.getItem(adExemptKeyFor(username)) || "0", 10);
   return Number.isFinite(v) ? v : 0;
 }
 function isAdExempt() { return Date.now() < getAdExemptUntil(); }

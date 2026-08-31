@@ -1257,9 +1257,18 @@
   // ── Ad exemption — same localStorage key flappy-bird.js and script.js
   // use. While active (24h after a 20+ Flappy Bird score), ads are skipped
   // here too and the badge shows a live countdown instead of the msg count.
-  const FC_AD_EXEMPT_KEY = "gaicani_ad_exempt_until";
+  // ── Ad exemption — scoped to THIS registered username only (not IP, not
+  // device-wide). Same key convention as flappy-bird.js/script.js: includes
+  // the lowercased username, so it only ever applies to that one account.
+  const FC_AD_EXEMPT_LS_USER_KEY = "gaicani_auth_user";
+  function fcAdExemptKeyFor(username) {
+    return `gaicani_ad_exempt_until:${String(username || "").toLowerCase().trim()}`;
+  }
   function fcGetAdExemptUntil() {
-    const v = parseInt(localStorage.getItem(FC_AD_EXEMPT_KEY) || "0", 10);
+    let username = null;
+    try { username = localStorage.getItem(FC_AD_EXEMPT_LS_USER_KEY); } catch (_) {}
+    if (!username) return 0;
+    const v = parseInt(localStorage.getItem(fcAdExemptKeyFor(username)) || "0", 10);
     return Number.isFinite(v) ? v : 0;
   }
   function fcIsAdExempt() { return Date.now() < fcGetAdExemptUntil(); }

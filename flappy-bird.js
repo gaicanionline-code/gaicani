@@ -83,17 +83,27 @@
   const AD_REDIRECT_URL   = "https://omg10.com/4/11150018";
   const AD_MIN_WAIT_MS    = 6000;
 
-  // ── Ad exemption — shared localStorage key, same convention should be
-  // mirrored in script.js (random chat) and friend-chat.html (private chat)
-  // so a 20+ score here also silences ads there.
-  const AD_EXEMPT_KEY = "gaicani_ad_exempt_until";
+  // ── Ad exemption — scoped to THIS registered username only (not IP, not
+  // device-wide). Key includes the lowercased username, so different
+  // accounts logged into the same browser never share/inherit each other's
+  // exemption. Same convention should be mirrored in script.js (random
+  // chat) and friend-chat.html (private chat).
+  const AD_EXEMPT_SCORE_THRESHOLD = 150;
+  const AD_EXEMPT_HOURS           = 12;
+  function adExemptKeyFor(username) {
+    return `gaicani_ad_exempt_until:${String(username || "").toLowerCase().trim()}`;
+  }
   function getAdExemptUntil() {
-    const v = parseInt(localStorage.getItem(AD_EXEMPT_KEY) || "0", 10);
+    const { username } = loadAuth();
+    if (!username) return 0;
+    const v = parseInt(localStorage.getItem(adExemptKeyFor(username)) || "0", 10);
     return Number.isFinite(v) ? v : 0;
   }
   function isAdExempt() { return Date.now() < getAdExemptUntil(); }
   function grantAdExemption(hours) {
-    try { localStorage.setItem(AD_EXEMPT_KEY, String(Date.now() + hours * 3600 * 1000)); } catch (_) {}
+    const { username } = loadAuth();
+    if (!username) return; // exemption only ever applies to a signed-in account
+    try { localStorage.setItem(adExemptKeyFor(username), String(Date.now() + hours * 3600 * 1000)); } catch (_) {}
   }
   function formatCountdown(ms) {
     const totalSec = Math.max(0, Math.ceil(ms / 1000));
@@ -564,9 +574,9 @@
         elNewBestBadge.style.display = "inline-flex";
         showToast("🎉 ახალი პირადი რეკორდი!");
       }
-      if (typeof acceptedScore === "number" && acceptedScore >= 20) {
-        grantAdExemption(24);
-        showToast("🎁 20+ ქულა! რეკლამები გამორთულია 24 საათით.");
+      if (typeof acceptedScore === "number" && acceptedScore >= AD_EXEMPT_SCORE_THRESHOLD) {
+        grantAdExemption(AD_EXEMPT_HOURS);
+        showToast(`🎁 ${AD_EXEMPT_SCORE_THRESHOLD}+ ქულა! რეკლამები გამორთულია ${AD_EXEMPT_HOURS} საათით.`);
       }
     });
 
