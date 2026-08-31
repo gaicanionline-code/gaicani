@@ -371,7 +371,7 @@ function addRegisterPromoCard() {
   el.innerHTML = `
     <div class="register-promo-title">🚀 დარეგისტრირდი ახლავე!</div>
     <div class="register-promo-line">📸 აირჩიე ფოტოები • 👤 დაამატე ადამიანები • 💬 მიწერე როცა გინდა • ❤️ გაიცანი ახალი ადამიანები.</div>
-    <div class="register-promo-ad-banner"><span class="register-promo-ad-banner-track">თუ აღარ გსურთ რეკლამების ნახვა დარეგისტრირდით ითამაშეთ 🐦 მფრინავი ჩიტი ადით 150 ან მეტ ქულაზე და გამორთეთ რეკლამები!</span></div>
+    <div class="register-promo-ad-banner"><span class="register-promo-ad-banner-track">თუ აღარ გსურთ რეკლამების ნახვა დარეგისტრირდით ითამაშეთ 🐦 მფრინავი ჩიტი ადით 50 ან მეტ ქულაზე და გამორთეთ რეკლამები!</span></div>
     <div class="register-promo-ad-line2">ითამაშე და გათიშე რეკლამები</div>
   `;
   el.addEventListener("click", () => {
@@ -1119,6 +1119,52 @@ function showPhotoPermissionDialog(message, onApprove, onDecline) {
 }
 
 // ── Report Reason Modal ──────────────────────────────────────────────────────
+// ── Custom confirm modal — replaces native confirm(). iOS Safari revokes
+// the "user gesture" flag as soon as a native confirm()/alert()/prompt()
+// dialog is shown, so any window.open() called afterward (even in the same
+// click handler) gets silently blocked on iPhone. A DOM modal's own button
+// click is its own fresh, genuine user gesture, so window.open() from
+// inside ITS click handler works reliably on Safari/iOS too.
+function showConfirmModal(message, confirmLabel, onConfirm) {
+  const modal = document.createElement("div");
+  modal.className = "photo-confirm-modal";
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "photo-confirm-backdrop";
+  backdrop.onclick = () => modal.remove();
+
+  const content = document.createElement("div");
+  content.className = "photo-confirm-content";
+
+  const title = document.createElement("p");
+  title.className = "photo-confirm-title";
+  title.textContent = message;
+
+  const buttonGroup = document.createElement("div");
+  buttonGroup.className = "photo-confirm-buttons";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.className = "photo-confirm-btn cancel";
+  cancelBtn.textContent = "გაუქმება";
+  cancelBtn.onclick = () => modal.remove();
+
+  const confirmBtn = document.createElement("button");
+  confirmBtn.className = "photo-confirm-btn confirm";
+  confirmBtn.textContent = confirmLabel || "დადასტურება";
+  confirmBtn.onclick = () => {
+    modal.remove();
+    onConfirm(); // fires synchronously inside THIS click — safe for Safari popups
+  };
+
+  buttonGroup.appendChild(cancelBtn);
+  buttonGroup.appendChild(confirmBtn);
+  content.appendChild(title);
+  content.appendChild(buttonGroup);
+  modal.appendChild(backdrop);
+  modal.appendChild(content);
+  document.body.appendChild(modal);
+}
+
 function showReportReasonModal(targetName, onSubmit) {
   const modal = document.createElement("div");
   modal.className = "photo-confirm-modal";
@@ -2093,12 +2139,11 @@ nextBtn.addEventListener("click", () => {
 blockBtn.addEventListener("click", () => {
   const targetName = partnerName || lastPartnerName;
   if (!targetName) return;
-  const confirmed = confirm(
-    `Block "${targetName}"? თქვენ ვეღარ შეხვდებით ამ იუზერს ბლოკის შემდეგ. 😡 `
+  showConfirmModal(
+    `Block "${targetName}"? თქვენ ვეღარ შეხვდებით ამ იუზერს ბლოკის შემდეგ. 😡`,
+    "🚫 დაბლოკვა",
+    () => { emitBlockUser(targetName); }
   );
-  if (confirmed) {
-    emitBlockUser(targetName);
-  }
 });
 
 reportBtn.addEventListener("click", () => {
