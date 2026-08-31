@@ -425,7 +425,22 @@
     if (e.code === "Space") { e.preventDefault(); handleFlapInput(); }
   });
 
+  // ── Ad click counter — same convention as script.js's tickAdCounter ──────
+  const AD_EVERY_N_CLICKS = 5;
+  const AD_COUNT_KEY = "gaicani_ad_count_flappy";
+  function tickFlappyAdCounter() {
+    let c = parseInt(localStorage.getItem(AD_COUNT_KEY) || "0", 10);
+    if (!Number.isFinite(c)) c = 0;
+    c++;
+    try { localStorage.setItem(AD_COUNT_KEY, String(c)); } catch (_) {}
+    if (c % AD_EVERY_N_CLICKS === 0) {
+      window.open(AD_REDIRECT_URL, "_blank", "noopener,noreferrer");
+    }
+  }
+
   elRestartBtn.addEventListener("click", () => {
+    tickFlappyAdCounter();
+
     hideOverlay(elGameOverOverlay);
     state = STATE.IDLE;
     resetGame();
