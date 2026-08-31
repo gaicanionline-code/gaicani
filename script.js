@@ -104,6 +104,23 @@ const AD_REDIRECT_URL   = "https://omg10.com/4/11150018";
 const AD_EVERY_N_CLICKS = 5;
 const AD_COUNT_KEYS = { next: "gaicani_ad_count_next", block: "gaicani_ad_count_block" };
 
+// ── Ad exemption — shared localStorage key (same one flappy-bird.js writes
+// to on a 20+ score). While active, ads are skipped everywhere on the site
+// and the badges show a live countdown instead of the click counter.
+const AD_EXEMPT_KEY = "gaicani_ad_exempt_until";
+function getAdExemptUntil() {
+  const v = parseInt(localStorage.getItem(AD_EXEMPT_KEY) || "0", 10);
+  return Number.isFinite(v) ? v : 0;
+}
+function isAdExempt() { return Date.now() < getAdExemptUntil(); }
+function formatAdCountdown(ms) {
+  const totalSec = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+}
+
 const nextAdBadge  = document.getElementById("nextAdBadge");
 const blockAdBadge = document.getElementById("blockAdBadge");
 
@@ -120,14 +137,32 @@ function remainingUntilAd(key) {
 }
 function updateAdBadge(key) {
   const badge = key === "next" ? nextAdBadge : blockAdBadge;
-  if (badge) badge.textContent = String(remainingUntilAd(key));
+  if (!badge) return;
+  if (isAdExempt()) {
+    badge.textContent = formatAdCountdown(getAdExemptUntil() - Date.now());
+    badge.title = "რეკლამამდე დარჩენილია";
+  } else {
+    badge.textContent = String(remainingUntilAd(key));
+    badge.title = "";
+  }
 }
+// Keep both badges live while exempt (counts down every second), and
+// snap back to the normal click-counter display the moment it expires.
+setInterval(() => {
+  if (!isAdExempt()) return;
+  updateAdBadge("next");
+  updateAdBadge("block");
+}, 1000);
+
 // Call on click: increments the counter, updates the badge, and opens the
 // ad in a NEW tab once every Nth click — the user's own chat/search flow
 // keeps running normally in the original tab, nothing gets interrupted.
+// Skipped entirely while an ad exemption (from a 20+ Flappy Bird score) is
+// active — no counting, no ad, badge shows the exemption countdown instead.
 // Returns true if the ad just opened (kept for callers that want to know,
 // though nothing needs to abort its own action because of it anymore).
 function tickAdCounter(key) {
+  if (isAdExempt()) { updateAdBadge(key); return false; }
   const next = getAdCount(key) + 1;
   setAdCount(key, next);
   if (next % AD_EVERY_N_CLICKS === 0) {

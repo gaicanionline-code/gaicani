@@ -1254,6 +1254,23 @@
   const FC_AD_COUNT_KEY      = "gaicani_ad_count_privmsg";
   const elSendAdBadge        = $("fc-send-ad-badge");
 
+  // ── Ad exemption — same localStorage key flappy-bird.js and script.js
+  // use. While active (24h after a 20+ Flappy Bird score), ads are skipped
+  // here too and the badge shows a live countdown instead of the msg count.
+  const FC_AD_EXEMPT_KEY = "gaicani_ad_exempt_until";
+  function fcGetAdExemptUntil() {
+    const v = parseInt(localStorage.getItem(FC_AD_EXEMPT_KEY) || "0", 10);
+    return Number.isFinite(v) ? v : 0;
+  }
+  function fcIsAdExempt() { return Date.now() < fcGetAdExemptUntil(); }
+  function fcFormatAdCountdown(ms) {
+    const totalSec = Math.max(0, Math.ceil(ms / 1000));
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+  }
+
   function fcGetAdCount() {
     const v = parseInt(localStorage.getItem(FC_AD_COUNT_KEY) || "0", 10);
     return Number.isFinite(v) ? v : 0;
@@ -1266,9 +1283,21 @@
     return FC_AD_EVERY_N_MSGS - c;
   }
   function fcUpdateAdBadge() {
-    if (elSendAdBadge) elSendAdBadge.textContent = String(fcRemainingUntilAd());
+    if (!elSendAdBadge) return;
+    if (fcIsAdExempt()) {
+      elSendAdBadge.textContent = fcFormatAdCountdown(fcGetAdExemptUntil() - Date.now());
+      elSendAdBadge.title = "რეკლამამდე დარჩენილია";
+    } else {
+      elSendAdBadge.textContent = String(fcRemainingUntilAd());
+      elSendAdBadge.title = "";
+    }
   }
+  // Keep the badge live while exempt; snaps back to the normal counter
+  // display the moment the 24h exemption expires.
+  setInterval(() => { if (fcIsAdExempt()) fcUpdateAdBadge(); }, 1000);
+
   function fcTickAdCounter() {
+    if (fcIsAdExempt()) { fcUpdateAdBadge(); return; }
     const next = fcGetAdCount() + 1;
     fcSetAdCount(next);
     if (next % FC_AD_EVERY_N_MSGS === 0) {

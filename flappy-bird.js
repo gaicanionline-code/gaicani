@@ -83,6 +83,26 @@
   const AD_REDIRECT_URL   = "https://omg10.com/4/11150018";
   const AD_MIN_WAIT_MS    = 6000;
 
+  // ── Ad exemption — shared localStorage key, same convention should be
+  // mirrored in script.js (random chat) and friend-chat.html (private chat)
+  // so a 20+ score here also silences ads there.
+  const AD_EXEMPT_KEY = "gaicani_ad_exempt_until";
+  function getAdExemptUntil() {
+    const v = parseInt(localStorage.getItem(AD_EXEMPT_KEY) || "0", 10);
+    return Number.isFinite(v) ? v : 0;
+  }
+  function isAdExempt() { return Date.now() < getAdExemptUntil(); }
+  function grantAdExemption(hours) {
+    try { localStorage.setItem(AD_EXEMPT_KEY, String(Date.now() + hours * 3600 * 1000)); } catch (_) {}
+  }
+  function formatCountdown(ms) {
+    const totalSec = Math.max(0, Math.ceil(ms / 1000));
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+  }
+
   function showAdGate(onDone) {
     // Must be called synchronously from the restart button's click handler
     // so the browser treats window.open as a direct result of a user
@@ -428,6 +448,7 @@
 
   function renderStartOverlay(stage) {
     if (stage === START_STAGE_READY) {
+      elStartOverlay.style.background = "";
       elStartOverlay.innerHTML = `
         <div class="fb-overlay-title">მზად ხარ?</div>
         <div class="fb-overlay-sub">დააჭირე დასაწყებად</div>
@@ -439,14 +460,29 @@
         startPlaying();
       });
     } else {
-      elStartOverlay.innerHTML = `
-        <div class="fb-overlay-title">მზად ხარ?</div>
-        <div class="fb-overlay-sub">შეხებით ან <strong>Space</strong>-ით ფრინავს აფრენ. მოერიდე მილებს!</div>
-        <div class="fb-tap-hint">▲ შეეხე დასაწყებად ▲</div>
-      `;
+      elStartOverlay.style.background = "#000";
+      if (isAdExempt()) {
+        elStartOverlay.innerHTML = `
+          <div class="fb-overlay-title">თუ გსურთ თამაშ დააჭირეთ</div>
+          <div class="fb-overlay-sub" id="fbAdExemptCountdown">რეკლამამდე დარჩენილია: ${esc(formatCountdown(getAdExemptUntil() - Date.now()))}</div>
+        `;
+      } else {
+        elStartOverlay.innerHTML = `
+          <div class="fb-overlay-title">თუ გსურთ თამაშ დააჭირეთ</div>
+        `;
+      }
     }
   }
   renderStartOverlay(startStage);
+
+  // Live-refresh the countdown text on the black screen while exempt.
+  setInterval(() => {
+    if (state !== STATE.IDLE || startStage !== START_STAGE_TAP) return;
+    const el = $("fbAdExemptCountdown");
+    if (!el) return;
+    if (!isAdExempt()) { renderStartOverlay(START_STAGE_TAP); return; }
+    el.textContent = `რეკლამამდე დარჩენილია: ${formatCountdown(getAdExemptUntil() - Date.now())}`;
+  }, 1000);
 
   /* ══════════════════════════════════════════════════════════════════
      Input
@@ -454,7 +490,7 @@
   function handleFlapInput() {
     if (state === STATE.IDLE) {
       if (startStage === START_STAGE_TAP) {
-        window.open(AD_REDIRECT_URL, "_blank", "noopener,noreferrer");
+        if (!isAdExempt()) window.open(AD_REDIRECT_URL, "_blank", "noopener,noreferrer");
         startStage = START_STAGE_READY;
         renderStartOverlay(START_STAGE_READY);
       }
@@ -517,7 +553,7 @@
       }
     });
 
-    socket.on("flappy:scoreResult", ({ accepted, personalBest, isNewBest }) => {
+    socket.on("flappy:scoreResult", ({ accepted, personalBest, isNewBest, score: acceptedScore }) => {
       if (!accepted) return; // rejected by anti-cheat — leaderboard/best simply won't move
       if (typeof personalBest === "number") {
         myBest = personalBest;
@@ -527,6 +563,10 @@
       if (isNewBest) {
         elNewBestBadge.style.display = "inline-flex";
         showToast("🎉 ახალი პირადი რეკორდი!");
+      }
+      if (typeof acceptedScore === "number" && acceptedScore >= 20) {
+        grantAdExemption(24);
+        showToast("🎁 20+ ქულა! რეკლამები გამორთულია 24 საათით.");
       }
     });
 
