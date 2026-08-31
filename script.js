@@ -319,11 +319,15 @@ function addRegisterPromoCard() {
   el.innerHTML = `
     <div class="register-promo-title">🚀 დარეგისტრირდი ახლავე!</div>
     <div class="register-promo-line">📸 აირჩიე ფოტოები • 👤 დაამატე ადამიანები • 💬 მიწერე როცა გინდა • ❤️ გაიცანი ახალი ადამიანები.</div>
+    <div class="register-promo-line register-promo-line--ads">თუ აღარ გსურთ რეკლამების ნახვა დარეგისტრირდით ითამაშეთ <a href="/flappy-bird.html" id="registerPromoFlappyLink">🐦 მფრინავი ჩიტი</a> ადით 150 ან მეტ ქულაზე და გამორთეთ რეკლამები!</div>
   `;
   el.addEventListener("click", () => {
     const nm = document.getElementById("nameModal");
     if (nm) nm.style.display = "flex";
     document.getElementById("auth-tab-signup")?.click();
+  });
+  el.querySelector("#registerPromoFlappyLink")?.addEventListener("click", (e) => {
+    e.stopPropagation(); // let it navigate to flappy-bird.html instead of opening the signup modal
   });
   chat.appendChild(el);
   scheduleScroll();

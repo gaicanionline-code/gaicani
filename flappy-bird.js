@@ -88,7 +88,7 @@
   // accounts logged into the same browser never share/inherit each other's
   // exemption. Same convention should be mirrored in script.js (random
   // chat) and friend-chat.html (private chat).
-  const AD_EXEMPT_SCORE_THRESHOLD = 5;
+  const AD_EXEMPT_SCORE_THRESHOLD = 150;
   const AD_EXEMPT_HOURS           = 12;
   function adExemptKeyFor(username) {
     return `gaicani_ad_exempt_until:${String(username || "").toLowerCase().trim()}`;
