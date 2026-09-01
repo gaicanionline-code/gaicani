@@ -1112,6 +1112,7 @@ function showConfirmModal(message, confirmLabel, onConfirm) {
 
   const content = document.createElement("div");
   content.className = "photo-confirm-content";
+  content.addEventListener("click", (e) => e.stopPropagation());
 
   const title = document.createElement("p");
   title.className = "photo-confirm-title";
@@ -1137,8 +1138,8 @@ function showConfirmModal(message, confirmLabel, onConfirm) {
   buttonGroup.appendChild(confirmBtn);
   content.appendChild(title);
   content.appendChild(buttonGroup);
+  backdrop.appendChild(content);
   modal.appendChild(backdrop);
-  modal.appendChild(content);
   document.body.appendChild(modal);
 }
 
