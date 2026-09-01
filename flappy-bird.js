@@ -88,7 +88,7 @@
   // accounts logged into the same browser never share/inherit each other's
   // exemption. Same convention should be mirrored in script.js (random
   // chat) and friend-chat.html (private chat).
-  const AD_EXEMPT_SCORE_THRESHOLD = 50;
+  const AD_EXEMPT_SCORE_THRESHOLD = 30;
   const AD_EXEMPT_HOURS           = 12;
   function adExemptKeyFor(username) {
     return `gaicani_ad_exempt_until:${String(username || "").toLowerCase().trim()}`;
@@ -462,7 +462,7 @@
       elStartOverlay.innerHTML = `
         <div class="fb-overlay-title">მზად ხარ?</div>
         <div class="fb-overlay-sub">დააჭირე დასაწყებად</div>
-        <div class="fb-overlay-sub" style="color:#f2c94c;font-weight:700;">🎁 50 ან მეტი ქულა = რეკლამები გამორთული 12 საათით</div>
+        <div class="fb-overlay-sub" style="color:#f2c94c;font-weight:700;">🎁 30 ან მეტი ქულა = რეკლამები გამორთული 12 საათით</div>
         <button class="fb-restart-btn" id="fbStartGameBtn">▶️ თამაშის დაწყება</button>
       `;
       const btn = $("fbStartGameBtn");
