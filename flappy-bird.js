@@ -71,83 +71,6 @@
   function spacingForScore(s) { return Math.max(FB_CFG.SPACING_MIN, FB_CFG.SPACING_START - s * FB_CFG.SPACING_DECAY); }
 
   /* ══════════════════════════════════════════════════════════════════
-     AD SYSTEM — reuses the exact redirect URL + window.open convention
-     already used elsewhere on the site (script.js AD_REDIRECT_URL,
-     friend-chat.html FC_AD_REDIRECT_URL). That network is a plain
-     popunder link with no "ad finished" callback, so — unlike a real
-     rewarded-ad SDK — there's no event to listen for. We approximate
-     "wait for the ad" with a short mandatory in-page timer instead.
-     If this site later adds a rewarded-ad SDK with a real completion
-     callback, swap the setTimeout below for that event.
-     ══════════════════════════════════════════════════════════════════ */
-  const AD_REDIRECT_URL   = "https://omg10.com/4/11150018";
-  const AD_MIN_WAIT_MS    = 6000;
-
-  // ── Ad exemption — scoped to THIS registered username only (not IP, not
-  // device-wide). Key includes the lowercased username, so different
-  // accounts logged into the same browser never share/inherit each other's
-  // exemption. Same convention should be mirrored in script.js (random
-  // chat) and friend-chat.html (private chat).
-  const AD_EXEMPT_SCORE_THRESHOLD = 30;
-  const AD_EXEMPT_HOURS           = 12;
-  function adExemptKeyFor(username) {
-    return `gaicani_ad_exempt_until:${String(username || "").toLowerCase().trim()}`;
-  }
-  function getAdExemptUntil() {
-    const { username } = loadAuth();
-    if (!username) return 0;
-    const v = parseInt(localStorage.getItem(adExemptKeyFor(username)) || "0", 10);
-    return Number.isFinite(v) ? v : 0;
-  }
-  function isAdExempt() { return Date.now() < getAdExemptUntil(); }
-  function grantAdExemption(hours) {
-    const { username } = loadAuth();
-    if (!username) return; // exemption only ever applies to a signed-in account
-    try { localStorage.setItem(adExemptKeyFor(username), String(Date.now() + hours * 3600 * 1000)); } catch (_) {}
-  }
-  function formatCountdown(ms) {
-    const totalSec = Math.max(0, Math.ceil(ms / 1000));
-    const h = Math.floor(totalSec / 3600);
-    const m = Math.floor((totalSec % 3600) / 60);
-    const s = totalSec % 60;
-    return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
-  }
-
-  function showAdGate(onDone) {
-    // Must be called synchronously from the restart button's click handler
-    // so the browser treats window.open as a direct result of a user
-    // gesture (same reason script.js's tickAdCounter fires ad opens
-    // straight from a click handler, not from a callback/promise).
-    window.open(AD_REDIRECT_URL, "_blank", "noopener,noreferrer");
-
-    hideOverlay(elGameOverOverlay);
-    showOverlay(elAdOverlay);
-    elAdContinueBtn.disabled = true;
-    elAdSub.textContent = "იტვირთება…";
-    elAdProgressFill.style.width = "0%";
-
-    const start = performance.now();
-    let raf;
-    function tick(now) {
-      const pct = clamp((now - start) / AD_MIN_WAIT_MS, 0, 1);
-      elAdProgressFill.style.width = `${pct * 100}%`;
-      if (pct >= 1) {
-        elAdContinueBtn.disabled = false;
-        elAdSub.textContent = "მზადაა გასაგრძელებლად";
-        return;
-      }
-      raf = requestAnimationFrame(tick);
-    }
-    raf = requestAnimationFrame(tick);
-
-    elAdContinueBtn.onclick = () => {
-      cancelAnimationFrame(raf);
-      hideOverlay(elAdOverlay);
-      onDone();
-    };
-  }
-
-  /* ══════════════════════════════════════════════════════════════════
      DOM refs
      ══════════════════════════════════════════════════════════════════ */
   const elLoading         = $("fb-loading");
@@ -165,10 +88,6 @@
   const elGameOverBest     = $("fbGameOverBest");
   const elNewBestBadge     = $("fbNewBestBadge");
   const elRestartBtn       = $("fbRestartBtn");
-  const elAdOverlay         = $("fbAdOverlay");
-  const elAdSub            = $("fbAdSub");
-  const elAdProgressFill   = $("fbAdProgressFill");
-  const elAdContinueBtn    = $("fbAdContinueBtn");
 
   const ctx = elCanvas.getContext("2d");
 
@@ -444,68 +363,26 @@
   }
 
   /* ══════════════════════════════════════════════════════════════════
-     Start overlay — two stages:
-       1) "tap" — whole screen is a tap target; tapping opens the ad in
-          a new tab and reveals stage 2. Doesn't start the game yet.
-       2) "ready" — a dedicated start button; only pressing IT starts
-          the game.
-     Every time we return to idle (first load, and after each restart)
-     we go back to stage 1, so the ad is shown again before every game.
+     Start overlay — a single "ready to play" screen. Tapping/clicking
+     anywhere on the canvas (or pressing Space) while idle starts the
+     game immediately.
      ══════════════════════════════════════════════════════════════════ */
-  const START_STAGE_TAP   = "tap";
-  const START_STAGE_READY = "ready";
-  let startStage = START_STAGE_TAP;
-
-  function renderStartOverlay(stage) {
-    if (stage === START_STAGE_READY) {
-      elStartOverlay.style.background = "";
-      elStartOverlay.innerHTML = `
-        <div class="fb-overlay-title">მზად ხარ?</div>
-        <div class="fb-overlay-sub">დააჭირე დასაწყებად</div>
-        <div class="fb-overlay-sub" style="color:#f2c94c;font-weight:700;">🎁 30 ან მეტი ქულა = რეკლამები გამორთული 12 საათით</div>
-        <button class="fb-restart-btn" id="fbStartGameBtn">▶️ თამაშის დაწყება</button>
-      `;
-      const btn = $("fbStartGameBtn");
-      if (btn) btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        startPlaying();
-      });
-    } else {
-      elStartOverlay.style.background = "#000";
-      if (isAdExempt()) {
-        elStartOverlay.innerHTML = `
-          <div class="fb-overlay-title">თუ გსურთ თამაშ დააჭირეთ</div>
-          <div class="fb-overlay-sub" id="fbAdExemptCountdown">რეკლამამდე დარჩენილია: ${esc(formatCountdown(getAdExemptUntil() - Date.now()))}</div>
-        `;
-      } else {
-        elStartOverlay.innerHTML = `
-          <div class="fb-overlay-title">თუ გსურთ თამაშ დააჭირეთ</div>
-        `;
-      }
-    }
+  function renderStartOverlay() {
+    elStartOverlay.style.background = "";
+    elStartOverlay.innerHTML = `
+      <div class="fb-overlay-title">მზად ხარ?</div>
+      <div class="fb-overlay-sub">შეხებით ან <strong>Space</strong>-ით ფრინავს აფრენ. მოერიდე მილებს!</div>
+      <div class="fb-tap-hint">▲ შეეხე დასაწყებად ▲</div>
+    `;
   }
-  renderStartOverlay(startStage);
-
-  // Live-refresh the countdown text on the black screen while exempt.
-  setInterval(() => {
-    if (state !== STATE.IDLE || startStage !== START_STAGE_TAP) return;
-    const el = $("fbAdExemptCountdown");
-    if (!el) return;
-    if (!isAdExempt()) { renderStartOverlay(START_STAGE_TAP); return; }
-    el.textContent = `რეკლამამდე დარჩენილია: ${formatCountdown(getAdExemptUntil() - Date.now())}`;
-  }, 1000);
+  renderStartOverlay();
 
   /* ══════════════════════════════════════════════════════════════════
      Input
      ══════════════════════════════════════════════════════════════════ */
   function handleFlapInput() {
     if (state === STATE.IDLE) {
-      if (startStage === START_STAGE_TAP) {
-        if (!isAdExempt()) window.open(AD_REDIRECT_URL, "_blank", "noopener,noreferrer");
-        startStage = START_STAGE_READY;
-        renderStartOverlay(START_STAGE_READY);
-      }
-      // In the "ready" stage only the dedicated button starts the game.
+      startPlaying();
       return;
     }
     if (state === STATE.PLAYING) { bird.vel = FB_CFG.FLAP_VELOCITY; }
@@ -520,8 +397,7 @@
     state = STATE.IDLE;
     resetGame();
     drawFrame(0);
-    startStage = START_STAGE_TAP;
-    renderStartOverlay(START_STAGE_TAP);
+    renderStartOverlay();
     showOverlay(elStartOverlay);
   });
 
@@ -574,10 +450,6 @@
       if (isNewBest) {
         elNewBestBadge.style.display = "inline-flex";
         showToast("🎉 ახალი პირადი რეკორდი!");
-      }
-      if (typeof acceptedScore === "number" && acceptedScore >= AD_EXEMPT_SCORE_THRESHOLD) {
-        grantAdExemption(AD_EXEMPT_HOURS);
-        showToast(`🎁 ${AD_EXEMPT_SCORE_THRESHOLD}+ ქულა! რეკლამები გამორთულია ${AD_EXEMPT_HOURS} საათით.`);
       }
     });
 

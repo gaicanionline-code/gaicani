@@ -94,101 +94,12 @@ const interestsBtn   = document.getElementById("interestsBtn");
 const bioPopup       = document.getElementById("bioPopup");
 const bioInput       = document.getElementById("bioInput");
 
-// ── Ad-click countdown (every 10th click on ძებნა or every 10th block) ──────
-// Counts persist across page reloads (localStorage) so refreshing the page
-// doesn't reset progress toward the ad. Two independent counters: one for
-// "next/search" clicks, one for blocking (no matter which of the several
-// UI paths — block button, report+block, or the post-disconnect block
-// offer — triggers it; they all funnel through emitBlockUser() below).
-const AD_REDIRECT_URL   = "https://omg10.com/4/11150018";
-const AD_EVERY_N_CLICKS = 5;
-const AD_COUNT_KEYS = { next: "gaicani_ad_count_next", block: "gaicani_ad_count_block" };
-
-// ── Ad exemption — scoped to THIS registered username only (not IP, not
-// device-wide). Same key convention as flappy-bird.js: includes the
-// lowercased username, so it only ever applies to that one account.
-// Guests (no username in localStorage) are never exempt.
-const AD_EXEMPT_LS_USER_KEY = "gaicani_auth_user";
-function adExemptKeyFor(username) {
-  return `gaicani_ad_exempt_until:${String(username || "").toLowerCase().trim()}`;
-}
-function getAdExemptUntil() {
-  let username = null;
-  try { username = localStorage.getItem(AD_EXEMPT_LS_USER_KEY); } catch (_) {}
-  if (!username) return 0;
-  const v = parseInt(localStorage.getItem(adExemptKeyFor(username)) || "0", 10);
-  return Number.isFinite(v) ? v : 0;
-}
-function isAdExempt() { return Date.now() < getAdExemptUntil(); }
-function formatAdCountdown(ms) {
-  const totalSec = Math.max(0, Math.ceil(ms / 1000));
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
-}
-
-const nextAdBadge  = document.getElementById("nextAdBadge");
-const blockAdBadge = document.getElementById("blockAdBadge");
-
-function getAdCount(key) {
-  const v = parseInt(localStorage.getItem(AD_COUNT_KEYS[key]) || "0", 10);
-  return Number.isFinite(v) ? v : 0;
-}
-function setAdCount(key, val) {
-  try { localStorage.setItem(AD_COUNT_KEYS[key], String(val)); } catch {}
-}
-function remainingUntilAd(key) {
-  const c = getAdCount(key) % AD_EVERY_N_CLICKS;
-  return AD_EVERY_N_CLICKS - c;
-}
-function updateAdBadge(key) {
-  const badge = key === "next" ? nextAdBadge : blockAdBadge;
-  if (!badge) return;
-  if (isAdExempt()) {
-    badge.textContent = formatAdCountdown(getAdExemptUntil() - Date.now());
-    badge.title = "რეკლამამდე დარჩენილია";
-  } else {
-    badge.textContent = String(remainingUntilAd(key));
-    badge.title = "";
-  }
-}
-// Keep both badges live while exempt (counts down every second), and
-// snap back to the normal click-counter display the moment it expires.
-setInterval(() => {
-  if (!isAdExempt()) return;
-  updateAdBadge("next");
-  updateAdBadge("block");
-}, 1000);
-
-// Call on click: increments the counter, updates the badge, and opens the
-// ad in a NEW tab once every Nth click — the user's own chat/search flow
-// keeps running normally in the original tab, nothing gets interrupted.
-// Skipped entirely while an ad exemption (from a 20+ Flappy Bird score) is
-// active — no counting, no ad, badge shows the exemption countdown instead.
-// Returns true if the ad just opened (kept for callers that want to know,
-// though nothing needs to abort its own action because of it anymore).
-function tickAdCounter(key) {
-  if (isAdExempt()) { updateAdBadge(key); return false; }
-  const next = getAdCount(key) + 1;
-  setAdCount(key, next);
-  if (next % AD_EVERY_N_CLICKS === 0) {
-    window.open(AD_REDIRECT_URL, "_blank", "noopener,noreferrer");
-  }
-  updateAdBadge(key); // badge naturally shows "10" again once next % 10 === 0
-  return next % AD_EVERY_N_CLICKS === 0;
-}
 // Every actual "block" action — regardless of which button/flow triggered
 // it — should go through this single function instead of calling
-// socket.emit("blockUser", ...) directly, so the every-10th-block counter
-// can never be bypassed by adding a new block entry point later.
+// socket.emit("blockUser", ...) directly.
 function emitBlockUser(targetName) {
-  tickAdCounter("block");
   socket.emit("blockUser", { targetName });
 }
-// Initialize badges to current remaining count on page load.
-updateAdBadge("next");
-updateAdBadge("block");
 
 const bioSaveBtn     = document.getElementById("bioSaveBtn");
 const bioClearBtn    = document.getElementById("bioClearBtn");
@@ -2089,11 +2000,6 @@ socket.on("awayTimeout", () => {});
 nextBtn.addEventListener("click", () => {
   nextBtn.disabled = true;
   setTimeout(() => { nextBtn.disabled = false; }, 1200);
-
-  // Ad-click countdown — every 10th press of ძებნა opens the ad in a new
-  // tab. The search itself always continues normally right below —
-  // nothing here should ever interrupt the user's own flow.
-  tickAdCounter("next");
 
   // Stop any stale state synchronously first
   stopSearchRetry();
