@@ -300,26 +300,6 @@
     #fc-send:active { transform: scale(0.93); }
     #fc-send:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
 
-    /* ── Ad countdown badge — same visual language as .ad-countdown-badge
-       in style.css (random chat page), reused here for private messaging. */
-    #fc-send-ad-badge {
-      position: absolute;
-      top: -6px;
-      right: -6px;
-      min-width: 18px;
-      height: 18px;
-      padding: 0 4px;
-      border-radius: 999px;
-      background: #f23f42;
-      color: #fff;
-      font-size: 0.68em;
-      font-weight: 800;
-      line-height: 18px;
-      text-align: center;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.35);
-      pointer-events: none;
-    }
-
     /* ── EMPTY STATE ── */
     #fc-empty {
       display: none;
@@ -725,7 +705,7 @@
     <button class="fc-extra-btn" id="fc-question-btn" title="შემთხვევითი კითხვა">?</button>
     <textarea id="fc-input" placeholder="შეტყობინება..." rows="1" maxlength="2000"></textarea>
     <span id="fc-char-count" class="fc-char-count"></span>
-    <button id="fc-send" title="გაგზავნა">➤<span id="fc-send-ad-badge">5</span></button>
+    <button id="fc-send" title="გაგზავნა">➤</button>
   </div>
 
   <!-- GIF PICKER -->
@@ -1242,80 +1222,6 @@
     if (row) row.remove();
   }
 
-  /* ── Ad-click countdown (every 5th sent private message) ──────────────
-     Same principle as the AD_EVERY_N_CLICKS counter on the random-chat
-     page (script.js): a persistent localStorage counter, a badge showing
-     how many messages remain, and opening the ad in a new tab on every
-     5th send — the user's own send flow keeps running normally. Uses its
-     own storage key so it never shares/collides with the random-chat
-     "next"/"block" counters. */
-  const FC_AD_REDIRECT_URL   = "https://omg10.com/4/11150018";
-  const FC_AD_EVERY_N_MSGS   = 5;
-  const FC_AD_COUNT_KEY      = "gaicani_ad_count_privmsg";
-  const elSendAdBadge        = $("fc-send-ad-badge");
-
-  // ── Ad exemption — same localStorage key flappy-bird.js and script.js
-  // use. While active (24h after a 20+ Flappy Bird score), ads are skipped
-  // here too and the badge shows a live countdown instead of the msg count.
-  // ── Ad exemption — scoped to THIS registered username only (not IP, not
-  // device-wide). Same key convention as flappy-bird.js/script.js: includes
-  // the lowercased username, so it only ever applies to that one account.
-  const FC_AD_EXEMPT_LS_USER_KEY = "gaicani_auth_user";
-  function fcAdExemptKeyFor(username) {
-    return `gaicani_ad_exempt_until:${String(username || "").toLowerCase().trim()}`;
-  }
-  function fcGetAdExemptUntil() {
-    let username = null;
-    try { username = localStorage.getItem(FC_AD_EXEMPT_LS_USER_KEY); } catch (_) {}
-    if (!username) return 0;
-    const v = parseInt(localStorage.getItem(fcAdExemptKeyFor(username)) || "0", 10);
-    return Number.isFinite(v) ? v : 0;
-  }
-  function fcIsAdExempt() { return Date.now() < fcGetAdExemptUntil(); }
-  function fcFormatAdCountdown(ms) {
-    const totalSec = Math.max(0, Math.ceil(ms / 1000));
-    const h = Math.floor(totalSec / 3600);
-    const m = Math.floor((totalSec % 3600) / 60);
-    const s = totalSec % 60;
-    return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
-  }
-
-  function fcGetAdCount() {
-    const v = parseInt(localStorage.getItem(FC_AD_COUNT_KEY) || "0", 10);
-    return Number.isFinite(v) ? v : 0;
-  }
-  function fcSetAdCount(val) {
-    try { localStorage.setItem(FC_AD_COUNT_KEY, String(val)); } catch (_) {}
-  }
-  function fcRemainingUntilAd() {
-    const c = fcGetAdCount() % FC_AD_EVERY_N_MSGS;
-    return FC_AD_EVERY_N_MSGS - c;
-  }
-  function fcUpdateAdBadge() {
-    if (!elSendAdBadge) return;
-    if (fcIsAdExempt()) {
-      elSendAdBadge.textContent = fcFormatAdCountdown(fcGetAdExemptUntil() - Date.now());
-      elSendAdBadge.title = "რეკლამამდე დარჩენილია";
-    } else {
-      elSendAdBadge.textContent = String(fcRemainingUntilAd());
-      elSendAdBadge.title = "";
-    }
-  }
-  // Keep the badge live while exempt; snaps back to the normal counter
-  // display the moment the 24h exemption expires.
-  setInterval(() => { if (fcIsAdExempt()) fcUpdateAdBadge(); }, 1000);
-
-  function fcTickAdCounter() {
-    if (fcIsAdExempt()) { fcUpdateAdBadge(); return; }
-    const next = fcGetAdCount() + 1;
-    fcSetAdCount(next);
-    if (next % FC_AD_EVERY_N_MSGS === 0) {
-      window.open(FC_AD_REDIRECT_URL, "_blank", "noopener,noreferrer");
-    }
-    fcUpdateAdBadge(); // badge naturally shows "5" again once next % 5 === 0
-  }
-  fcUpdateAdBadge(); // initialize on page load
-
   /* ── Send message ────────────────────────────────────────────── */
   function sendMessage() {
     const text = elInput.value.trim();
@@ -1336,8 +1242,6 @@
 
     /* Optimistic local append */
     appendMessage({ id: msgId, from: myUsername, text, ts: new Date().toISOString(), replyTo: currentReply });
-
-    fcTickAdCounter();
 
     clearFCReplyTo();
     updateFCCharCount();
