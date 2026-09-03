@@ -223,54 +223,6 @@ function addSystemHintMessage(text, extraClass) {
 }
 function addSystemBigMessage(text)         { _appendInfoMessage(text, "system-message-big"); }
 
-// ── Red scrolling banner styles for the ad-free promo line (injected once) ──
-function ensurePromoAdBannerStyles() {
-  if (document.getElementById("promo-ad-banner-style")) return;
-  const style = document.createElement("style");
-  style.id = "promo-ad-banner-style";
-  style.textContent = `
-    .register-promo-rainbow {
-      color: #fff;
-      font-weight: 800;
-      font-size: 1.12em;
-      text-align: center;
-      padding: 13px 10px;
-      margin-top: 10px;
-      border-radius: 10px;
-      background: linear-gradient(90deg, #ff0040, #ff8c00, #ffe600, #2ecc40, #0088ff, #8a2be2, #ff0040);
-      background-size: 400% 400%;
-      animation: promoRainbowMove 6s linear infinite;
-      text-shadow: 0 1px 3px rgba(0,0,0,0.35);
-    }
-    @keyframes promoRainbowMove {
-      0%   { background-position: 0% 50%; }
-      100% { background-position: 100% 50%; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .register-promo-rainbow { animation: none; }
-    }
-  `;
-  document.head.appendChild(style);
-}
-
-// ── Registration promo card (shown once per random-chat session start) ──────
-function addRegisterPromoCard() {
-  ensurePromoAdBannerStyles();
-  const el = document.createElement("div");
-  el.className = "register-promo-card";
-  el.innerHTML = `
-    <div class="register-promo-title">🚀 დარეგისტრირდი ახლავე!</div>
-    <div class="register-promo-rainbow">დარეგისტრირდი ითამაშე ფრინავი ჩიტი ადი 30 ქულაზე და გათიშე რეკლამები</div>
-  `;
-  el.addEventListener("click", () => {
-    const nm = document.getElementById("nameModal");
-    if (nm) nm.style.display = "flex";
-    document.getElementById("auth-tab-signup")?.click();
-  });
-  chat.appendChild(el);
-  scheduleScroll();
-}
-
 // ── System message with an inline image (used for the press-counter hint) ──
 function addSystemImageMessage(imgSrc, altText) {
   const el       = document.createElement("div");
@@ -1605,10 +1557,6 @@ socket.on("nameAccepted", (acceptedName) => {
     clearChat();
     // Do NOT auto-search — user must press the Search button manually
     addSystemMessage("🔎 ძებნის დასაწყებად დააჭირეთ ღილაკს");
-    addSystemImageMessage("/ad-buttons-example.png", "ღილაკების მაგალითი");
-    addSystemHintMessage("ღილაკების მარჯვნივ მოცემული რიცხვები გიჩვენებთ, რამდენი კლიკი დაგრჩათ რეკლამის გამოჩენამდე. ბოდიშს გიხდით დისკომფორტისთვის");
-    addSystemBigMessage("წარმატებები უცნაური მეგობრის პოვნაში 🍀🤪");
-    addRegisterPromoCard();
   } else if (isReconnecting) {
     isReconnecting = false;
     _reconnectNameRetries = 0; // reset retry counter on success
