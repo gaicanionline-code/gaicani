@@ -3447,6 +3447,7 @@ const DEFAULT_AVATAR = AVAILABLE_AVATARS[0];
 
 const USERS_FILE        = path.join(DATA_PATH, "registered_users.json");
 const PRIV_MSGS_FILE    = path.join(DATA_PATH, "private_messages.json");
+const STREAKS_FILE      = path.join(DATA_PATH, "friend_streaks.json");
 const PRIVATE_MSG_TTL   = 3 * 60 * 60 * 1000; // 3 h — auto-delete
 const AUTH_TOKEN_TTL    = 7  * 24 * 60 * 60 * 1000; // 7 days
 
@@ -3455,6 +3456,7 @@ const registeredUsers   = new Map(); // lowerUsername → userObj
 const authTokens        = new Map(); // token → { usernameLower, expiry }
 const privateRooms      = new Map(); // roomId → { messages, createdAt, expiresAt }
 const onlineRegSockets  = new Map(); // lowerUsername → Set<socketId>
+const friendStreaks     = new Map(); // roomId → { count, lastDate, lastFrom: { usernameLower: "YYYY-MM-DD" } }
 
 // ── Flappy Bird ("მფრინავი ჩიტი") state ────────────────────────────────────
 const flappySessions   = new Map(); // sessionId → { usernameLower, socketId, startAt, submitted }
@@ -3546,6 +3548,88 @@ function authVerifyPassword(pwd, stored) {
 function authToken() { return crypto.randomBytes(32).toString("hex"); }
 function privRoomId(a, b) { return [a.toLowerCase(), b.toLowerCase()].sort().join("::"); }
 
+// ── Friend streaks ("keep the flame alive") ──────────────────────────────────
+// A streak is a property of a PAIR of friends, so — like privateRooms — it's
+// keyed by the same roomId rather than duplicated onto each user's own record.
+// Day boundaries are UTC calendar days (simple & deployment-timezone-proof;
+// not a rolling 24h window like TikTok/Snapchat use internally, but the same
+// end result for anyone messaging at normal hours).
+function todayUTC() { return new Date().toISOString().slice(0, 10); } // "YYYY-MM-DD"
+function addDaysUTC(dateStr, delta) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+// Read-only-ish view of a pair's streak (only mutates to correct staleness —
+// safe, since Node's single-threaded event loop means this can't race).
+// Returns { count, atRisk } — atRisk means "alive from yesterday, but nobody
+// has messaged yet today, message now or lose it".
+function getStreakView(aLc, bLc) {
+  const s = friendStreaks.get(privRoomId(aLc, bLc));
+  if (!s || !s.count) return { count: 0, atRisk: false };
+
+  const today     = todayUTC();
+  const yesterday = addDaysUTC(today, -1);
+
+  if (s.lastDate && s.lastDate !== today && s.lastDate < yesterday) {
+    // A full day passed with no mutual message — the streak is broken.
+    s.count    = 0;
+    s.lastDate = null;
+    streaksDirty = true;
+    scheduleSave();
+    return { count: 0, atRisk: false };
+  }
+
+  return { count: s.count, atRisk: s.lastDate === yesterday };
+}
+
+// Call whenever fromLc sends toLc a message/photo/gif/question. Updates the
+// pair's streak and returns the fresh { count, atRisk } for both sides.
+function recordFriendMessage(fromLc, toLc) {
+  const roomId    = privRoomId(fromLc, toLc);
+  const today     = todayUTC();
+  const yesterday = addDaysUTC(today, -1);
+
+  let s = friendStreaks.get(roomId);
+  if (!s) {
+    s = { count: 0, lastDate: null, lastFrom: {} };
+    friendStreaks.set(roomId, s);
+  }
+
+  // Lazy-expire a stale streak before recording today's activity. Clearing
+  // lastDate (not just count) prevents this branch from re-firing later
+  // today and wiping out a lastFrom entry the other side just set.
+  if (s.lastDate && s.lastDate !== today && s.lastDate < yesterday) {
+    s.count    = 0;
+    s.lastDate = null;
+    s.lastFrom = {};
+  }
+
+  s.lastFrom[fromLc] = today;
+
+  if (s.lastFrom[toLc] === today && s.lastDate !== today) {
+    s.count += 1;
+    s.lastDate = today;
+  }
+
+  streaksDirty = true;
+  scheduleSave();
+
+  return { count: s.count, atRisk: s.lastDate === yesterday };
+}
+
+// Builds the { friendLower: {count, atRisk} } map sent on login — zero
+// streaks are omitted so the payload (and the client's badge logic) stay small.
+function getStreaksForFriends(usernameLc, friendsLc) {
+  const out = {};
+  for (const fLc of friendsLc || []) {
+    const v = getStreakView(usernameLc, fLc);
+    if (v.count > 0) out[fLc] = v;
+  }
+  return out;
+}
+
 // ── Persist helpers ───────────────────────────────────────────────────────────
 
 // ── Debounced file I/O (PATCH: huge performance boost) ──────────────────────────
@@ -3553,6 +3637,7 @@ function privRoomId(a, b) { return [a.toLowerCase(), b.toLowerCase()].sort().joi
 const SAVE_DEBOUNCE_MS = 5000;
 let authUsersDirty = false;
 let privMsgsDirty = false;
+let streaksDirty = false;
 let saveTimer = null;
 
 function scheduleSave() {
@@ -3560,6 +3645,7 @@ function scheduleSave() {
   saveTimer = setTimeout(() => {
     if (authUsersDirty) _saveAuthUsersToDisk();
     if (privMsgsDirty) _savePrivateMsgsToDisk();
+    if (streaksDirty) _saveStreaksToDisk();
     saveTimer = null;
   }, SAVE_DEBOUNCE_MS);
 }
@@ -3598,6 +3684,18 @@ function _savePrivateMsgsToDisk() {
   }
 }
 
+function _saveStreaksToDisk() {
+  const obj = {};
+  for (const [id, s] of friendStreaks) obj[id] = s;
+  try {
+    fs.writeFileSync(STREAKS_FILE, JSON.stringify(obj, null, 2), "utf8");
+    streaksDirty = false;
+  } catch (e) {
+    console.error("[STREAKS] save failed:", e.message);
+    streaksDirty = true;
+  }
+}
+
 
 function loadAuthUsers() {
   try {
@@ -3628,9 +3726,21 @@ function savePrivateMsgs() {
   privMsgsDirty = true;
   scheduleSave();
 }
+function loadStreaks() {
+  try {
+    const obj = JSON.parse(fs.readFileSync(STREAKS_FILE, "utf8"));
+    for (const [id, s] of Object.entries(obj)) friendStreaks.set(id, s);
+    console.log(`[STREAKS] Loaded ${friendStreaks.size} friend streak(s)`);
+  } catch { /* first run */ }
+}
+function saveStreaks() {
+  streaksDirty = true;
+  scheduleSave();
+}
 
 loadAuthUsers();
 loadPrivateMsgs();
+loadStreaks();
 loadStats();
 
 // ── Scheduled cleanup ─────────────────────────────────────────────────────────
@@ -3639,6 +3749,22 @@ setInterval(() => {
   let n = 0;
   for (const [id, r] of privateRooms) if (now >= r.expiresAt) { privateRooms.delete(id); n++; }
   if (n) { savePrivateMsgs(); console.log(`[PRIV] Cleaned ${n} expired room(s)`); }
+}, 60 * 60 * 1000);
+
+// Drop streak records that are already broken (count 0) and have seen no
+// activity from either side in 14+ days — keeps the pair's entry alive for
+// active friends indefinitely, but stops long-dormant/unfriended pairs from
+// sitting in memory (and in friend_streaks.json) forever.
+setInterval(() => {
+  const cutoff = addDaysUTC(todayUTC(), -14);
+  let n = 0;
+  for (const [id, s] of friendStreaks) {
+    if (s.count > 0) continue;
+    const dates = Object.values(s.lastFrom || {});
+    const mostRecent = dates.length ? dates.sort().pop() : null;
+    if (!mostRecent || mostRecent < cutoff) { friendStreaks.delete(id); n++; }
+  }
+  if (n) { saveStreaks(); console.log(`[STREAKS] Cleaned ${n} dormant streak record(s)`); }
 }, 60 * 60 * 1000);
 
 setInterval(() => {
@@ -4094,7 +4220,7 @@ io.on("connection", (socket) => {
     onlineRegSockets.get(entry.usernameLower).add(socket.id);
 
     socket.join(`user:${entry.usernameLower}`);
-    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "" });
+    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []) });
     console.log(`[AUTH] ${user.username} logged in`);
     io.emit("users:onlineChanged"); // let dashboards know the online list may have changed
   });
@@ -4122,7 +4248,7 @@ io.on("connection", (socket) => {
     if (!onlineRegSockets.has(entry.usernameLower)) onlineRegSockets.set(entry.usernameLower, new Set());
     onlineRegSockets.get(entry.usernameLower).add(socket.id);
     socket.join(`user:${entry.usernameLower}`);
-    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "" });
+    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []) });
     console.log(`[AUTH] ${user.username} logged in via auth:token`);
     io.emit("users:onlineChanged"); // let dashboards know the online list may have changed
   });
@@ -4303,6 +4429,7 @@ io.on("connection", (socket) => {
     }
 
     saveAuthUsers();
+    if (friendStreaks.delete(privRoomId(myLc, targetLc))) saveStreaks();
     socket.emit("friend:removed", { friends: myUser.friends });
 
     if (targetUser) {
@@ -4385,6 +4512,12 @@ io.on("connection", (socket) => {
     });
 
     socket.emit("privateMsg:sent", { success: true, messageId: msg.id });
+
+    // ── Streak: this counts as today's message for both sides ─────────────
+    const streak = recordFriendMessage(socket._regUser.usernameLower, toLc);
+    const toUser = registeredUsers.get(toLc);
+    io.to(`user:${toLc}`).emit("streak:update", { friendUsername: socket._regUser.username, count: streak.count, atRisk: streak.atRisk });
+    socket.emit("streak:update", { friendUsername: toUser?.username || toUsername, count: streak.count, atRisk: streak.atRisk });
   });
 
   // ── friendChat:join — subscribe socket to its friend-chat pair room ───────
@@ -4399,6 +4532,12 @@ io.on("connection", (socket) => {
     const roomId = privRoomId(socket._regUser.usernameLower, friendLc);
     socket.join(`friendchat:${roomId}`);
     socket._friendChatRoom = roomId;
+
+    // Tell the joining client the pair's current streak (covers page load —
+    // new messages push their own streak:update separately).
+    const streak = getStreakView(socket._regUser.usernameLower, friendLc);
+    const friendUser = registeredUsers.get(friendLc);
+    socket.emit("streak:update", { friendUsername: friendUser?.username || friendUsername, count: streak.count, atRisk: streak.atRisk });
   });
 
   // ── friendChat:typing — relay typing indicator to the friend ─────────────
@@ -4426,6 +4565,11 @@ io.on("connection", (socket) => {
       dataUrl:      dataUrl,
       timestamp:    new Date().toISOString()
     });
+
+    const streak = recordFriendMessage(socket._regUser.usernameLower, toLc);
+    const toUser = registeredUsers.get(toLc);
+    io.to(`user:${toLc}`).emit("streak:update", { friendUsername: socket._regUser.username, count: streak.count, atRisk: streak.atRisk });
+    socket.emit("streak:update", { friendUsername: toUser?.username || toUsername, count: streak.count, atRisk: streak.atRisk });
   });
 
   // ── friendChat:gif — relay GIF URL to friend ─────────────────────────────
@@ -4440,6 +4584,11 @@ io.on("connection", (socket) => {
       url:          url,
       timestamp:    new Date().toISOString()
     });
+
+    const streak = recordFriendMessage(socket._regUser.usernameLower, toLc);
+    const toUser = registeredUsers.get(toLc);
+    io.to(`user:${toLc}`).emit("streak:update", { friendUsername: socket._regUser.username, count: streak.count, atRisk: streak.atRisk });
+    socket.emit("streak:update", { friendUsername: toUser?.username || toUsername, count: streak.count, atRisk: streak.atRisk });
   });
 
   // ── friendChat:react — react to a friend-chat message (mirrors "react") ──
@@ -4497,6 +4646,11 @@ io.on("connection", (socket) => {
       fromUsername: socket._regUser.username,
       text: safeText
     });
+
+    const streak = recordFriendMessage(socket._regUser.usernameLower, toLc);
+    const toUser = registeredUsers.get(toLc);
+    io.to(`user:${toLc}`).emit("streak:update", { friendUsername: socket._regUser.username, count: streak.count, atRisk: streak.atRisk });
+    socket.emit("streak:update", { friendUsername: toUser?.username || toUsername, count: streak.count, atRisk: streak.atRisk });
   });
 
   // ── Message handling ─────────────────────────────────────────────────────

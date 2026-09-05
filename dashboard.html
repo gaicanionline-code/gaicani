@@ -159,6 +159,14 @@
       font-weight: 500; overflow: hidden;
       text-overflow: ellipsis; white-space: nowrap; min-width: 0;
     }
+    .friend-streak {
+      display: flex; align-items: center; gap: 2px;
+      font-size: 0.82em; font-weight: 700;
+      color: #faa61a;
+      flex-shrink: 0;
+      padding: 0 2px;
+    }
+    .friend-streak.at-risk { color: #f23f42; }
     .friend-actions { display: flex; gap: 5px; flex-shrink: 0; }
     .act-btn {
       background: rgba(255,255,255,0.07);
@@ -654,6 +662,7 @@
     let socket = null;
     let unreadFromFriends = new Set(); // lowercase usernames with unread messages
     let lastOnlineUsers = []; // cached [{username, avatar}] from the server
+    let friendStreaks = {}; // lowercase username -> { count, atRisk }
     let sentRequestsTo = new Set(); // lowercase usernames we've sent a request to this session
 
     /* ── Socket setup ────────────────────────────────────────────── */
@@ -663,13 +672,14 @@
         socket.emit("auth:token", token);
       });
 
-      socket.on("auth:authenticated", ({ username, friends, pendingRequests, avatar, bio }) => {
+      socket.on("auth:authenticated", ({ username, friends, pendingRequests, avatar, bio, streaks }) => {
         if (authUser) {
           authUser.friends = friends || [];
           authUser.pendingRequests = pendingRequests || [];
           if (avatar) authUser.avatar = avatar;
           authUser.bio = bio || "";
         }
+        friendStreaks = streaks || {};
         renderFriends(friends || []);
         renderPendingRequests(pendingRequests || []);
         paintUserBio();
@@ -750,6 +760,15 @@
         unreadFromFriends.add(lc);
         markUnreadDot(lc);
       });
+
+      // ── Streak flame updated (message sent/received with a friend) ────────
+      socket.on("streak:update", ({ friendUsername, count, atRisk }) => {
+        if (!friendUsername) return;
+        const lc = friendUsername.toLowerCase();
+        if (count > 0) friendStreaks[lc] = { count, atRisk };
+        else delete friendStreaks[lc];
+        renderFriends(authUser?.friends || []);
+      });
     }
 
     /* ── Unread dot helpers ──────────────────────────────────────── */
@@ -800,16 +819,23 @@
         return;
       }
 
-      list.innerHTML = friends.map(f => `
+      list.innerHTML = friends.map(f => {
+        const streak = friendStreaks[f.toLowerCase()];
+        const streakHtml = streak
+          ? `<span class="friend-streak${streak.atRisk ? " at-risk" : ""}" title="${streak.atRisk ? "დღეს მოწერე, თორემ სერია ჩაქრება!" : "სერიის დღეები"}">🔥${streak.count}</span>`
+          : "";
+        return `
         <div class="friend-item" data-friend="${esc(f)}">
           <div class="friend-avatar">${esc(f).charAt(0).toUpperCase()}</div>
           <span class="friend-name">${esc(f)}</span>
+          ${streakHtml}
           <div class="friend-actions">
             <button class="act-btn act-chat" data-f="${esc(f)}" title="Private Chat">💬</button>
             <button class="act-btn act-remove" data-f="${esc(f)}" title="მეგობრობის გაუქმება">✕</button>
             <button class="act-btn act-block" data-f="${esc(f)}" title="სესიის ბლოკი">🚫</button>
           </div>
-        </div>`).join("");
+        </div>`;
+      }).join("");
 
       list.querySelectorAll(".act-chat").forEach(btn => {
         btn.addEventListener("click", () => {

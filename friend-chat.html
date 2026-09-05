@@ -93,6 +93,11 @@
       flex: 1;
       min-width: 0;
     }
+    .fc-name-row {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+    }
     .fc-name {
       font-size: 0.97em;
       font-weight: 700;
@@ -100,12 +105,28 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      min-width: 0;
+      flex-shrink: 1;
     }
     .fc-sub {
       font-size: 0.72em;
       color: var(--muted);
       margin-top: 1px;
     }
+
+    .fc-streak {
+      display: none;
+      align-items: center;
+      gap: 3px;
+      margin-left: 6px;
+      font-size: 0.85em;
+      font-weight: 700;
+      color: #ffb347;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+    .fc-streak.show { display: inline-flex; }
+    .fc-streak.at-risk { color: #f23f42; }
 
     .fc-expiry-badge {
       font-size: 0.68em;
@@ -656,7 +677,10 @@
     <a href="/dashboard.html" class="fc-back" id="fcBack" title="დაბრუნება">←</a>
     <div class="fc-avatar" id="fcAvatar">?</div>
     <div class="fc-info">
-      <div class="fc-name" id="fcName">...</div>
+      <div class="fc-name-row">
+        <div class="fc-name" id="fcName">...</div>
+        <span class="fc-streak" id="fcStreak"></span>
+      </div>
       <div class="fc-sub" id="fcSub">პირადი ჩატი</div>
     </div>
     <div class="fc-expiry-badge">🕐 3 სთ ჩაშლა</div>
@@ -786,6 +810,17 @@
   function fmtDate(ts) {
     const d = new Date(ts);
     return d.toLocaleDateString("ka-GE", { month: "long", day: "numeric" });
+  }
+
+  /* ── Streak badge ─────────────────────────────────────────────── */
+  function updateStreakBadge({ count, atRisk }) {
+    const el = $("fcStreak");
+    if (!el) return;
+    if (!count) { el.classList.remove("show", "at-risk"); el.textContent = ""; return; }
+    el.textContent = `🔥${count}`;
+    el.classList.add("show");
+    el.classList.toggle("at-risk", !!atRisk);
+    el.title = atRisk ? "დღეს მოწერე, თორემ სერია ჩაქრება!" : "სერიის დღეები";
   }
 
   /* ── Expiry hint ─────────────────────────────────────────────── */
@@ -1383,6 +1418,12 @@
       showTyping();
       clearTimeout(typingTimer);
       typingTimer = setTimeout(hideTyping, 3000);
+    });
+
+    /* Streak flame — pushed on join (initial value) and after every send/receive */
+    socket.on("streak:update", ({ friendUsername, count, atRisk }) => {
+      if (!friendUsername || friendUsername.toLowerCase() !== friendName.toLowerCase()) return;
+      updateStreakBadge({ count, atRisk });
     });
 
     socket.on("auth:error", () => {
