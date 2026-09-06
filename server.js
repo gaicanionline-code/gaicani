@@ -4287,6 +4287,29 @@ function drawRoomScores(room) {
   return room.players.map(p => ({ username: p.username, score: p.score }));
 }
 
+// Public, low-detail view of every joinable room — shown to everyone in the
+// "active games" browser under the invite button, not just invitees.
+function getPublicDrawRooms() {
+  const rows = [];
+  for (const room of drawRooms.values()) {
+    if (room.status === "ended") continue;
+    if (room.players.length >= DRAW_MAX_PLAYERS) continue; // full — nothing to join
+    rows.push({
+      roomId: room.id,
+      hostUsername: room.players.find(p => p.lc === room.hostLc)?.username || "",
+      status: room.status,
+      playerCount: room.players.filter(p => p.connected).length,
+      maxPlayers: DRAW_MAX_PLAYERS,
+      roundNumber: room.roundNumber,
+    });
+  }
+  return rows;
+}
+
+function broadcastPublicDrawRooms() {
+  io.emit("drawGuess:publicRooms", getPublicDrawRooms());
+}
+
 function startNextDrawRound(room) {
   const nextDrawer = room.players.find(p => p.connected && !p.hasDrawn);
   if (!nextDrawer) { endDrawGame(room); return; }
@@ -4389,6 +4412,7 @@ function endDrawGame(room) {
   broadcastDrawRoom(room, "drawGuess:gameEnd", {
     scores: drawRoomScores(room).sort((a, b) => b.score - a.score),
   });
+  broadcastPublicDrawRooms(); // ended room drops off the "active games" browser
   setTimeout(() => cleanupDrawRoom(room.id), DRAW_ROOM_TTL_MS);
 }
 
@@ -4418,11 +4442,13 @@ function cleanupDrawGuessForSocket(socketId) {
     if (room.players.length === 0) { cleanupDrawRoom(room.id); return; }
     if (player.lc === room.hostLc) room.hostLc = room.players[0].lc; // hand off host
     broadcastDrawRoom(room, "drawGuess:room", drawRoomPublicState(room));
+    broadcastPublicDrawRooms();
     return;
   }
 
   player.connected = false;
   broadcastDrawRoom(room, "drawGuess:room", drawRoomPublicState(room));
+  broadcastPublicDrawRooms();
 
   const connectedCount = room.players.filter(p => p.connected).length;
   if (connectedCount < DRAW_MIN_PLAYERS) { endDrawGame(room); return; }
@@ -5135,9 +5161,22 @@ io.on("connection", (socket) => {
     socket.join(`drawroom:${room.id}`);
     socket.emit("drawGuess:room", drawRoomPublicState(room));
     socket.emit("drawGuess:inviteSent", { invited });
+    broadcastPublicDrawRooms();
   });
 
-  // Accept an invite (or reconnect to a room you were already in).
+  // List every joinable room (lobby OR already playing) so the client can
+  // show an "active games" browser under the invite button — anyone can
+  // join one of these, not just people who were personally invited.
+  socket.on("drawGuess:listPublicRooms", () => {
+    socket.emit("drawGuess:publicRooms", getPublicDrawRooms());
+  });
+
+  // Accept an invite, reconnect to a room you were already in, OR — new —
+  // drop into a room someone is already playing, picked from the public
+  // "active games" list. Joining mid-game slots you in as a real player:
+  // since totalRounds is just room.players.length and startNextDrawRound
+  // always looks for players with hasDrawn === false, adding you here
+  // naturally queues up one extra round (yours) once the current one ends.
   socket.on("drawGuess:join", ({ roomId }) => {
     if (!socket._regUser) return;
     const lc = socket._regUser.usernameLower;
@@ -5147,6 +5186,7 @@ io.on("connection", (socket) => {
 
     const room = drawRooms.get(roomId);
     if (!room) { socket.emit("drawGuess:error", { message: "ოთახი ვეღარ მოიძებნა — შეიძლება უკვე დასრულდა." }); return; }
+    if (room.status === "ended") { socket.emit("drawGuess:error", { message: "ეს თამაში უკვე დასრულდა." }); return; }
 
     const already = room.players.find(p => p.lc === lc);
     if (already) {
@@ -5160,10 +5200,10 @@ io.on("connection", (socket) => {
         socket.emit("drawGuess:roundSync", drawRoundSyncPayload(room, lc));
       }
       broadcastDrawRoom(room, "drawGuess:room", drawRoomPublicState(room));
+      broadcastPublicDrawRooms();
       return;
     }
 
-    if (room.status !== "lobby") { socket.emit("drawGuess:error", { message: "თამაში უკვე დაწყებულია." }); return; }
     if (room.players.length >= DRAW_MAX_PLAYERS) { socket.emit("drawGuess:error", { message: "ოთახი სავსეა." }); return; }
 
     const invite = room.pendingInvites.get(lc);
@@ -5174,7 +5214,19 @@ io.on("connection", (socket) => {
     drawRoomBySocket.set(socket.id, room.id);
     socket.join(`drawroom:${room.id}`);
 
+    socket.emit("drawGuess:room", drawRoomPublicState(room));
+
+    if (room.status === "playing") {
+      // Joined a game already in progress — catch this socket up on the
+      // live round (canvas so far, current word length, timer) exactly
+      // like a reconnect would, and let the rest of the room know a new
+      // player joined in and will get their own drawing turn later.
+      if (room.round) socket.emit("drawGuess:roundSync", drawRoundSyncPayload(room, lc));
+      broadcastDrawRoom(room, "drawGuess:playerJoined", { username: socket._regUser.username });
+    }
+
     broadcastDrawRoom(room, "drawGuess:room", drawRoomPublicState(room));
+    broadcastPublicDrawRooms();
   });
 
   // Host starts the game once enough friends have joined the lobby.
@@ -5193,6 +5245,7 @@ io.on("connection", (socket) => {
     room.pendingInvites.clear();
 
     startNextDrawRound(room);
+    broadcastPublicDrawRooms(); // now shows as "playing" (still joinable) instead of "lobby"
   });
 
   // Drawer picks one of the 3 offered words.
