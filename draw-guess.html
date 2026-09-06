@@ -270,7 +270,7 @@
       <div class="dg-title">🎨 დახატე და გამოიცანი</div>
     </header>
     <div class="dg-setup-body">
-      <p class="dg-setup-hint">აირჩიე ონლაინ მეგობრები — ერთი ხატავს, დანარჩენები იცნობენ სიტყვას.</p>
+      <p class="dg-setup-hint">აირჩიე ონლაინ მოთამაშეები — ერთი ხატავს, დანარჩენები იცნობენ სიტყვას.</p>
       <div id="onlineFriendsList" class="dg-friend-pick-list"></div>
       <button id="createRoomBtn" class="dg-btn-primary" disabled>მოწვევის გაგზავნა</button>
     </div>
@@ -509,7 +509,7 @@
   function renderOnlineFriends() {
     const list = $("onlineFriendsList");
     if (!onlineFriends.length) {
-      list.innerHTML = `<div class="dg-empty-state">ახლა არცერთი მეგობარი არ არის ონლაინ.<br><small>დაელოდე რომელიმეს შემოსვლას.</small></div>`;
+      list.innerHTML = `<div class="dg-empty-state">ახლა არავინ არის ონლაინ.<br><small>დაელოდე ვინმეს შემოსვლას.</small></div>`;
       $("createRoomBtn").disabled = true;
       return;
     }
@@ -517,6 +517,7 @@
       <div class="dg-friend-pick-row${selectedFriends.has(f.username.toLowerCase()) ? " selected" : ""}" data-u="${esc(f.username)}">
         <div class="dg-pick-avatar">${esc(f.username).charAt(0).toUpperCase()}</div>
         <div class="dg-pick-name">${esc(f.username)}</div>
+        ${myFriendsLc.has(f.username.toLowerCase()) ? '<span class="dg-lobby-tag">მეგობარი</span>' : ""}
         <div class="dg-pick-check">✓</div>
       </div>`).join("");
     list.querySelectorAll(".dg-friend-pick-row").forEach(row => {
@@ -703,9 +704,7 @@
     socket.on("auth:invalid", () => { window.location.href = "/"; });
 
     socket.on("users:onlineList", ({ users }) => {
-      onlineFriends = (users || []).filter(u =>
-        u.username.toLowerCase() !== myUsernameLower && myFriendsLc.has(u.username.toLowerCase())
-      );
+      onlineFriends = (users || []).filter(u => u.username.toLowerCase() !== myUsernameLower);
       renderOnlineFriends();
     });
     socket.on("users:onlineChanged", () => socket.emit("users:listOnline"));
@@ -732,6 +731,10 @@
       } else if (state.status === "playing") {
         showScreen("play");
         renderScoreboard(state.players);
+        if (!state.wordLength) {
+          // Between rounds (word not yet picked) — make sure no stale overlay lingers.
+          $("roundEndOverlay").style.display = "none";
+        }
       }
     });
 
@@ -746,6 +749,7 @@
 
     socket.on("drawGuess:chooseWord", ({ choices }) => {
       showScreen("play");
+      $("roundEndOverlay").style.display = "none";
       $("wordChoiceOverlay").style.display = "flex";
       $("wordChoiceButtons").innerHTML = choices.map(w => `<button class="dg-word-choice-btn" data-w="${esc(w)}">${esc(w)}</button>`).join("");
       $("wordChoiceButtons").querySelectorAll(".dg-word-choice-btn").forEach(btn => {

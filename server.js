@@ -5112,17 +5112,15 @@ io.on("connection", (socket) => {
     }
 
     const hostUser = registeredUsers.get(hostLc);
-    const friendsLc = new Set(hostUser?.friends || []);
     const list = Array.isArray(toUsernames) ? toUsernames.filter(u => typeof u === "string").slice(0, DRAW_MAX_PLAYERS) : [];
 
     const invited = [];
     for (const uname of list) {
       const lc = uname.toLowerCase();
       if (lc === hostLc) continue;
-      if (!friendsLc.has(lc)) continue; // only invite actual friends
       if (room.players.some(p => p.lc === lc)) continue;
       if (room.pendingInvites.has(lc)) continue;
-      if (!onlineRegSockets.get(lc)?.size) continue; // must be online to invite
+      if (!onlineRegSockets.get(lc)?.size) continue; // must be a currently-online registered user
 
       const targetUser = registeredUsers.get(lc);
       if (!targetUser) continue;
@@ -5167,12 +5165,6 @@ io.on("connection", (socket) => {
 
     if (room.status !== "lobby") { socket.emit("drawGuess:error", { message: "თამაში უკვე დაწყებულია." }); return; }
     if (room.players.length >= DRAW_MAX_PLAYERS) { socket.emit("drawGuess:error", { message: "ოთახი სავსეა." }); return; }
-
-    const hostUser = registeredUsers.get(room.hostLc);
-    if (!hostUser || !(hostUser.friends || []).includes(lc)) {
-      socket.emit("drawGuess:error", { message: "მხოლოდ მასპინძლის მეგობრებს შეუძლიათ შემოერთება." });
-      return;
-    }
 
     const invite = room.pendingInvites.get(lc);
     if (invite) clearTimeout(invite.timeoutHandle);
