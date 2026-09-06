@@ -1268,10 +1268,6 @@ socket.on("photo", (data) => {
   if (data?.dataUrl) addPhotoMessage(data.dataUrl, false);
 });
 
-socket.on("photo:rejected", (data) => {
-  showToast(data?.message || "ფოტო არ აკმაყოფილებს დადგენილ მოთხოვნებს და მისი გაგზავნა დაუშვებელია.");
-});
-
 // ── Question button ───────────────────────────────────────────────────────────
 let questionBtnCooldown = false;
 

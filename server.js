@@ -24,7 +24,6 @@ console.log(`[DATA] Persistent files will be stored in: ${DATA_PATH}`);
 const crypto     = require("crypto");
 const compression   = require("compression");
 const rateLimit     = require("express-rate-limit");
-const { checkImageNSFW } = require("./server-nsfw-check");
 
 const app    = express();
 app.set("trust proxy", 1); // behind Render's proxy — needed for express-rate-limit / IP detection
@@ -2543,7 +2542,7 @@ io.on("connection", (socket) => {
   });
 
   // ── PHOTO ─────────────────────────────────────────────────────────────────
-  socket.on("photo", async (data) => {
+  socket.on("photo", (data) => {
     if (!socket.partner || typeof data?.dataUrl !== "string") return;
     if (socket.partner._isGhost) return;
     // Validate it's a real image data URL and not too large (~3MB base64 ≈ 4MB string)
@@ -2552,19 +2551,6 @@ io.on("connection", (socket) => {
     // Max 5 photos per 15s per socket — photos are the heaviest payload here,
     // so this gets the tightest limit of any media type.
     if (mediaRateLimited(socket, "photo", 5, 15_000)) return;
-
-    // ── NSFW check — runs before relaying. Only the sender is told; the
-    // partner never sees the photo and the chat stays open either way.
-    const partnerAtCheckTime = socket.partner;
-    const { blocked } = await checkImageNSFW(data.dataUrl);
-    if (blocked) {
-      socket.emit("photo:rejected", {
-        message: "ფოტო არ აკმაყოფილებს დადგენილ მოთხოვნებს და მისი გაგზავნა დაუშვებელია."
-      });
-      return;
-    }
-    // Guard against the partner having disconnected/changed while we awaited the check.
-    if (!partnerAtCheckTime || partnerAtCheckTime !== socket.partner || partnerAtCheckTime._isGhost) return;
     socket.partner.emit("photo", { dataUrl: data.dataUrl });
   });
 
@@ -4854,7 +4840,7 @@ io.on("connection", (socket) => {
   });
 
   // ── friendChat:photo — relay photo (base64) to friend ────────────────────
-  socket.on("friendChat:photo", async ({ toUsername, dataUrl }) => {
+  socket.on("friendChat:photo", ({ toUsername, dataUrl }) => {
     if (!socket._regUser || !toUsername || typeof dataUrl !== "string") return;
     if (!dataUrl.startsWith("data:image/")) return;
     if (dataUrl.length > 4 * 1024 * 1024) return; // same 4MB cap as random-chat photo
@@ -4862,17 +4848,6 @@ io.on("connection", (socket) => {
     const toLc   = String(toUsername).toLowerCase().trim();
     const myUser = registeredUsers.get(socket._regUser.usernameLower);
     if (!myUser || !(myUser.friends || []).includes(toLc)) return;
-
-    // ── NSFW check — runs before relaying. Only the sender is told; the
-    // friend never sees the photo and the chat stays open either way.
-    const { blocked } = await checkImageNSFW(dataUrl);
-    if (blocked) {
-      socket.emit("friendChat:photoRejected", {
-        message: "ფოტო არ აკმაყოფილებს დადგენილ მოთხოვნებს და მისი გაგზავნა დაუშვებელია."
-      });
-      return;
-    }
-
     io.to(`user:${toLc}`).emit("friendChat:photo", {
       fromUsername: socket._regUser.username,
       dataUrl:      dataUrl,

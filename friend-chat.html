@@ -1376,10 +1376,6 @@
       incUnread();
     });
 
-    socket.on("friendChat:photoRejected", (data) => {
-      showToast(data?.message || "ფოტო არ აკმაყოფილებს დადგენილ მოთხოვნებს და მისი გაგზავნა დაუშვებელია.");
-    });
-
     socket.on("connect", () => {
       socket.emit("auth:login", { token });
     });
