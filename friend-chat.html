@@ -399,6 +399,18 @@
     }
     #fc-toast.show { opacity: 1; }
 
+    .dg-invite-bar {
+      position: fixed; left: 12px; right: 12px; bottom: calc(12px + var(--safe-bottom)); z-index: 998;
+      background: var(--surface); border: 1px solid var(--accent); border-radius: 12px;
+      padding: 12px 14px; display: none; align-items: center; gap: 10px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.45);
+    }
+    .dg-invite-bar.show { display: flex; }
+    .dg-invite-bar span { flex: 1; font-size: 0.86em; }
+    .dg-invite-bar button { border: none; border-radius: 8px; padding: 7px 12px; font-weight: 700; font-size: 0.85em; cursor: pointer; }
+    .dg-invite-accept { background: var(--good, #3ba55d); color: #fff; }
+    .dg-invite-decline { background: var(--surface-2, #2f3037); color: var(--text); }
+
     /* ── Scrollbar ── */
     #fc-messages::-webkit-scrollbar { width: 4px; }
     #fc-messages::-webkit-scrollbar-track { background: transparent; }
@@ -742,6 +754,7 @@
 
 <!-- TOAST -->
 <div id="fc-toast"></div>
+<div id="dgInviteBar" class="dg-invite-bar"></div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
@@ -1424,6 +1437,23 @@
     socket.on("streak:update", ({ friendUsername, count, atRisk }) => {
       if (!friendUsername || friendUsername.toLowerCase() !== friendName.toLowerCase()) return;
       updateStreakBadge({ count, atRisk });
+    });
+
+    /* Invited to a Draw & Guess room while chatting */
+    socket.on("drawGuess:invited", ({ roomId, fromUsername }) => {
+      const bar = $("dgInviteBar");
+      bar.innerHTML = `
+        <span>🎨 <strong>${esc(fromUsername)}</strong>-მა მოგიწვია თამაშში</span>
+        <button class="dg-invite-accept">✅</button>
+        <button class="dg-invite-decline">❌</button>`;
+      bar.classList.add("show");
+      bar.querySelector(".dg-invite-accept").onclick = () => {
+        window.location.href = "/draw-guess.html?room=" + encodeURIComponent(roomId);
+      };
+      bar.querySelector(".dg-invite-decline").onclick = () => {
+        bar.classList.remove("show");
+        socket.emit("drawGuess:declineInvite", { roomId });
+      };
     });
 
     socket.on("auth:error", () => {

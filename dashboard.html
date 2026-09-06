@@ -259,6 +259,20 @@
       to   { opacity: 1; transform: translateY(0); }
     }
 
+    .dg-invite-bar {
+      position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 80;
+      background: #2b2d31; border: 1px solid #5865f2; border-radius: 12px;
+      padding: 12px 14px; display: none; align-items: center; gap: 10px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.45);
+    }
+    .dg-invite-bar.show { display: flex; }
+    .dg-invite-bar span { flex: 1; font-size: 0.88em; color: #dcddde; }
+    .dg-invite-bar button {
+      border: none; border-radius: 8px; padding: 7px 12px; font-weight: 700; font-size: 0.85em; cursor: pointer;
+    }
+    .dg-invite-accept { background: #3ba55d; color: #fff; }
+    .dg-invite-decline { background: #40444b; color: #dcddde; }
+
     /* ── Loading state ── */
     #loading-screen {
       display: flex; align-items: center; justify-content: center;
@@ -443,6 +457,10 @@
     <a href="/flappy-bird.html" class="btn-start-chat" style="background:linear-gradient(135deg,#f2c94c,#e0ad2c);color:#1e1f22;">🐦 მფრინავი ჩიტი</a>
     <div style="text-align:center;font-size:0.78em;color:#72767d;margin:-6px 0 14px;">30 ქულაზე ითიშება რეკლამები ❤️</div>
 
+    <!-- Draw & Guess -->
+    <a href="/draw-guess.html" class="btn-start-chat" style="background:linear-gradient(135deg,#eb459e,#a855f7);">🎨 დახატე და გამოიცანი</a>
+    <div style="text-align:center;font-size:0.78em;color:#72767d;margin:-6px 0 14px;">ითამაშე მეგობრებთან ერთად</div>
+
     <!-- Incoming friend requests — hidden until there are entries -->
     <div class="section" id="pendingSection" style="display:none">
       <div class="section-label">
@@ -487,6 +505,7 @@
   </div>
 
   <div id="toast-container"></div>
+  <div id="dgInviteBar" class="dg-invite-bar"></div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
@@ -768,6 +787,23 @@
         if (count > 0) friendStreaks[lc] = { count, atRisk };
         else delete friendStreaks[lc];
         renderFriends(authUser?.friends || []);
+      });
+
+      // ── Invited to a Draw & Guess room by a friend ─────────────────────────
+      socket.on("drawGuess:invited", ({ roomId, fromUsername }) => {
+        const bar = document.getElementById("dgInviteBar");
+        bar.innerHTML = `
+          <span>🎨 <strong>${esc(fromUsername)}</strong>-მა მოგიწვია დახატე-და-გამოიცანიში</span>
+          <button class="dg-invite-accept">✅</button>
+          <button class="dg-invite-decline">❌</button>`;
+        bar.classList.add("show");
+        bar.querySelector(".dg-invite-accept").onclick = () => {
+          window.location.href = "/draw-guess.html?room=" + encodeURIComponent(roomId);
+        };
+        bar.querySelector(".dg-invite-decline").onclick = () => {
+          bar.classList.remove("show");
+          socket.emit("drawGuess:declineInvite", { roomId });
+        };
       });
     }
 

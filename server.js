@@ -4168,6 +4168,268 @@ function cleanupGameForSocket(socketId) {
   cleanupGame(game);
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+//  DRAW & GUESS — Pictionary-style group game for a host + their friends
+//  Architecturally separate from the 1v1 gameById/gameBySocket system above:
+//  those assume exactly 2 players (p1Id/p2Id); a Draw & Guess room holds a
+//  variable-length player list and its own turn-rotation/round/timer state,
+//  so it gets its own Maps rather than being force-fit into the existing ones.
+// ══════════════════════════════════════════════════════════════════════════
+
+const DRAW_MIN_PLAYERS   = 2;
+const DRAW_MAX_PLAYERS   = 8;
+const DRAW_ROUND_MS      = parseInt(process.env.DRAW_ROUND_MS, 10)  || 80_000;  // time to draw + guess
+const DRAW_REVEAL_MS     = parseInt(process.env.DRAW_REVEAL_MS, 10) || 5_000;   // pause on the reveal screen before the next round
+const DRAW_INVITE_TTL_MS = 60_000;  // unanswered invite quietly expires
+const DRAW_PICK_TTL_MS   = 12_000;  // drawer's time to choose a word before auto-pick
+const DRAW_ROOM_TTL_MS   = 30_000;  // grace period after a game ends before the room is dropped
+
+const drawRooms       = new Map(); // roomId   → room
+const drawRoomBySocket = new Map(); // socketId → roomId
+
+const DRAW_WORD_BANK = [
+  // ცხოველები (animals)
+  "ძაღლი","კატა","ცხენი","ძროხა","ღორი","ცხვარი","თხა","ლომი","დათვი","სპილო",
+  "ჟირაფი","მაიმუნი","კურდღელი","მელა","მგელი","თაგვი","ვეშაპი","დელფინი","თევზი","გველი",
+  "კუ","ბაყაყი","ჩიტი","ბუ","არწივი","პეპელა","ფუტკარი","ობობა","ზებრა","კენგურუ","პინგვინი","სირაქლემა",
+  // საკვები (food)
+  "პიცა","ვაშლი","ბანანი","მსხალი","საზამთრო","ყურძენი","ლიმონი","პური","ყველი","ნაყინი",
+  "ტორტი","შოკოლადი","ყავა","ჩაი","კვერცხი","სოკო","სტაფილო","კარტოფილი",
+  // ნივთები (objects)
+  "სახლი","მანქანა","ველოსიპედი","თვითმფრინავი","გემი","მატარებელი","საათი","სათვალე","ქოლგა","გვირგვინი",
+  "გასაღები","წიგნი","სკამი","მაგიდა","ტელეფონი","კომპიუტერი","ტელევიზორი","სარკე","დანა","ჩანგალი",
+  "კოვზი","ჩანთა","ფეხსაცმელი","ქუდი","მაკრატელი","სანთელი","ბურთი","გიტარა","დოლი","ყუთი","საწოლი","ფანჯარა","კარი",
+  // ბუნება (nature)
+  "მზე","მთვარე","ვარსკვლავი","ღრუბელი","წვიმა","თოვლი","ცეცხლი","მთა","ზღვა","მდინარე",
+  "ტყე","ხე","ყვავილი","ცისარტყელა","ვულკანი","კუნძული",
+  // ხალხი (people)
+  "ექიმი","მასწავლებელი","პოლიციელი","მეხანძრე","მზარეული","კაცი","ქალი","ბავშვი",
+  // ნაგებობები (structures)
+  "ხიდი","კოშკი","ციხე","ეკლესია","პირამიდა",
+  // სხვადასხვა (misc/fantasy)
+  "რობოტი","მოჩვენება","ანგელოზი","დრაკონი",
+];
+
+function makeDrawRoomId() {
+  return "dg_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+// Picks `n` words the room hasn't used yet this game; falls back to the full
+// bank once it's been exhausted (a long game can outlast ~100 unique words).
+function pickDrawWords(n, usedWords) {
+  let pool = DRAW_WORD_BANK.filter(w => !usedWords.has(w));
+  if (pool.length < n) pool = DRAW_WORD_BANK;
+  const picked = [];
+  const seen = new Set();
+  while (picked.length < n && seen.size < pool.length) {
+    const w = pool[rand(0, pool.length - 1)];
+    if (seen.has(w)) continue;
+    seen.add(w);
+    picked.push(w);
+  }
+  return picked;
+}
+
+function normalizeGuess(s) {
+  return String(s || "").trim().toLowerCase().replace(/[.,!?;:'"()]/g, "");
+}
+
+function drawRoomSockets(room) {
+  return room.players
+    .map(p => io.sockets.sockets.get(p.socketId))
+    .filter(Boolean);
+}
+
+function broadcastDrawRoom(room, event, payload) {
+  for (const s of drawRoomSockets(room)) s.emit(event, payload);
+}
+
+// Shape sent on every lobby/roster change — never includes the secret word.
+function drawRoomPublicState(room) {
+  return {
+    roomId: room.id,
+    hostUsername: room.players.find(p => p.lc === room.hostLc)?.username || "",
+    status: room.status,
+    players: room.players.map(p => ({
+      username: p.username,
+      score: p.score,
+      connected: p.connected,
+      isDrawer: !!(room.round && room.round.drawerLc === p.lc),
+      hasDrawn: p.hasDrawn,
+    })),
+    roundNumber: room.roundNumber,
+    totalRounds: room.players.length,
+    endsAt: room.round ? room.round.endsAt : null,
+    wordLength: (room.round && room.round.word) ? [...room.round.word].length : null,
+  };
+}
+
+// Sent to a socket that (re)joins mid-round so its canvas/word-hint catch up.
+function drawRoundSyncPayload(room, lc) {
+  const round = room.round;
+  if (!round) return null;
+  const isDrawer = round.drawerLc === lc;
+  const drawer = room.players.find(p => p.lc === round.drawerLc);
+  return {
+    roundNumber: room.roundNumber,
+    totalRounds: room.players.length,
+    drawerUsername: drawer?.username || "",
+    isDrawer,
+    word: isDrawer ? round.word : null,
+    wordLength: round.word ? [...round.word].length : null,
+    endsAt: round.endsAt,
+    strokes: isDrawer ? [] : round.strokes,
+    alreadyGuessed: round.guessedLc.has(lc),
+  };
+}
+
+function drawRoomScores(room) {
+  return room.players.map(p => ({ username: p.username, score: p.score }));
+}
+
+function startNextDrawRound(room) {
+  const nextDrawer = room.players.find(p => p.connected && !p.hasDrawn);
+  if (!nextDrawer) { endDrawGame(room); return; }
+
+  room.roundNumber += 1;
+  const choices = pickDrawWords(3, room.usedWords);
+  room.round = {
+    drawerLc: nextDrawer.lc,
+    word: null,
+    choices,
+    startedAt: null,
+    endsAt: null,
+    guessedLc: new Set(),
+    strokes: [],
+    timeoutHandle: null,
+    pickTimeoutHandle: null,
+  };
+
+  broadcastDrawRoom(room, "drawGuess:room", drawRoomPublicState(room));
+
+  const drawerSocket = io.sockets.sockets.get(nextDrawer.socketId);
+  if (drawerSocket) drawerSocket.emit("drawGuess:chooseWord", { choices });
+
+  room.round.pickTimeoutHandle = setTimeout(() => {
+    if (room.round && !room.round.word) pickDrawWord(room, choices[0]);
+  }, DRAW_PICK_TTL_MS);
+}
+
+function pickDrawWord(room, word) {
+  if (!room.round || room.round.word) return;
+  clearTimeout(room.round.pickTimeoutHandle);
+
+  room.round.word = word;
+  room.usedWords.add(word);
+  room.round.startedAt = Date.now();
+  room.round.endsAt = Date.now() + DRAW_ROUND_MS;
+
+  const drawer = room.players.find(p => p.lc === room.round.drawerLc);
+  if (drawer) drawer.hasDrawn = true;
+
+  for (const p of room.players) {
+    const s = io.sockets.sockets.get(p.socketId);
+    if (!s) continue;
+    const isDrawer = p.lc === room.round.drawerLc;
+    s.emit("drawGuess:roundStart", {
+      roundNumber: room.roundNumber,
+      totalRounds: room.players.length,
+      drawerUsername: drawer?.username || "",
+      isDrawer,
+      word: isDrawer ? word : null,
+      wordLength: [...word].length,
+      endsAt: room.round.endsAt,
+    });
+  }
+
+  room.round.timeoutHandle = setTimeout(() => endDrawRound(room, "timeout"), DRAW_ROUND_MS);
+}
+
+function endDrawRound(room, reason) {
+  if (!room.round) return;
+  clearTimeout(room.round.timeoutHandle);
+  clearTimeout(room.round.pickTimeoutHandle);
+
+  const round = room.round;
+  const drawer = room.players.find(p => p.lc === round.drawerLc);
+
+  if (round.word) {
+    const correctCount = round.guessedLc.size;
+    const drawerPoints = drawer ? correctCount * 20 : 0;
+    if (drawer) drawer.score += drawerPoints;
+    broadcastDrawRoom(room, "drawGuess:roundEnd", {
+      word: round.word,
+      drawerUsername: drawer?.username || "",
+      drawerPoints,
+      correctCount,
+      scores: drawRoomScores(room),
+      reason,
+    });
+  } else {
+    // Drawer disconnected before ever picking a word — nothing to reveal.
+    broadcastDrawRoom(room, "drawGuess:roundEnd", {
+      word: null,
+      drawerUsername: drawer?.username || "",
+      drawerPoints: 0,
+      correctCount: 0,
+      scores: drawRoomScores(room),
+      reason: "drawerLeft",
+    });
+  }
+
+  room.round = null;
+
+  setTimeout(() => {
+    if (room.status === "playing") startNextDrawRound(room);
+  }, DRAW_REVEAL_MS);
+}
+
+function endDrawGame(room) {
+  room.status = "ended";
+  broadcastDrawRoom(room, "drawGuess:gameEnd", {
+    scores: drawRoomScores(room).sort((a, b) => b.score - a.score),
+  });
+  setTimeout(() => cleanupDrawRoom(room.id), DRAW_ROOM_TTL_MS);
+}
+
+function cleanupDrawRoom(roomId) {
+  const room = drawRooms.get(roomId);
+  if (!room) return;
+  if (room.round) { clearTimeout(room.round.timeoutHandle); clearTimeout(room.round.pickTimeoutHandle); }
+  for (const inv of room.pendingInvites.values()) clearTimeout(inv.timeoutHandle);
+  for (const p of room.players) drawRoomBySocket.delete(p.socketId);
+  drawRooms.delete(roomId);
+}
+
+// Handles both an explicit "leave" and a socket disconnecting mid-game.
+function cleanupDrawGuessForSocket(socketId) {
+  const roomId = drawRoomBySocket.get(socketId);
+  drawRoomBySocket.delete(socketId);
+  if (!roomId) return;
+  const room = drawRooms.get(roomId);
+  if (!room) return;
+
+  const player = room.players.find(p => p.socketId === socketId);
+  if (!player) return;
+
+  if (room.status === "lobby") {
+    // Nothing scored yet — just drop them from the roster.
+    room.players = room.players.filter(p => p.socketId !== socketId);
+    if (room.players.length === 0) { cleanupDrawRoom(room.id); return; }
+    if (player.lc === room.hostLc) room.hostLc = room.players[0].lc; // hand off host
+    broadcastDrawRoom(room, "drawGuess:room", drawRoomPublicState(room));
+    return;
+  }
+
+  player.connected = false;
+  broadcastDrawRoom(room, "drawGuess:room", drawRoomPublicState(room));
+
+  const connectedCount = room.players.filter(p => p.connected).length;
+  if (connectedCount < DRAW_MIN_PLAYERS) { endDrawGame(room); return; }
+
+  if (room.round && room.round.drawerLc === player.lc) endDrawRound(room, "drawerLeft");
+}
+
 // ── Main connection handler ──────────────────────────────────────────────────
 io.on("connection", (socket) => {
   socket.clientIP = (
@@ -4822,6 +5084,215 @@ io.on("connection", (socket) => {
     target.emit("game:invite", { gameType, fromId: socket.id, isRematch: true });
   });
 
+  // ════════════════════════════════════════════════════════════════
+  //  DRAW & GUESS — group Pictionary-style game with friends
+  // ════════════════════════════════════════════════════════════════
+
+  // Create (or reuse) a lobby room you're hosting and invite friends to it.
+  // Calling this again while your lobby is still open just invites more
+  // people into the same room instead of starting a second one.
+  socket.on("drawGuess:invite", ({ toUsernames }) => {
+    if (!socket._regUser) return;
+    const hostLc = socket._regUser.usernameLower;
+
+    let room = drawRoomBySocket.has(socket.id) ? drawRooms.get(drawRoomBySocket.get(socket.id)) : null;
+    if (!room || room.hostLc !== hostLc || room.status !== "lobby") {
+      room = {
+        id: makeDrawRoomId(),
+        hostLc,
+        status: "lobby",
+        players: [{ lc: hostLc, username: socket._regUser.username, socketId: socket.id, score: 0, hasDrawn: false, connected: true }],
+        pendingInvites: new Map(), // lc → { timeoutHandle }
+        round: null,
+        roundNumber: 0,
+        usedWords: new Set(),
+      };
+      drawRooms.set(room.id, room);
+      drawRoomBySocket.set(socket.id, room.id);
+    }
+
+    const hostUser = registeredUsers.get(hostLc);
+    const friendsLc = new Set(hostUser?.friends || []);
+    const list = Array.isArray(toUsernames) ? toUsernames.filter(u => typeof u === "string").slice(0, DRAW_MAX_PLAYERS) : [];
+
+    const invited = [];
+    for (const uname of list) {
+      const lc = uname.toLowerCase();
+      if (lc === hostLc) continue;
+      if (!friendsLc.has(lc)) continue; // only invite actual friends
+      if (room.players.some(p => p.lc === lc)) continue;
+      if (room.pendingInvites.has(lc)) continue;
+      if (!onlineRegSockets.get(lc)?.size) continue; // must be online to invite
+
+      const targetUser = registeredUsers.get(lc);
+      if (!targetUser) continue;
+
+      const timeoutHandle = setTimeout(() => room.pendingInvites.delete(lc), DRAW_INVITE_TTL_MS);
+      room.pendingInvites.set(lc, { timeoutHandle });
+
+      io.to(`user:${lc}`).emit("drawGuess:invited", { roomId: room.id, fromUsername: hostUser.username });
+      invited.push(targetUser.username);
+    }
+
+    socket.join(`drawroom:${room.id}`);
+    socket.emit("drawGuess:room", drawRoomPublicState(room));
+    socket.emit("drawGuess:inviteSent", { invited });
+  });
+
+  // Accept an invite (or reconnect to a room you were already in).
+  socket.on("drawGuess:join", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const lc = socket._regUser.usernameLower;
+
+    const existingRoomId = drawRoomBySocket.get(socket.id);
+    if (existingRoomId && existingRoomId !== roomId) cleanupDrawGuessForSocket(socket.id);
+
+    const room = drawRooms.get(roomId);
+    if (!room) { socket.emit("drawGuess:error", { message: "ოთახი ვეღარ მოიძებნა — შეიძლება უკვე დასრულდა." }); return; }
+
+    const already = room.players.find(p => p.lc === lc);
+    if (already) {
+      // Reconnecting mid-game.
+      already.socketId = socket.id;
+      already.connected = true;
+      drawRoomBySocket.set(socket.id, room.id);
+      socket.join(`drawroom:${room.id}`);
+      socket.emit("drawGuess:room", drawRoomPublicState(room));
+      if (room.status === "playing" && room.round) {
+        socket.emit("drawGuess:roundSync", drawRoundSyncPayload(room, lc));
+      }
+      broadcastDrawRoom(room, "drawGuess:room", drawRoomPublicState(room));
+      return;
+    }
+
+    if (room.status !== "lobby") { socket.emit("drawGuess:error", { message: "თამაში უკვე დაწყებულია." }); return; }
+    if (room.players.length >= DRAW_MAX_PLAYERS) { socket.emit("drawGuess:error", { message: "ოთახი სავსეა." }); return; }
+
+    const hostUser = registeredUsers.get(room.hostLc);
+    if (!hostUser || !(hostUser.friends || []).includes(lc)) {
+      socket.emit("drawGuess:error", { message: "მხოლოდ მასპინძლის მეგობრებს შეუძლიათ შემოერთება." });
+      return;
+    }
+
+    const invite = room.pendingInvites.get(lc);
+    if (invite) clearTimeout(invite.timeoutHandle);
+    room.pendingInvites.delete(lc);
+
+    room.players.push({ lc, username: socket._regUser.username, socketId: socket.id, score: 0, hasDrawn: false, connected: true });
+    drawRoomBySocket.set(socket.id, room.id);
+    socket.join(`drawroom:${room.id}`);
+
+    broadcastDrawRoom(room, "drawGuess:room", drawRoomPublicState(room));
+  });
+
+  // Host starts the game once enough friends have joined the lobby.
+  socket.on("drawGuess:start", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const room = drawRooms.get(roomId);
+    if (!room || room.hostLc !== socket._regUser.usernameLower || room.status !== "lobby") return;
+    if (room.players.length < DRAW_MIN_PLAYERS) {
+      socket.emit("drawGuess:error", { message: `დასაწყებად საჭიროა მინიმუმ ${DRAW_MIN_PLAYERS} მოთამაშე.` });
+      return;
+    }
+
+    room.status = "playing";
+    room.roundNumber = 0;
+    for (const inv of room.pendingInvites.values()) clearTimeout(inv.timeoutHandle);
+    room.pendingInvites.clear();
+
+    startNextDrawRound(room);
+  });
+
+  // Drawer picks one of the 3 offered words.
+  socket.on("drawGuess:pickWord", ({ roomId, word }) => {
+    if (!socket._regUser) return;
+    const room = drawRooms.get(roomId);
+    if (!room || !room.round) return;
+    if (room.round.drawerLc !== socket._regUser.usernameLower) return;
+    if (room.round.word || !room.round.choices.includes(word)) return;
+    pickDrawWord(room, word);
+  });
+
+  // Drawer's live strokes, relayed to everyone else in the room.
+  socket.on("drawGuess:stroke", ({ roomId, stroke }) => {
+    if (!socket._regUser) return;
+    const room = drawRooms.get(roomId);
+    if (!room || !room.round || !stroke || typeof stroke !== "object") return;
+    if (room.round.drawerLc !== socket._regUser.usernameLower) return;
+
+    room.round.strokes.push(stroke);
+    if (room.round.strokes.length > 3000) room.round.strokes.shift();
+
+    for (const p of room.players) {
+      if (p.lc === room.round.drawerLc) continue;
+      io.sockets.sockets.get(p.socketId)?.emit("drawGuess:stroke", { stroke });
+    }
+  });
+
+  socket.on("drawGuess:clear", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const room = drawRooms.get(roomId);
+    if (!room || !room.round) return;
+    if (room.round.drawerLc !== socket._regUser.usernameLower) return;
+    room.round.strokes = [];
+    for (const p of room.players) {
+      if (p.lc === room.round.drawerLc) continue;
+      io.sockets.sockets.get(p.socketId)?.emit("drawGuess:clear");
+    }
+  });
+
+  // A guess — right or wrong, wrong ones are shown to everyone like chat;
+  // correct ones are announced without revealing the word to non-guessers yet.
+  socket.on("drawGuess:guess", ({ roomId, text }) => {
+    if (!socket._regUser) return;
+    const room = drawRooms.get(roomId);
+    if (!room || !room.round) return;
+    const lc = socket._regUser.usernameLower;
+    const player = room.players.find(p => p.lc === lc);
+    if (!player) return;
+    if (lc === room.round.drawerLc) return;
+    if (room.round.guessedLc.has(lc)) return;
+
+    const guessText = String(text || "").slice(0, 100).trim();
+    if (!guessText) return;
+
+    if (normalizeGuess(guessText) !== normalizeGuess(room.round.word)) {
+      broadcastDrawRoom(room, "drawGuess:chat", { username: player.username, text: guessText, correct: false });
+      return;
+    }
+
+    room.round.guessedLc.add(lc);
+    const elapsedSec = (Date.now() - room.round.startedAt) / 1000;
+    const points = Math.max(10, Math.round(100 - elapsedSec * 1.1));
+    player.score += points;
+
+    broadcastDrawRoom(room, "drawGuess:chat", { username: player.username, correct: true, points });
+    socket.emit("drawGuess:youGuessed", { points, word: room.round.word });
+    broadcastDrawRoom(room, "drawGuess:scores", { scores: drawRoomScores(room) });
+
+    const guessers = room.players.filter(p => p.connected && p.lc !== room.round.drawerLc);
+    if (guessers.length && guessers.every(p => room.round.guessedLc.has(p.lc))) {
+      endDrawRound(room, "allGuessed");
+    }
+  });
+
+  socket.on("drawGuess:leave", () => cleanupDrawGuessForSocket(socket.id));
+
+  // Explicit decline — lets the host's lobby update right away instead of
+  // waiting out the full invite expiry.
+  socket.on("drawGuess:declineInvite", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const room = drawRooms.get(roomId);
+    if (!room) return;
+    const lc = socket._regUser.usernameLower;
+    const invite = room.pendingInvites.get(lc);
+    if (!invite) return;
+    clearTimeout(invite.timeoutHandle);
+    room.pendingInvites.delete(lc);
+    const host = room.players.find(p => p.lc === room.hostLc);
+    if (host) io.sockets.sockets.get(host.socketId)?.emit("drawGuess:inviteDeclined", { username: socket._regUser.username });
+  });
+
   // ── Disconnect ───────────────────────────────────────────────────────────
   socket.on("disconnect", () => {
     console.log(`[SOCKET] Disconnected: ${socket.id}`);
@@ -4844,6 +5315,7 @@ io.on("connection", (socket) => {
     }
 
     cleanupGameForSocket(socket.id);
+    cleanupDrawGuessForSocket(socket.id);
     for (const [sid, s] of flappySessions) if (s.socketId === socket.id) flappySessions.delete(sid);
   });
 });
