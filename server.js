@@ -147,7 +147,8 @@ async function isPhotoNSFW(dataUrl) {
     });
 
     if (!res.ok) {
-      console.error(`[MODERATION] Anthropic API returned ${res.status}`);
+      const errText = await res.text().catch(() => "");
+      console.error(`[MODERATION] Anthropic API returned ${res.status}: ${errText.slice(0, 500)}`);
       return false;
     }
     const data = await res.json();
