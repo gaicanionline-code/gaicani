@@ -233,7 +233,7 @@ function addRegisterPromoCard() {
   const card = document.createElement("div");
   card.className = "register-promo-card";
   card.innerHTML = `
-    <div class="register-promo-title">✨ დარეგისტრირდი — სულ რაღაც 10 წამში</div>
+    <div class="register-promo-title">✨ დარეგისტრირდი </div>
     <div class="register-promo-line">
       🔒 დაიმაგრე შენი სახელი — აღარავინ წაგართმევს<br>
       👥 იპოვე და შეინახე მეგობრები სამუდამოდ<br>
