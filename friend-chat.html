@@ -1369,14 +1369,6 @@
       appendMessage({ from: fromUsername, type: "photo", dataUrl, ts: timestamp });
       incUnread();
     });
-    // Our own photo passed moderation — safe to show it now.
-    socket.on("friendChat:photo:sent", ({ dataUrl, timestamp }) => {
-      appendMessage({ from: myUsername, type: "photo", dataUrl, ts: timestamp || new Date().toISOString() });
-    });
-    // Our own photo was blocked — nothing to show, just tell the sender why.
-    socket.on("friendChat:photo:rejected", ({ message }) => {
-      showToast(message || "ფოტო არ აკმაყოფილებს დადგენილ მოთხოვნებს და მისი გაგზავნა დაუშვებელია!");
-    });
     socket.on("friendChat:gif", ({ fromUsername, url, timestamp }) => {
       if (!fromUsername || fromUsername.toLowerCase() !== friendName.toLowerCase()) return;
       hideTyping();
@@ -1598,8 +1590,7 @@
       if (!file.type.startsWith("image/")) { showToast("⚠️ მხოლოდ სურათები"); return; }
       compressFCImage(file, (dataUrl) => {
         socket.emit("friendChat:photo", { toUsername: friendName, dataUrl });
-        // Don't render locally yet — wait for the server's moderation
-        // result (friendChat:photo:sent / :rejected) below.
+        appendMessage({ from: myUsername, type: "photo", dataUrl, ts: new Date().toISOString() });
       });
     });
   }

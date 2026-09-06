@@ -233,14 +233,14 @@ function addRegisterPromoCard() {
   const card = document.createElement("div");
   card.className = "register-promo-card";
   card.innerHTML = `
-    <div class="register-promo-title">✨ დარეგისტრირდი </div>
+    <div class="register-promo-title">✨ დარეგისტრირდი — სულ რაღაც 10 წამში</div>
     <div class="register-promo-line">
-      🔒 დაიმაგრე შენი სახელი — აღარავინ წაგართმევს<br>
-      👥 იპოვე და შეინახე მეგობრები სამუდამოდ<br>
-      💬 პირადი, დაშიფრული ჩათი მეგობრებთან<br>
+      🔒 დაიკავე შენი უნიკალური სახელი — ეს სახელი მხოლოდ შენ გექნება <br>
+      👥 იპოვე მეგობრები და დაამატე ისინი სამუდამოდ <br>
+      💬 პირადი  ჩათი მეგობრებთან<br>
       🎨 ითამაშე თამაშები მეგობრებთან ერთად<br>
       🏆 შეინახე შენი რეკორდები და მიღწევები<br>
-      🖼️ დაისეთ პროფილის სურათი და აღწერა
+      🖼️ დააყენეთ პროფილის სურათი და აღწერა
     </div>`;
   card.addEventListener("click", () => {
     const signupTab = document.getElementById("auth-tab-signup");
@@ -1252,23 +1252,10 @@ socket.on("photo:request", ({ fromId }) => {
 socket.on("photo:approved", () => {
   if (pendingPhotoData) {
     socket.emit("photo", { dataUrl: pendingPhotoData });
+    addPhotoMessage(pendingPhotoData, true);
     addSystemMessage("✅ პარტნიორმა დაამტკიცა სურათის მიღება");
-    // Don't show it locally yet — wait for the server's moderation result
-    // (photo:sent / photo:rejected below) so a blocked photo never even
-    // renders in our own chat.
+    pendingPhotoData = null;
   }
-});
-
-// Server approved the photo's content — now it's safe to show our own bubble.
-socket.on("photo:sent", (data) => {
-  if (data?.dataUrl) addPhotoMessage(data.dataUrl, true);
-  pendingPhotoData = null;
-});
-
-// Server blocked the photo (nudity check failed) — no photo shown to either side.
-socket.on("photo:rejected", ({ message }) => {
-  pendingPhotoData = null;
-  addSystemMessage(message || "ფოტო არ აკმაყოფილებს დადგენილ მოთხოვნებს და მისი გაგზავნა დაუშვებელია!");
 });
 
 // Listen for rejection from partner
