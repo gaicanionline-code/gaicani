@@ -97,6 +97,68 @@ const GIPHY_KEY           = process.env.GIPHY_KEY || "UFauF9jrzjxyDsxqXi7rVnfRdv
 // cached below. Without this set, the search box returns a friendly error
 // and the feature is simply unavailable — nothing else on the site breaks.
 const YOUTUBE_API_KEY     = process.env.YOUTUBE_API_KEY || "";
+
+// ── Photo moderation (nudity check) ─────────────────────────────────────────
+// Powers the nudity screen on every photo sent in random chat AND friend
+// chat, below. Uses Claude's vision to classify the image server-side before
+// it's ever relayed to the other person (or shown back to the sender).
+// Get a key at https://console.anthropic.com/ and set ANTHROPIC_API_KEY.
+// Without it set, moderation is skipped entirely (fails open) — photos still
+// work exactly as before, just unmoderated. Nothing else on the site breaks.
+const ANTHROPIC_API_KEY     = process.env.ANTHROPIC_API_KEY || "";
+const MODERATION_MODEL      = process.env.MODERATION_MODEL || "claude-haiku-4-5-20251001";
+const PHOTO_REJECTED_MSG    = "ფოტო არ აკმაყოფილებს დადგენილ მოთხოვნებს და მისი გაგზავნა დაუშვებელია!";
+
+// Returns true if the image should be blocked (nudity/sexually explicit
+// content). Fails OPEN (returns false ⇒ photo is allowed through) on any
+// missing key, network error, timeout, or unexpected response shape — a
+// moderation outage should never itself take random/friend chat down.
+async function isPhotoNSFW(dataUrl) {
+  if (!ANTHROPIC_API_KEY) return false;
+  const match = /^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl || "");
+  if (!match) return false;
+  const [, mediaType, base64Data] = match;
+
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: MODERATION_MODEL,
+        max_tokens: 5,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: mediaType, data: base64Data } },
+            {
+              type: "text",
+              text: "You are a content moderation filter for a chat app. Does this image contain nudity or " +
+                    "sexually explicit content? Normal swimwear, underwear worn as swimwear, or non-sexual " +
+                    "shirtless photos do NOT count. Reply with exactly one word, no punctuation: YES or NO.",
+            },
+          ],
+        }],
+      }),
+      signal: AbortSignal.timeout(9000),
+    });
+
+    if (!res.ok) {
+      console.error(`[MODERATION] Anthropic API returned ${res.status}`);
+      return false;
+    }
+    const data = await res.json();
+    const verdict = (data?.content?.find(b => b.type === "text")?.text || "").trim().toUpperCase();
+    return verdict.startsWith("YES");
+  } catch (e) {
+    console.error("[MODERATION] Photo check failed:", e.message);
+    return false;
+  }
+}
+
 const NAME_MIN           = 2;
 const NAME_MAX           = 20;
 const MSG_MAX            = 2000;
@@ -2542,7 +2604,7 @@ io.on("connection", (socket) => {
   });
 
   // ── PHOTO ─────────────────────────────────────────────────────────────────
-  socket.on("photo", (data) => {
+  socket.on("photo", async (data) => {
     if (!socket.partner || typeof data?.dataUrl !== "string") return;
     if (socket.partner._isGhost) return;
     // Validate it's a real image data URL and not too large (~3MB base64 ≈ 4MB string)
@@ -2551,7 +2613,17 @@ io.on("connection", (socket) => {
     // Max 5 photos per 15s per socket — photos are the heaviest payload here,
     // so this gets the tightest limit of any media type.
     if (mediaRateLimited(socket, "photo", 5, 15_000)) return;
-    socket.partner.emit("photo", { dataUrl: data.dataUrl });
+
+    const targetPartner = socket.partner; // snapshot — partner can change during the await below
+    if (await isPhotoNSFW(data.dataUrl)) {
+      socket.emit("photo:rejected", { message: PHOTO_REJECTED_MSG });
+      return;
+    }
+    // Re-check the pairing is still valid after the moderation round-trip.
+    if (!socket.partner || socket.partner !== targetPartner || targetPartner._isGhost) return;
+
+    targetPartner.emit("photo", { dataUrl: data.dataUrl });
+    socket.emit("photo:sent", { dataUrl: data.dataUrl }); // sender's own bubble, only after approval
   });
 
   // ── PHOTO PERMISSION REQUEST ───────────────────────────────────────────
@@ -4840,7 +4912,7 @@ io.on("connection", (socket) => {
   });
 
   // ── friendChat:photo — relay photo (base64) to friend ────────────────────
-  socket.on("friendChat:photo", ({ toUsername, dataUrl }) => {
+  socket.on("friendChat:photo", async ({ toUsername, dataUrl }) => {
     if (!socket._regUser || !toUsername || typeof dataUrl !== "string") return;
     if (!dataUrl.startsWith("data:image/")) return;
     if (dataUrl.length > 4 * 1024 * 1024) return; // same 4MB cap as random-chat photo
@@ -4848,11 +4920,22 @@ io.on("connection", (socket) => {
     const toLc   = String(toUsername).toLowerCase().trim();
     const myUser = registeredUsers.get(socket._regUser.usernameLower);
     if (!myUser || !(myUser.friends || []).includes(toLc)) return;
+
+    if (await isPhotoNSFW(dataUrl)) {
+      socket.emit("friendChat:photo:rejected", { message: PHOTO_REJECTED_MSG });
+      return;
+    }
+    // Re-check the friendship is still valid after the moderation round-trip.
+    if (!(registeredUsers.get(socket._regUser.usernameLower)?.friends || []).includes(toLc)) return;
+
+    const timestamp = new Date().toISOString();
     io.to(`user:${toLc}`).emit("friendChat:photo", {
       fromUsername: socket._regUser.username,
       dataUrl:      dataUrl,
-      timestamp:    new Date().toISOString()
+      timestamp:    timestamp
     });
+    // Sender's own bubble, only after approval.
+    socket.emit("friendChat:photo:sent", { dataUrl, timestamp });
 
     const streak = recordFriendMessage(socket._regUser.usernameLower, toLc);
     const toUser = registeredUsers.get(toLc);
