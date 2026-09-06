@@ -129,6 +129,35 @@
       font-size: 0.88em; font-weight: 700;
     }
 
+    /* ── Draw & Guess — active rooms browser ── */
+    .dg-rooms-label {
+      font-size: 0.72em; font-weight: 700; color: #72767d;
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .dg-room-row {
+      display: flex; align-items: center; gap: 10px;
+      background: #2b2d31; border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px; padding: 10px 12px;
+    }
+    .dg-room-info { flex: 1; min-width: 0; }
+    .dg-room-host {
+      font-weight: 600; font-size: 0.9em; color: #fff;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .dg-room-meta { font-size: 0.76em; color: #72767d; margin-top: 2px; }
+    .dg-room-badge {
+      font-size: 0.66em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+      padding: 2px 8px; border-radius: 20px; flex-shrink: 0; white-space: nowrap;
+    }
+    .dg-room-badge.lobby   { background: rgba(88,101,242,0.18); color: #a78bfa; }
+    .dg-room-badge.playing { background: rgba(59,165,93,0.18); color: #3ba55d; }
+    .dg-room-join-btn {
+      background: linear-gradient(135deg,#eb459e,#a855f7); color: #fff; border: none;
+      border-radius: 8px; padding: 8px 14px; font-size: 0.82em; font-weight: 700;
+      cursor: pointer; flex-shrink: 0; transition: opacity 0.15s;
+    }
+    .dg-room-join-btn:hover { opacity: 0.88; }
+
     /* ── Friend List ── */
     .friends-list {
       display: flex; flex-direction: column; gap: 4px;
@@ -459,7 +488,13 @@
 
     <!-- Draw & Guess -->
     <a href="/draw-guess.html" class="btn-start-chat" style="background:linear-gradient(135deg,#eb459e,#a855f7);">🎨 დახატე და გამოიცანი</a>
-    <div style="text-align:center;font-size:0.78em;color:#72767d;margin:-6px 0 14px;">ითამაშე მეგობრებთან ერთად</div>
+    <div style="text-align:center;font-size:0.78em;color:#72767d;margin:-6px 0 8px;">ითამაშე მეგობრებთან ერთად</div>
+
+    <!-- Active Draw & Guess rooms — join one already in progress -->
+    <div id="dgRoomsSection" style="display:none;margin:0 0 14px;">
+      <div class="dg-rooms-label" style="margin-bottom:8px;">ოთახები — შემოუერთდი</div>
+      <div id="dgRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
 
     <!-- Incoming friend requests — hidden until there are entries -->
     <div class="section" id="pendingSection" style="display:none">
@@ -704,6 +739,7 @@
         paintUserBio();
         fetchUnreadFriends();
         socket.emit("users:listOnline");
+        socket.emit("drawGuess:listPublicRooms");
       });
 
       socket.on("auth:invalid", () => {
@@ -788,6 +824,9 @@
         else delete friendStreaks[lc];
         renderFriends(authUser?.friends || []);
       });
+
+      // ── Draw & Guess — active rooms browser (under the game button) ────────
+      socket.on("drawGuess:publicRooms", (rooms) => renderDgRooms(rooms || []));
 
       // ── Invited to a Draw & Guess room by a friend ─────────────────────────
       socket.on("drawGuess:invited", ({ roomId, fromUsername }) => {
@@ -932,6 +971,31 @@
     }
 
     /* ── Render online-users list (other registered users online now) ── */
+    function renderDgRooms(rooms) {
+      const section = document.getElementById("dgRoomsSection");
+      const list    = document.getElementById("dgRoomsList");
+      if (!section || !list) return;
+
+      if (!rooms.length) { section.style.display = "none"; return; }
+      section.style.display = "block";
+
+      list.innerHTML = rooms.map(r => `
+        <div class="dg-room-row" data-room="${esc(r.roomId)}">
+          <div class="dg-room-info">
+            <div class="dg-room-host">🎨 ${esc(r.hostUsername)}-ის ოთახი</div>
+            <div class="dg-room-meta">${r.playerCount}/${r.maxPlayers} მოთამაშე${r.status === "playing" ? ` · რაუნდი ${r.roundNumber}` : ""}</div>
+          </div>
+          <span class="dg-room-badge ${r.status}">${r.status === "playing" ? "მიმდინარეობს" : "ლობი"}</span>
+          <button class="dg-room-join-btn">შემოერთება</button>
+        </div>`).join("");
+
+      list.querySelectorAll(".dg-room-row").forEach(row => {
+        row.querySelector(".dg-room-join-btn").addEventListener("click", () => {
+          window.location.href = "/draw-guess.html?room=" + encodeURIComponent(row.dataset.room);
+        });
+      });
+    }
+
     function renderOnlineUsers(users) {
       const list = document.getElementById("onlineUsersList");
       const cnt  = document.getElementById("onlineUsersCount");
