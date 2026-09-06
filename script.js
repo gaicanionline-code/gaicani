@@ -223,6 +223,34 @@ function addSystemHintMessage(text, extraClass) {
 }
 function addSystemBigMessage(text)         { _appendInfoMessage(text, "system-message-big"); }
 
+// ── Registration promo card — shown once to guests right after the
+//    "დააჭირეთ ღილაკს" hint, before their first search. Skipped entirely
+//    for already-registered users (window.gaicaniAuthUser is set by
+//    auth-client.js once a token is confirmed).
+function addRegisterPromoCard() {
+  if (window.gaicaniAuthUser) return;
+
+  const card = document.createElement("div");
+  card.className = "register-promo-card";
+  card.innerHTML = `
+    <div class="register-promo-title">✨ დარეგისტრირდი — სულ რაღაც 10 წამში</div>
+    <div class="register-promo-line">
+      🔒 დაიკავე შენი უნიკალური სახელი — ეს სახელი მხოლოდ შენ გექნება <br>
+      👥 იპოვე მეგობრები და დაამატე ისინი სამუდამოდ <br>
+      💬 პირადი  ჩათი მეგობრებთან<br>
+      🎨 ითამაშე თამაშები მეგობრებთან ერთად<br>
+      🏆 შეინახე შენი რეკორდები და მიღწევები<br>
+      🖼️ დააყენეთ პროფილის სურათი და აღწერა
+    </div>`;
+  card.addEventListener("click", () => {
+    const signupTab = document.getElementById("auth-tab-signup");
+    if (signupTab) signupTab.click();
+    if (nameModal) nameModal.style.display = "flex";
+  });
+  chat.appendChild(card);
+  scheduleScroll();
+}
+
 // ── System message with an inline image (used for the press-counter hint) ──
 function addSystemImageMessage(imgSrc, altText) {
   const el       = document.createElement("div");
@@ -1557,6 +1585,7 @@ socket.on("nameAccepted", (acceptedName) => {
     clearChat();
     // Do NOT auto-search — user must press the Search button manually
     addSystemMessage("🔎 ძებნის დასაწყებად დააჭირეთ ღილაკს");
+    addRegisterPromoCard();
   } else if (isReconnecting) {
     isReconnecting = false;
     _reconnectNameRetries = 0; // reset retry counter on success
