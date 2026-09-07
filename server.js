@@ -2117,12 +2117,11 @@ function extractYouTubeId(input) {
 }
 
 // ── Per-socket media rate limiter ─────────────────────────────────────────────
-// Photos and GIFs are the biggest bandwidth cost in this app (a single photo
-// can be up to ~4MB base64). Cloudflare's HTTP rate limiting CAN'T reach these
-// — they're sent as Socket.io/WebSocket messages, not separate HTTP requests —
-// so a client (malicious or just a buggy script) could otherwise blast photos
-// as fast as the socket allows with nothing to stop it. This is a small
-// sliding-window limiter keyed per-socket, checked before any relay work.
+// GIFs are relayed as Socket.io/WebSocket messages, not separate HTTP requests,
+// so Cloudflare's HTTP rate limiting CAN'T reach these — a client (malicious or
+// just a buggy script) could otherwise blast them as fast as the socket allows
+// with nothing to stop it. This is a small sliding-window limiter keyed
+// per-socket, checked before any relay work.
 const mediaRateState = new WeakMap(); // socket → { key → [timestamps] }
 
 function mediaRateLimited(socket, key, maxPerWindow, windowMs) {
@@ -2539,43 +2538,6 @@ io.on("connection", (socket) => {
     // Max 8 GIFs per 10s — plenty for real chatting, cuts off spam/scripts
     if (mediaRateLimited(socket, "gif", 8, 10_000)) return;
     socket.partner.emit("gif", { url: data.url, preview: data.preview });
-  });
-
-  // ── PHOTO ─────────────────────────────────────────────────────────────────
-  socket.on("photo", (data) => {
-    if (!socket.partner || typeof data?.dataUrl !== "string") return;
-    if (socket.partner._isGhost) return;
-    // Validate it's a real image data URL and not too large (~3MB base64 ≈ 4MB string)
-    if (!data.dataUrl.startsWith("data:image/")) return;
-    if (data.dataUrl.length > 4 * 1024 * 1024) return;
-    // Max 5 photos per 15s per socket — photos are the heaviest payload here,
-    // so this gets the tightest limit of any media type.
-    if (mediaRateLimited(socket, "photo", 5, 15_000)) return;
-    socket.partner.emit("photo", { dataUrl: data.dataUrl });
-  });
-
-  // ── PHOTO PERMISSION REQUEST ───────────────────────────────────────────
-  socket.on("photo:request", (data) => {
-    if (!socket.partner) return;
-    if (socket.partner._isGhost) return;
-    // Forward the permission request to partner
-    socket.partner.emit("photo:request", { fromId: socket.id });
-  });
-
-  // ── PHOTO PERMISSION APPROVED ──────────────────────────────────────────
-  socket.on("photo:approved", (data) => {
-    if (!socket.partner || !data?.toId) return;
-    if (socket.partner._isGhost) return;
-    // Forward approval back to sender
-    socket.partner.emit("photo:approved");
-  });
-
-  // ── PHOTO PERMISSION DECLINED ──────────────────────────────────────────
-  socket.on("photo:declined", (data) => {
-    if (!socket.partner || !data?.toId) return;
-    if (socket.partner._isGhost) return;
-    // Forward decline back to sender
-    socket.partner.emit("photo:declined");
   });
 
   // ── Reactions ────────────────────────────────────────────────────────────
@@ -3584,7 +3546,7 @@ function getStreakView(aLc, bLc) {
   return { count: s.count, atRisk: s.lastDate === yesterday };
 }
 
-// Call whenever fromLc sends toLc a message/photo/gif/question. Updates the
+// Call whenever fromLc sends toLc a message/gif/question. Updates the
 // pair's streak and returns the fresh { count, atRisk } for both sides.
 function recordFriendMessage(fromLc, toLc) {
   const roomId    = privRoomId(fromLc, toLc);
@@ -4837,27 +4799,6 @@ io.on("connection", (socket) => {
     io.to(`user:${toLc}`).emit("friendChat:partnerTyping", {
       fromUsername: socket._regUser.username
     });
-  });
-
-  // ── friendChat:photo — relay photo (base64) to friend ────────────────────
-  socket.on("friendChat:photo", ({ toUsername, dataUrl }) => {
-    if (!socket._regUser || !toUsername || typeof dataUrl !== "string") return;
-    if (!dataUrl.startsWith("data:image/")) return;
-    if (dataUrl.length > 4 * 1024 * 1024) return; // same 4MB cap as random-chat photo
-    if (mediaRateLimited(socket, "friendPhoto", 5, 15_000)) return;
-    const toLc   = String(toUsername).toLowerCase().trim();
-    const myUser = registeredUsers.get(socket._regUser.usernameLower);
-    if (!myUser || !(myUser.friends || []).includes(toLc)) return;
-    io.to(`user:${toLc}`).emit("friendChat:photo", {
-      fromUsername: socket._regUser.username,
-      dataUrl:      dataUrl,
-      timestamp:    new Date().toISOString()
-    });
-
-    const streak = recordFriendMessage(socket._regUser.usernameLower, toLc);
-    const toUser = registeredUsers.get(toLc);
-    io.to(`user:${toLc}`).emit("streak:update", { friendUsername: socket._regUser.username, count: streak.count, atRisk: streak.atRisk });
-    socket.emit("streak:update", { friendUsername: toUser?.username || toUsername, count: streak.count, atRisk: streak.atRisk });
   });
 
   // ── friendChat:gif — relay GIF URL to friend ─────────────────────────────

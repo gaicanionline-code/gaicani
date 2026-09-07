@@ -110,8 +110,6 @@ const saveNameBtn    = document.getElementById("saveNameBtn");
 const nameError      = document.getElementById("nameError");
 const onlineCountEl  = document.getElementById("onlineCount");
 const gifBtn         = document.getElementById("gifBtn");
-const photoBtn       = document.getElementById("photoBtn");
-const photoInput     = document.getElementById("photoInput");
 const gifPicker      = document.getElementById("gifPicker");
 const gifSearch      = document.getElementById("gifSearch");
 const gifResults     = document.getElementById("gifResults");
@@ -519,65 +517,6 @@ function addGifMessage(gifUrl, isYou) {
   scheduleScroll();
 }
 
-// ── Photo message ────────────────────────────────────────────────────────────
-function addPhotoMessage(dataUrl, isYou) {
-  const wrapper     = document.createElement("div");
-  wrapper.className = `message-wrapper photo-msg-wrapper ${isYou ? "you" : "partner"}`;
-
-  const inner       = document.createElement("div");
-  inner.className   = "photo-wrapper-inner";
-
-  const img         = document.createElement("img");
-  img.src           = dataUrl;
-  img.className     = "photo-message-img" + (isYou ? "" : " blurred");
-  img.loading       = "lazy";
-  img.decoding      = "async";
-
-  inner.appendChild(img);
-
-  if (!isYou) {
-    const overlay   = document.createElement("div");
-    overlay.className = "photo-blur-overlay";
-    const hint      = document.createElement("span");
-    
-    hint.textContent = "👁 სანახავად დააჭირე";
-    overlay.appendChild(hint);
-    inner.appendChild(overlay);
-
-    let isUnblurred = false;
-
-    img.addEventListener("click", () => {
-      if (!isUnblurred) {
-        // First click: Unblur the image in chat
-        img.classList.remove("blurred");
-        overlay.remove();
-        isUnblurred = true;
-        // Update hint to show fullscreen is available
-        const newHint = document.createElement("span");
-        newHint.className = "photo-blur-hint";
-        inner.appendChild(newHint);
-      } else {
-        // Second click: Open fullscreen
-        showPhotoFullscreen(dataUrl);
-      }
-    });
-  } else {
-    // Your own photos open fullscreen directly
-    img.addEventListener("click", () => {
-      showPhotoFullscreen(dataUrl);
-    });
-  }
-
-  const timestamp       = document.createElement("div");
-  timestamp.className   = "timestamp";
-  timestamp.textContent = formatTimestamp(new Date());
-
-  wrapper.appendChild(inner);
-  wrapper.appendChild(timestamp);
-  chat.appendChild(wrapper);
-  scheduleScroll();
-}
-
 // ── Question card ─────────────────────────────────────────────────────────────
 function addQuestionCard(questionText, isYou) {
   const card       = document.createElement("div");
@@ -663,7 +602,6 @@ function setInputsEnabled(enabled) {
   messageInput.style.pointerEvents = enabled ? "" : "none";
   sendBtn.disabled        = !enabled;
   gifBtn.disabled         = !enabled;
-  if (photoBtn) photoBtn.disabled = !enabled;
   questionBtn.disabled    = !enabled;
   if (!enabled) {
     // Clear any text typed during a race (e.g. keyboard still open while searching)
@@ -903,89 +841,6 @@ function sendGif(fullUrl, previewUrl) {
 
 socket.on("gif", (data) => addGifMessage(data.url, false));
 
-// ── Photo send ────────────────────────────────────────────────────────────────
-
-if (photoBtn) {
-  photoBtn.addEventListener("click", () => {
-    // Show inline confirmation in chat
-    const existing = document.getElementById("cameraConfirmEl");
-    if (existing) { existing.remove(); return; }
-
-    const confirmEl = document.createElement("div");
-    confirmEl.id = "cameraConfirmEl";
-    confirmEl.className = "block-offer";
-    confirmEl.style.borderColor = "rgba(88,101,242,0.4)";
-    confirmEl.style.background = "rgba(88,101,242,0.07)";
-    confirmEl.innerHTML =
-      `<span style="color:#dcddde;font-size:0.95em;">🖼️ გსურთ კამერის გახსნა?</span>` +
-      `<div style="display:flex;gap:8px;margin-top:4px;">` +
-        `<button id="cameraYesBtn" class="block-offer-btn" style="background:linear-gradient(135deg,#5865f2,#3b44c0);padding:6px 20px;">კი</button>` +
-        `<button id="cameraNoBtn" class="block-offer-btn" style="background:rgba(255,255,255,0.08);color:#aaa;padding:6px 20px;">არა</button>` +
-      `</div>`;
-    chat.appendChild(confirmEl);
-    scheduleScroll();
-
-    document.getElementById("cameraYesBtn").addEventListener("click", () => {
-      confirmEl.remove();
-      if (photoInput) photoInput.click();
-    });
-    document.getElementById("cameraNoBtn").addEventListener("click", () => {
-      confirmEl.remove();
-    });
-  });
-}
-
-// ── Photo Permission Request Dialog (for partner to approve) ────────────────
-function showPhotoPermissionDialog(message, onApprove, onDecline) {
-  const modal = document.createElement("div");
-  modal.className = "photo-permission-modal";
-  
-  const backdrop = document.createElement("div");
-  backdrop.className = "photo-permission-backdrop";
-  
-  const content = document.createElement("div");
-  content.className = "photo-permission-content";
-  
-  const icon = document.createElement("div");
-  icon.className = "photo-permission-icon";
-  icon.textContent = "📸";
-  
-  const text = document.createElement("p");
-  text.className = "photo-permission-text";
-  text.textContent = message;
-  
-  const buttonGroup = document.createElement("div");
-  buttonGroup.className = "photo-permission-buttons";
-  
-  const declineBtn = document.createElement("button");
-  declineBtn.className = "photo-permission-btn decline";
-  declineBtn.textContent = "უარი";
-  declineBtn.onclick = () => {
-    modal.remove();
-    onDecline();
-  };
-  
-  const approveBtn = document.createElement("button");
-  approveBtn.className = "photo-permission-btn approve";
-  approveBtn.textContent = "დამტკიცება";
-  approveBtn.onclick = () => {
-    modal.remove();
-    onApprove();
-  };
-  
-  buttonGroup.appendChild(declineBtn);
-  buttonGroup.appendChild(approveBtn);
-  
-  content.appendChild(icon);
-  content.appendChild(text);
-  content.appendChild(buttonGroup);
-  
-  backdrop.appendChild(content);
-  modal.appendChild(backdrop);
-  
-  document.body.appendChild(modal);
-}
-
 // ── Report Reason Modal ──────────────────────────────────────────────────────
 // ── Custom confirm modal — replaces native confirm(). iOS Safari revokes
 // the "user gesture" flag as soon as a native confirm()/alert()/prompt()
@@ -1097,176 +952,6 @@ function showReportReasonModal(targetName, onSubmit) {
   setTimeout(() => textarea.focus(), 50);
 }
 
-
-function showPhotoConfirmation(dataUrl, onConfirm) {
-  const modal = document.createElement("div");
-  modal.className = "photo-confirm-modal";
-  
-  const backdrop = document.createElement("div");
-  backdrop.className = "photo-confirm-backdrop";
-  
-  const content = document.createElement("div");
-  content.className = "photo-confirm-content";
-  
-  const title = document.createElement("p");
-  title.className = "photo-confirm-title";
-  title.textContent = "გსურთ ამ სურათის გაგზავნა?";
-  
-  const preview = document.createElement("img");
-  preview.className = "photo-confirm-preview";
-  preview.src = dataUrl;
-  
-  const buttonGroup = document.createElement("div");
-  buttonGroup.className = "photo-confirm-buttons";
-  
-  const cancelBtn = document.createElement("button");
-  cancelBtn.className = "photo-confirm-btn cancel";
-  cancelBtn.textContent = "გაუქმება";
-  cancelBtn.onclick = () => modal.remove();
-  
-  const confirmBtn = document.createElement("button");
-  confirmBtn.className = "photo-confirm-btn confirm";
-  confirmBtn.textContent = "გაგზავნა";
-  confirmBtn.onclick = () => {
-    modal.remove();
-    onConfirm();
-  };
-  
-  buttonGroup.appendChild(cancelBtn);
-  buttonGroup.appendChild(confirmBtn);
-  
-  content.appendChild(title);
-  content.appendChild(preview);
-  content.appendChild(buttonGroup);
-  
-  backdrop.appendChild(content);
-  modal.appendChild(backdrop);
-  
-  document.body.appendChild(modal);
-}
-
-// ── Photo Fullscreen Modal ───────────────────────────────────────────────────
-function showPhotoFullscreen(dataUrl) {
-  const modal = document.createElement("div");
-  modal.className = "photo-fullscreen-modal";
-  
-  const backdrop = document.createElement("div");
-  backdrop.className = "photo-fullscreen-backdrop";
-  
-  const closeBtn = document.createElement("button");
-  closeBtn.className = "photo-fullscreen-close";
-  closeBtn.innerHTML = "✕";
-  closeBtn.onclick = () => modal.remove();
-  
-  const img = document.createElement("img");
-  img.className = "photo-fullscreen-img";
-  img.src = dataUrl;
-  
-  backdrop.appendChild(img);
-  backdrop.appendChild(closeBtn);
-  modal.appendChild(backdrop);
-  
-  document.body.appendChild(modal);
-  
-  // Close on backdrop click
-  backdrop.addEventListener("click", (e) => {
-    if (e.target === backdrop) modal.remove();
-  });
-}
-
-// Compress + resize image to fit within socket buffer
-function compressImage(file, callback) {
-  const MAX_DIM     = 1280;  // max width or height
-  const QUALITY     = 0.82;  // JPEG quality
-  const MAX_B64_LEN = 2.8 * 1024 * 1024; // ~2MB file after base64
-
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const img = new Image();
-    img.onload = () => {
-      let { width, height } = img;
-      // Scale down if needed
-      if (width > MAX_DIM || height > MAX_DIM) {
-        if (width > height) { height = Math.round(height * MAX_DIM / width); width = MAX_DIM; }
-        else                { width  = Math.round(width  * MAX_DIM / height); height = MAX_DIM; }
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width  = width;
-      canvas.height = height;
-      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
-
-      // Try JPEG first, fall back to lower quality if still too large
-      let dataUrl = canvas.toDataURL("image/jpeg", QUALITY);
-      if (dataUrl.length > MAX_B64_LEN) {
-        dataUrl = canvas.toDataURL("image/jpeg", 0.65);
-      }
-      if (dataUrl.length > MAX_B64_LEN) {
-        dataUrl = canvas.toDataURL("image/jpeg", 0.45);
-      }
-      callback(dataUrl);
-    };
-    img.src = e.target.result;
-  };
-  reader.readAsDataURL(file);
-}
-
-let pendingPhotoData = null; // Store pending photo waiting for approval
-
-if (photoInput) {
-  photoInput.addEventListener("change", () => {
-    const file = photoInput.files[0];
-    photoInput.value = ""; // reset so same file can be re-sent
-    if (!file) return;
-    if (!partnerConnected) return; // guard: don't send if no partner
-    if (!file.type.startsWith("image/")) {
-      addSystemMessage("⚠️ მხოლოდ სურათების გაგზავნაა შესაძლებელი.");
-      return;
-    }
-    compressImage(file, (dataUrl) => {
-      if (!partnerConnected) return; // recheck after async compress
-      
-      // Store the photo and ask partner for permission
-      pendingPhotoData = dataUrl;
-      socket.emit("photo:request", { fromId: socket.id });
-      addSystemMessage("📸 სურათის გაგზავნის მოთხოვნა შეთავაზებულია...");
-    });
-  });
-}
-
-// Listen for photo permission request from partner
-socket.on("photo:request", ({ fromId }) => {
-  showPhotoPermissionDialog(
-    "პარტნიორი გიგზავნით ფოტოს , გსურთ ნახვა?",
-    () => {
-      // Partner accepted - send approval
-      socket.emit("photo:approved", { toId: fromId });
-    },
-    () => {
-      // Partner declined - send rejection
-      socket.emit("photo:declined", { toId: fromId });
-    }
-  );
-});
-
-// Listen for approval from partner
-socket.on("photo:approved", () => {
-  if (pendingPhotoData) {
-    socket.emit("photo", { dataUrl: pendingPhotoData });
-    addPhotoMessage(pendingPhotoData, true);
-    addSystemMessage("✅ პარტნიორმა დაამტკიცა სურათის მიღება");
-    pendingPhotoData = null;
-  }
-});
-
-// Listen for rejection from partner
-socket.on("photo:declined", () => {
-  pendingPhotoData = null;
-  addSystemMessage("❌ პარტნიორმა უარყო სურათის მიღება");
-});
-
-socket.on("photo", (data) => {
-  if (data?.dataUrl) addPhotoMessage(data.dataUrl, false);
-});
 
 // ── Question button ───────────────────────────────────────────────────────────
 let questionBtnCooldown = false;

@@ -1,16 +1,22 @@
 /* ══════════════════════════════════════════════════════════════════════════
    server-nsfw-check.js — free, self-hosted nudity detection for GAICANI
    ────────────────────────────────────────────────────────────────────────
+   OBSOLETE: GAICANI no longer supports sending photos (random chat and
+   friend chat both had photo-send functionality removed — see server.js,
+   script.js, friend-chat.html, style.css). This file was only ever useful
+   as a pre-relay check on photo uploads, so it is not wired into server.js
+   and can be deleted. Kept here only for reference in case photo sending
+   is reintroduced later.
+   ────────────────────────────────────────────────────────────────────────
    Uses NSFWJS (open-source, runs locally via TensorFlow.js — NO API key,
    NO per-request cost, NO external calls once the model is downloaded).
 
-   HOW TO INTEGRATE:
+   HOW TO INTEGRATE (if photo sending is ever added back):
    1. npm install nsfwjs @tensorflow/tfjs-node
    2. Put this file next to server.js.
    3. At the top of server.js:  const { checkImageNSFW, nsfwReady } = require("./server-nsfw-check");
-   4. Before relaying ANY photo (friendChat:photo, random-chat photo send,
-      etc.), await checkImageNSFW(dataUrl) and branch on the result — see
-      the usage example at the bottom of this file.
+   4. Before relaying ANY photo, await checkImageNSFW(dataUrl) and branch on
+      the result — see the usage example at the bottom of this file.
    ══════════════════════════════════════════════════════════════════════════ */
 
 "use strict";

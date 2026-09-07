@@ -4,26 +4,11 @@
 // Add INSIDE io.on("connection", (socket) => { ... }) block, after the
 // existing friendChat:join and friendChat:typing handlers.
 //
-// Adds: photo sending and GIF sending between friends.
+// Adds: GIF sending between friends.
+// (Photo sending has been removed from GAICANI entirely — see server.js,
+// which no longer has a friendChat:photo handler, and friend-chat.html /
+// PRIVATE-MESSAGING.js, which no longer have any photo UI.)
 // ══════════════════════════════════════════════════════════════════════════════
-
-  // ── friendChat:photo — relay a photo (base64 dataUrl) to friend ───────────
-  socket.on("friendChat:photo", ({ toUsername, dataUrl }) => {
-    if (!socket._regUser || !toUsername || !dataUrl) return;
-
-    const toLc   = String(toUsername).toLowerCase().trim();
-    const myUser = registeredUsers.get(socket._regUser.usernameLower);
-
-    // Security: must be friends
-    if (!myUser || !(myUser.friends || []).includes(toLc)) return;
-
-    // Relay to recipient's user room
-    io.to(`user:${toLc}`).emit("friendChat:photo", {
-      fromUsername: socket._regUser.username,
-      dataUrl:      dataUrl,
-      timestamp:    new Date().toISOString()
-    });
-  });
 
   // ── friendChat:gif — relay a GIF URL to friend ────────────────────────────
   socket.on("friendChat:gif", ({ toUsername, url }) => {
