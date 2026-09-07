@@ -32,6 +32,22 @@
  * beach photos, workout selfies), raise them. If obvious nudity is
  * slipping through, lower them. There's no single "correct" number —
  * NSFWJS itself documents ~90-93% accuracy, not 100%.
+ *
+ * MEMORY: loading the model and running tfjs-node's native TensorFlow
+ * runtime costs real RAM — in practice, comfortably north of 150-250MB on
+ * top of whatever your app already uses, even before any photo is checked.
+ * On a ~512MB instance that's tight enough to OOM-crash the whole server,
+ * not just the photo filter. If that happens:
+ *   - The most reliable fix is more RAM (Render: bump the instance's plan).
+ *   - server.js intentionally does NOT preload the model at boot anymore —
+ *     it lazy-loads on the first real photo instead, so a memory-starved
+ *     instance at least boots and serves everything else (auth, chat,
+ *     friends, games) rather than crash-looping before anyone connects.
+ *   - A hard V8 "heap out of memory" crash can't be caught in JS (unlike
+ *     ordinary errors, which checkImageDataUrl already fails open on) — so
+ *     if the instance truly doesn't have enough RAM, this feature isn't
+ *     usable there until it does, no matter where in the code loading is
+ *     triggered from.
  */
 
 "use strict";

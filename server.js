@@ -24,7 +24,7 @@ console.log(`[DATA] Persistent files will be stored in: ${DATA_PATH}`);
 const crypto     = require("crypto");
 const compression   = require("compression");
 const rateLimit     = require("express-rate-limit");
-const { initNsfwModel, checkImageDataUrl, NSFW_REJECT_MESSAGE } = require("./nsfw-checker");
+const { checkImageDataUrl, NSFW_REJECT_MESSAGE } = require("./nsfw-checker");
 
 const app    = express();
 app.set("trust proxy", 1); // behind Render's proxy — needed for express-rate-limit / IP detection
@@ -5449,10 +5449,15 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-// Fire-and-forget: don't delay the server binding its port on this. The
-// photo filter still works even if this hasn't finished yet — the first
-// checkImageDataUrl() call just lazy-loads the model itself if needed.
-initNsfwModel();
+// NOTE: the NSFW model is intentionally NOT preloaded here anymore — on a
+// memory-tight instance, loading it eagerly at boot was crashing the whole
+// server before any user even connected. It now lazy-loads on the first
+// photo anyone actually sends (see getModel() in nsfw-checker.js), which
+// costs that one photo a few extra seconds but keeps the rest of the app
+// (auth, chat, friends, games) up regardless of whether the box has enough
+// headroom for TensorFlow. If you still see OOM crashes after this change,
+// it means the instance doesn't have enough RAM for tfjs-node at all, not
+// just at boot — see the note in nsfw-checker.js for options.
 
 server.listen(PORT, () => {
   console.log(`\n🚀 GAICANI Server running on port ${PORT}\n`);
