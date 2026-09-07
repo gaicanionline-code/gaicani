@@ -24,6 +24,7 @@ console.log(`[DATA] Persistent files will be stored in: ${DATA_PATH}`);
 const crypto     = require("crypto");
 const compression   = require("compression");
 const rateLimit     = require("express-rate-limit");
+const { initNsfwModel, checkImageDataUrl, NSFW_REJECT_MESSAGE } = require("./nsfw-checker");
 
 const app    = express();
 app.set("trust proxy", 1); // behind Render's proxy — needed for express-rate-limit / IP detection
@@ -2542,7 +2543,7 @@ io.on("connection", (socket) => {
   });
 
   // ── PHOTO ─────────────────────────────────────────────────────────────────
-  socket.on("photo", (data) => {
+  socket.on("photo", async (data) => {
     if (!socket.partner || typeof data?.dataUrl !== "string") return;
     if (socket.partner._isGhost) return;
     // Validate it's a real image data URL and not too large (~3MB base64 ≈ 4MB string)
@@ -2551,7 +2552,20 @@ io.on("connection", (socket) => {
     // Max 5 photos per 15s per socket — photos are the heaviest payload here,
     // so this gets the tightest limit of any media type.
     if (mediaRateLimited(socket, "photo", 5, 15_000)) return;
+
+    // ── NSFW filter — checked before relay, sender-only on a block ──────────
+    // Does NOT ban/block/disconnect anyone and does NOT end the chat — it
+    // just declines to relay this one image and tells the sender why.
+    const { blocked } = await checkImageDataUrl(data.dataUrl);
+    if (blocked) {
+      socket.emit("photo:rejected", { reason: NSFW_REJECT_MESSAGE });
+      return;
+    }
+    // Partner may have skipped/disconnected while the check was running.
+    if (!socket.partner || socket.partner._isGhost) return;
+
     socket.partner.emit("photo", { dataUrl: data.dataUrl });
+    socket.emit("photo:accepted");
   });
 
   // ── PHOTO PERMISSION REQUEST ───────────────────────────────────────────
@@ -4183,9 +4197,23 @@ const DRAW_REVEAL_MS     = parseInt(process.env.DRAW_REVEAL_MS, 10) || 5_000;   
 const DRAW_INVITE_TTL_MS = 60_000;  // unanswered invite quietly expires
 const DRAW_PICK_TTL_MS   = 12_000;  // drawer's time to choose a word before auto-pick
 const DRAW_ROOM_TTL_MS   = 30_000;  // grace period after a game ends before the room is dropped
+// After someone explicitly declines an invite, the same host can't re-invite
+// them for this long — an explicit ❌ shouldn't get immediately re-asked.
+const DRAW_DECLINE_COOLDOWN_MS = 5 * 60_000;
 
 const drawRooms       = new Map(); // roomId   → room
 const drawRoomBySocket = new Map(); // socketId → roomId
+const drawDeclineCooldowns = new Map(); // "hostLc→recipientLc" → timestamp the cooldown ends
+
+// Cooldown entries are cheap enough to just sweep periodically rather than
+// schedule a timer per entry (same reasoning as the pattern used elsewhere
+// in this file for short-lived per-user state).
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, until] of drawDeclineCooldowns) {
+    if (now >= until) drawDeclineCooldowns.delete(key);
+  }
+}, 60_000);
 
 const DRAW_WORD_BANK = [
   // ცხოველები (animals)
@@ -4840,7 +4868,7 @@ io.on("connection", (socket) => {
   });
 
   // ── friendChat:photo — relay photo (base64) to friend ────────────────────
-  socket.on("friendChat:photo", ({ toUsername, dataUrl }) => {
+  socket.on("friendChat:photo", async ({ toUsername, dataUrl, pid }) => {
     if (!socket._regUser || !toUsername || typeof dataUrl !== "string") return;
     if (!dataUrl.startsWith("data:image/")) return;
     if (dataUrl.length > 4 * 1024 * 1024) return; // same 4MB cap as random-chat photo
@@ -4848,11 +4876,22 @@ io.on("connection", (socket) => {
     const toLc   = String(toUsername).toLowerCase().trim();
     const myUser = registeredUsers.get(socket._regUser.usernameLower);
     if (!myUser || !(myUser.friends || []).includes(toLc)) return;
+
+    // ── NSFW filter — checked before relay, sender-only on a block ──────────
+    // Does NOT ban/block/disconnect anyone and does NOT end the chat — it
+    // just declines to relay this one image and tells the sender why.
+    const { blocked } = await checkImageDataUrl(dataUrl);
+    if (blocked) {
+      socket.emit("friendChat:photo:rejected", { pid, reason: NSFW_REJECT_MESSAGE });
+      return;
+    }
+
     io.to(`user:${toLc}`).emit("friendChat:photo", {
       fromUsername: socket._regUser.username,
       dataUrl:      dataUrl,
       timestamp:    new Date().toISOString()
     });
+    socket.emit("friendChat:photo:accepted", { pid });
 
     const streak = recordFriendMessage(socket._regUser.usernameLower, toLc);
     const toUser = registeredUsers.get(toLc);
@@ -5148,6 +5187,15 @@ io.on("connection", (socket) => {
       if (room.pendingInvites.has(lc)) continue;
       if (!onlineRegSockets.get(lc)?.size) continue; // must be a currently-online registered user
 
+      // They explicitly declined an invite from this same host recently —
+      // don't re-invite them until the cooldown passes.
+      const cooldownKey = `${hostLc}→${lc}`;
+      const cooldownUntil = drawDeclineCooldowns.get(cooldownKey);
+      if (cooldownUntil) {
+        if (Date.now() < cooldownUntil) continue;
+        drawDeclineCooldowns.delete(cooldownKey);
+      }
+
       const targetUser = registeredUsers.get(lc);
       if (!targetUser) continue;
 
@@ -5334,6 +5382,7 @@ io.on("connection", (socket) => {
     if (!invite) return;
     clearTimeout(invite.timeoutHandle);
     room.pendingInvites.delete(lc);
+    drawDeclineCooldowns.set(`${room.hostLc}→${lc}`, Date.now() + DRAW_DECLINE_COOLDOWN_MS);
     const host = room.players.find(p => p.lc === room.hostLc);
     if (host) io.sockets.sockets.get(host.socketId)?.emit("drawGuess:inviteDeclined", { username: socket._regUser.username });
   });
@@ -5399,6 +5448,11 @@ process.on('SIGINT', () => {
   if (statsDirty) _saveStatsToDisk();
   process.exit(0);
 });
+
+// Fire-and-forget: don't delay the server binding its port on this. The
+// photo filter still works even if this hasn't finished yet — the first
+// checkImageDataUrl() call just lazy-loads the model itself if needed.
+initNsfwModel();
 
 server.listen(PORT, () => {
   console.log(`\n🚀 GAICANI Server running on port ${PORT}\n`);
