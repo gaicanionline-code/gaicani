@@ -4259,6 +4259,19 @@ function drawRoomScores(room) {
   return room.players.map(p => ({ username: p.username, score: p.score }));
 }
 
+// Scans for a room (lobby or in-progress — not "ended") this user is
+// currently a part of, host or not. Used to enforce one active room per
+// user: someone already playing (or hosting) elsewhere can't spin up a
+// second room via drawGuess:invite. A full scan is fine at this app's
+// scale — same reasoning as getFlappyTop3 above.
+function findActiveDrawRoomForUser(lc) {
+  for (const room of drawRooms.values()) {
+    if (room.status === "ended") continue;
+    if (room.players.some(p => p.lc === lc)) return room;
+  }
+  return null;
+}
+
 // Public, low-detail view of every joinable room — shown to everyone in the
 // "active games" browser under the invite button, not just invitees.
 function getPublicDrawRooms() {
@@ -5067,13 +5080,29 @@ io.on("connection", (socket) => {
 
   // Create (or reuse) a lobby room you're hosting and invite friends to it.
   // Calling this again while your lobby is still open just invites more
-  // people into the same room instead of starting a second one.
+  // people into the same room instead of starting a second one. Someone
+  // already active in ANY room (as host of an in-progress game, or as a
+  // guest elsewhere) is blocked — one active room per user at a time.
   socket.on("drawGuess:invite", ({ toUsernames }) => {
     if (!socket._regUser) return;
     const hostLc = socket._regUser.usernameLower;
 
-    let room = drawRoomBySocket.has(socket.id) ? drawRooms.get(drawRoomBySocket.get(socket.id)) : null;
-    if (!room || room.hostLc !== hostLc || room.status !== "lobby") {
+    let room = findActiveDrawRoomForUser(hostLc);
+
+    if (room && !(room.hostLc === hostLc && room.status === "lobby")) {
+      socket.emit("drawGuess:error", {
+        message: "თქვენ უკვე ხართ სხვა თამაშში — ჯერ დატოვეთ ან დაასრულეთ ის, სანამ ახალს შექმნით.",
+      });
+      return;
+    }
+
+    if (room) {
+      // Reusing our own still-open lobby — re-point it at this socket in
+      // case we reconnected on a new tab/device since it was created.
+      const hostPlayer = room.players.find(p => p.lc === hostLc);
+      if (hostPlayer) { hostPlayer.socketId = socket.id; hostPlayer.connected = true; }
+      drawRoomBySocket.set(socket.id, room.id);
+    } else {
       room = {
         id: makeDrawRoomId(),
         hostLc,
