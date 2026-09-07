@@ -1252,25 +1252,10 @@ socket.on("photo:request", ({ fromId }) => {
 socket.on("photo:approved", () => {
   if (pendingPhotoData) {
     socket.emit("photo", { dataUrl: pendingPhotoData });
-    addSystemMessage("✅ პარტნიორმა დაამტკიცა სურათის მიღება");
-    // The bubble isn't added yet — the server still has to run it through
-    // the photo filter. See socket.on("photo:accepted"/"photo:rejected").
-  }
-});
-
-// Server checked the photo and it's clear — NOW show it in our own chat too.
-socket.on("photo:accepted", () => {
-  if (pendingPhotoData) {
     addPhotoMessage(pendingPhotoData, true);
+    addSystemMessage("✅ პარტნიორმა დაამტკიცა სურათის მიღება");
     pendingPhotoData = null;
   }
-});
-
-// Server checked the photo and blocked it — nothing was sent to the
-// partner, and nothing shows in our own chat either.
-socket.on("photo:rejected", (data) => {
-  pendingPhotoData = null;
-  addSystemMessage(data?.reason || "ფოტო არ აკმაყოფილებს დადგენილ მოთხოვნებს და მისი გაგზავნა დაუშვებელია.");
 });
 
 // Listen for rejection from partner

@@ -1582,11 +1582,6 @@
     reader.readAsDataURL(file);
   }
 
-  // pid → dataUrl, for photos we've sent but the server hasn't confirmed yet
-  // (passed the photo filter and was relayed, or was blocked). Keyed so
-  // multiple photos in flight at once still resolve to the right bubble.
-  const pendingFCPhotos = {};
-
   if (elPhotoInput) {
     elPhotoInput.addEventListener("change", () => {
       const file = elPhotoInput.files[0];
@@ -1594,28 +1589,11 @@
       if (!file || !socket?.connected) return;
       if (!file.type.startsWith("image/")) { showToast("⚠️ მხოლოდ სურათები"); return; }
       compressFCImage(file, (dataUrl) => {
-        const pid = `p_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        pendingFCPhotos[pid] = dataUrl;
-        socket.emit("friendChat:photo", { toUsername: friendName, dataUrl, pid });
+        socket.emit("friendChat:photo", { toUsername: friendName, dataUrl });
+        appendMessage({ from: myUsername, type: "photo", dataUrl, ts: new Date().toISOString() });
       });
     });
   }
-
-  // Server ran it through the photo filter and relayed it — NOW show our
-  // own bubble (kept out of the chat until we know it actually sent).
-  socket.on("friendChat:photo:accepted", ({ pid }) => {
-    const dataUrl = pendingFCPhotos[pid];
-    delete pendingFCPhotos[pid];
-    if (!dataUrl) return;
-    appendMessage({ from: myUsername, type: "photo", dataUrl, ts: new Date().toISOString() });
-  });
-
-  // Server blocked it — nothing was relayed to the friend, and nothing
-  // shows in our own chat either. Not a ban, not a block, chat stays open.
-  socket.on("friendChat:photo:rejected", ({ pid, reason } = {}) => {
-    delete pendingFCPhotos[pid];
-    showToast(reason || "ფოტო არ აკმაყოფილებს დადგენილ მოთხოვნებს და მისი გაგზავნა დაუშვებელია.");
-  });
 
   /* ── GIF picker ──────────────────────────────────────────────── */
   const elGifBtn     = $("fc-gif-btn");
