@@ -3741,6 +3741,11 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000);
 
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, expiry] of drawDeclineCooldown) if (now >= expiry) drawDeclineCooldown.delete(key);
+}, 60 * 60 * 1000);
+
 // ── REST endpoints ────────────────────────────────────────────────────────────
 const authLimiter = rateLimit({ windowMs: 15 * 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
 
@@ -4145,9 +4150,14 @@ const DRAW_REVEAL_MS     = parseInt(process.env.DRAW_REVEAL_MS, 10) || 5_000;   
 const DRAW_INVITE_TTL_MS = 60_000;  // unanswered invite quietly expires
 const DRAW_PICK_TTL_MS   = 12_000;  // drawer's time to choose a word before auto-pick
 const DRAW_ROOM_TTL_MS   = 30_000;  // grace period after a game ends before the room is dropped
+const DRAW_DECLINE_COOLDOWN_MS = 5 * 60_000; // after declining, that host can't re-invite you for 5 min
 
 const drawRooms       = new Map(); // roomId   → room
 const drawRoomBySocket = new Map(); // socketId → roomId
+
+// hostLc|targetLc → cooldown expiry timestamp. Prevents a host from
+// re-inviting someone who just declined for DRAW_DECLINE_COOLDOWN_MS.
+const drawDeclineCooldown = new Map();
 
 const DRAW_WORD_BANK = [
   // ცხოველები (animals)
@@ -5081,7 +5091,9 @@ io.on("connection", (socket) => {
     const hostUser = registeredUsers.get(hostLc);
     const list = Array.isArray(toUsernames) ? toUsernames.filter(u => typeof u === "string").slice(0, DRAW_MAX_PLAYERS) : [];
 
-    const invited = [];
+    const invited  = [];
+    const cooldown = []; // usernames skipped because they recently declined this host
+    const now = Date.now();
     for (const uname of list) {
       const lc = uname.toLowerCase();
       if (lc === hostLc) continue;
@@ -5092,6 +5104,15 @@ io.on("connection", (socket) => {
       const targetUser = registeredUsers.get(lc);
       if (!targetUser) continue;
 
+      // Skip (and let the host know) if this person declined an invite
+      // from this same host within the last DRAW_DECLINE_COOLDOWN_MS.
+      const cdKey = `${hostLc}|${lc}`;
+      const cdExpiry = drawDeclineCooldown.get(cdKey);
+      if (cdExpiry) {
+        if (cdExpiry > now) { cooldown.push(targetUser.username); continue; }
+        drawDeclineCooldown.delete(cdKey);
+      }
+
       const timeoutHandle = setTimeout(() => room.pendingInvites.delete(lc), DRAW_INVITE_TTL_MS);
       room.pendingInvites.set(lc, { timeoutHandle });
 
@@ -5101,7 +5122,7 @@ io.on("connection", (socket) => {
 
     socket.join(`drawroom:${room.id}`);
     socket.emit("drawGuess:room", drawRoomPublicState(room));
-    socket.emit("drawGuess:inviteSent", { invited });
+    socket.emit("drawGuess:inviteSent", { invited, cooldown });
     broadcastPublicDrawRooms();
   });
 
@@ -5265,7 +5286,8 @@ io.on("connection", (socket) => {
   socket.on("drawGuess:leave", () => cleanupDrawGuessForSocket(socket.id));
 
   // Explicit decline — lets the host's lobby update right away instead of
-  // waiting out the full invite expiry.
+  // waiting out the full invite expiry. Also starts a cooldown so this host
+  // can't immediately re-invite the same person again.
   socket.on("drawGuess:declineInvite", ({ roomId }) => {
     if (!socket._regUser) return;
     const room = drawRooms.get(roomId);
@@ -5275,6 +5297,7 @@ io.on("connection", (socket) => {
     if (!invite) return;
     clearTimeout(invite.timeoutHandle);
     room.pendingInvites.delete(lc);
+    drawDeclineCooldown.set(`${room.hostLc}|${lc}`, Date.now() + DRAW_DECLINE_COOLDOWN_MS);
     const host = room.players.find(p => p.lc === room.hostLc);
     if (host) io.sockets.sockets.get(host.socketId)?.emit("drawGuess:inviteDeclined", { username: socket._regUser.username });
   });

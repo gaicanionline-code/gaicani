@@ -2699,3 +2699,35 @@ html, body {
   transition: background 0.15s, transform 0.1s;
   flex-shrink: 0;
 }
+
+/* ── Draw & Guess invite bar — floating, shows up wherever the person is
+   (even mid-conversation in random chat), same pattern as dashboard.html /
+   friend-chat.html ─────────────────────────────────────────────────────── */
+.dg-invite-bar {
+  position: fixed;
+  left: 12px; right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 998;
+  background: #2b2d31;
+  border: 1px solid #5865f2;
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.45);
+  max-width: 420px;
+  margin: 0 auto;
+}
+.dg-invite-bar.show { display: flex; }
+.dg-invite-bar span { flex: 1; font-size: 0.86em; color: #dcddde; }
+.dg-invite-bar button {
+  border: none;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-weight: 700;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+.dg-invite-accept  { background: #3ba55d; color: #fff; }
+.dg-invite-decline { background: #40444b; color: #dcddde; }

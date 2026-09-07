@@ -298,6 +298,25 @@
       showFriendRequestNotif(fromUsername);
     });
 
+    // ── Invited to a Draw & Guess room — shown wherever the person currently
+    // is (including mid-conversation in random chat), via a fixed overlay bar.
+    s.on("drawGuess:invited", ({ roomId, fromUsername }) => {
+      const bar = document.getElementById("dgInviteBar");
+      if (!bar) return;
+      bar.innerHTML =
+        `<span>🎨 <strong>${esc(fromUsername)}</strong>-მა მოგიწვია დახატე-და-გამოიცანიში</span>` +
+        `<button class="dg-invite-accept">✅</button>` +
+        `<button class="dg-invite-decline">❌</button>`;
+      bar.classList.add("show");
+      bar.querySelector(".dg-invite-accept").onclick = () => {
+        window.location.href = "/draw-guess.html?room=" + encodeURIComponent(roomId);
+      };
+      bar.querySelector(".dg-invite-decline").onclick = () => {
+        bar.classList.remove("show");
+        s.emit("drawGuess:declineInvite", { roomId });
+      };
+    });
+
     // ── Request accepted (by the other person) ────────────────────────
     s.on("friend:acceptedByOther", ({ byUsername, friends }) => {
       if (authUser && friends) authUser.friends = friends;

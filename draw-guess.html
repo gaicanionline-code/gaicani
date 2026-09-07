@@ -776,9 +776,10 @@
       showInviteBar(roomId, fromUsername);
     });
 
-    socket.on("drawGuess:inviteSent", ({ invited }) => {
+    socket.on("drawGuess:inviteSent", ({ invited, cooldown }) => {
       if (invited && invited.length) showToast(`მოწვევა გაეგზავნა: ${invited.join(", ")}`);
-      else showToast("ვერავინ მოწვეულ იქნა — შეამოწმე ონლაინ არიან თუ არა.");
+      if (cooldown && cooldown.length) showToast(`${cooldown.join(", ")} ცოტა ხნის წინ უარი განაცხადა — სცადე მოგვიანებით.`);
+      if ((!invited || !invited.length) && (!cooldown || !cooldown.length)) showToast("ვერავინ მოწვეულ იქნა — შეამოწმე ონლაინ არიან თუ არა.");
     });
 
     socket.on("drawGuess:inviteDeclined", ({ username: who }) => {
