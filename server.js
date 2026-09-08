@@ -3410,8 +3410,11 @@ const DEFAULT_AVATAR = AVAILABLE_AVATARS[0];
 const USERS_FILE        = path.join(DATA_PATH, "registered_users.json");
 const PRIV_MSGS_FILE    = path.join(DATA_PATH, "private_messages.json");
 const STREAKS_FILE      = path.join(DATA_PATH, "friend_streaks.json");
+const ROOMS_FILE        = path.join(DATA_PATH, "chat_rooms.json");
 const PRIVATE_MSG_TTL   = 3 * 60 * 60 * 1000; // 3 h — auto-delete
 const AUTH_TOKEN_TTL    = 7  * 24 * 60 * 60 * 1000; // 7 days
+const ROOM_MSG_CAP      = 200; // per-room stored history — oldest trimmed past this
+const ROOM_NAME_MAX     = 80;
 
 // ── In-memory stores ─────────────────────────────────────────────────────────
 const registeredUsers   = new Map(); // lowerUsername → userObj
@@ -3419,6 +3422,12 @@ const authTokens        = new Map(); // token → { usernameLower, expiry }
 const privateRooms      = new Map(); // roomId → { messages, createdAt, expiresAt }
 const onlineRegSockets  = new Map(); // lowerUsername → Set<socketId>
 const friendStreaks     = new Map(); // roomId → { count, lastDate, lastFrom: { usernameLower: "YYYY-MM-DD" } }
+
+// ── Rooms ("ოთახები" — Discord-style topic rooms) ──────────────────────────
+// roomId → { id, name, createdBy, createdByUsername, createdAt,
+//            members: [usernameLower...], bannedUsers: [usernameLower...],
+//            messages: [{ id, fromLc, fromUsername, text, ts }] }
+const chatRooms = new Map();
 
 // ── Flappy Bird ("მფრინავი ჩიტი") state ────────────────────────────────────
 const flappySessions   = new Map(); // sessionId → { usernameLower, socketId, startAt, submitted }
@@ -3471,6 +3480,49 @@ function getOnlineRegisteredUsers(excludeLc) {
   }
   list.sort((a, b) => a.username.localeCompare(b.username));
   return list;
+}
+
+// ── Rooms helpers ─────────────────────────────────────────────────────────────
+function isRoomAdmin(usernameLower) {
+  const u = registeredUsers.get(usernameLower);
+  return !!(u && u.isAdmin);
+}
+
+function makeRoomId() {
+  return `room_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// Sanitize a room name/topic the same way everywhere it's set (create + edit).
+function cleanRoomName(raw) {
+  return String(raw || "").slice(0, ROOM_NAME_MAX).replace(/<[^>]*>/g, "").trim();
+}
+
+function roomPublicSummary(room, forLc) {
+  return {
+    id: room.id,
+    name: room.name,
+    createdByUsername: room.createdByUsername,
+    createdAt: room.createdAt,
+    memberCount: room.members.length,
+    isMember: forLc ? room.members.includes(forLc) : false,
+    isBanned: forLc ? room.bannedUsers.includes(forLc) : false,
+    lastMessageAt: room.messages.length ? room.messages[room.messages.length - 1].ts : null,
+  };
+}
+
+function roomMessagePublic(m) {
+  return { id: m.id, fromUsername: m.fromUsername, text: m.text, ts: m.ts };
+}
+
+// Everyone currently online under this username, kicked out of a room's live
+// broadcast — used by admin ban/kick so it takes effect immediately even if
+// they have several tabs/devices open.
+function forceLeaveRoomSockets(usernameLower, roomId) {
+  const sockets = onlineRegSockets.get(usernameLower);
+  if (!sockets) return;
+  for (const sid of sockets) {
+    io.sockets.sockets.get(sid)?.leave(`roomchat:${roomId}`);
+  }
 }
 
 // ── Crypto helpers ────────────────────────────────────────────────────────────
@@ -3600,6 +3652,7 @@ const SAVE_DEBOUNCE_MS = 5000;
 let authUsersDirty = false;
 let privMsgsDirty = false;
 let streaksDirty = false;
+let roomsDirty = false;
 let saveTimer = null;
 
 function scheduleSave() {
@@ -3608,6 +3661,7 @@ function scheduleSave() {
     if (authUsersDirty) _saveAuthUsersToDisk();
     if (privMsgsDirty) _savePrivateMsgsToDisk();
     if (streaksDirty) _saveStreaksToDisk();
+    if (roomsDirty) _saveChatRoomsToDisk();
     saveTimer = null;
   }, SAVE_DEBOUNCE_MS);
 }
@@ -3622,7 +3676,8 @@ function _saveAuthUsersToDisk() {
       friends: u.friends || [],
       pendingRequests: u.pendingRequests || [],
       avatar: u.avatar || DEFAULT_AVATAR,
-      bio: u.bio || ""
+      bio: u.bio || "",
+      isAdmin: !!u.isAdmin
     };
   }
   try {
@@ -3631,6 +3686,18 @@ function _saveAuthUsersToDisk() {
   } catch (e) {
     console.error("[AUTH] save failed:", e.message);
     // Keep dirty flag set, will retry on next interval
+  }
+}
+
+function _saveChatRoomsToDisk() {
+  const obj = {};
+  for (const [id, r] of chatRooms) obj[id] = r;
+  try {
+    fs.writeFileSync(ROOMS_FILE, JSON.stringify(obj, null, 2), "utf8");
+    roomsDirty = false;
+  } catch (e) {
+    console.error("[ROOMS] save failed:", e.message);
+    roomsDirty = true;
   }
 }
 
@@ -3699,11 +3766,63 @@ function saveStreaks() {
   streaksDirty = true;
   scheduleSave();
 }
+function loadChatRooms() {
+  try {
+    const obj = JSON.parse(fs.readFileSync(ROOMS_FILE, "utf8"));
+    for (const [id, r] of Object.entries(obj)) {
+      r.members      = Array.isArray(r.members) ? r.members : [];
+      r.bannedUsers   = Array.isArray(r.bannedUsers) ? r.bannedUsers : [];
+      r.messages      = Array.isArray(r.messages) ? r.messages : [];
+      chatRooms.set(id, r);
+    }
+    console.log(`[ROOMS] Loaded ${chatRooms.size} room(s)`);
+  } catch { /* first run */ }
+}
+function saveChatRooms() {
+  roomsDirty = true;
+  scheduleSave();
+}
+
+// ── Seed the fixed Rooms administrator account ─────────────────────────────
+// Runs once at startup. If the account already exists (e.g. loaded from disk
+// on a restart) its password is left untouched — only the isAdmin flag is
+// guaranteed to be set. Override via env vars if you'd rather not keep the
+// default password in source.
+const ADMIN_SEED_USERNAME = process.env.ADMIN_USERNAME || "ADMINISTRATOR1121";
+const ADMIN_SEED_PASSWORD = process.env.ADMIN_PASSWORD || "Paroli1121";
+
+async function seedAdminAccount() {
+  const lc = ADMIN_SEED_USERNAME.toLowerCase();
+  const existing = registeredUsers.get(lc);
+  if (existing) {
+    if (!existing.isAdmin) { existing.isAdmin = true; saveAuthUsers(); }
+    return;
+  }
+  const user = {
+    username: ADMIN_SEED_USERNAME,
+    passwordHash: await authHashPassword(ADMIN_SEED_PASSWORD),
+    createdAt: new Date().toISOString(),
+    friends: [],
+    pendingRequests: [],
+    avatar: DEFAULT_AVATAR,
+    bio: "",
+    isAdmin: true,
+  };
+  registeredUsers.set(lc, user);
+  authReservedNames.add(lc);
+  saveAuthUsers();
+  console.log(`[ADMIN] Seeded administrator account: ${ADMIN_SEED_USERNAME}`);
+}
 
 loadAuthUsers();
 loadPrivateMsgs();
 loadStreaks();
+loadChatRooms();
 loadStats();
+// server.listen() below is deliberately deferred until this resolves — closes
+// a narrow race where someone could register the admin username themselves
+// in the brief window before the async password hash finishes.
+const adminSeedPromise = seedAdminAccount().catch(e => console.error("[ADMIN] Failed to seed administrator account:", e.message));
 
 // ── Scheduled cleanup ─────────────────────────────────────────────────────────
 setInterval(() => {
@@ -3869,7 +3988,8 @@ app.post("/api/auth/login", authLimiter, express.json({ limit: "5kb" }), async (
     friends: user.friends || [],
     pendingRequests: user.pendingRequests || [],
     avatar: user.avatar || DEFAULT_AVATAR,
-    bio: user.bio || ""
+    bio: user.bio || "",
+    isAdmin: !!user.isAdmin
   });
 });
 
@@ -3900,7 +4020,8 @@ app.post("/api/auth/verify", express.json({ limit: "1kb" }), (req, res) => {
     friends: user.friends || [],
     pendingRequests: user.pendingRequests || [],
     avatar: user.avatar || DEFAULT_AVATAR,
-    bio: user.bio || ""
+    bio: user.bio || "",
+    isAdmin: !!user.isAdmin
   });
 });
 
@@ -3917,6 +4038,54 @@ app.post("/api/users/avatars", express.json({ limit: "2kb" }), (req, res) => {
     out[lc] = u ? (u.avatar || DEFAULT_AVATAR) : null;
   }
   res.json({ avatars: out });
+});
+
+// Small shared helper for the Rooms REST endpoints below — every one of them
+// requires a valid, non-expired Bearer token (registered users only).
+function requireRegAuth(req, res) {
+  const token = (req.headers.authorization || "").replace("Bearer ", "").trim();
+  if (!token) { res.status(401).json({ error: "No token" }); return null; }
+  const entry = authTokens.get(token);
+  if (!entry || Date.now() >= entry.expiry) {
+    authTokens.delete(token);
+    res.status(401).json({ error: "Token expired" });
+    return null;
+  }
+  const user = registeredUsers.get(entry.usernameLower);
+  if (!user) { res.status(401).json({ error: "User not found" }); return null; }
+  return { usernameLower: entry.usernameLower, user };
+}
+
+// GET /api/rooms — list every room. Open to any authenticated registered
+// user (rooms require no approval to see or join).
+app.get("/api/rooms", (req, res) => {
+  const auth = requireRegAuth(req, res);
+  if (!auth) return;
+
+  const list = [...chatRooms.values()]
+    .map(r => roomPublicSummary(r, auth.usernameLower))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  res.json({ rooms: list, isAdmin: !!auth.user.isAdmin });
+});
+
+// GET /api/rooms/:roomId/messages — history for one room. A user the admin
+// has banned from this specific room is refused, same as everyone else who
+// isn't a registered user at all.
+app.get("/api/rooms/:roomId/messages", (req, res) => {
+  const auth = requireRegAuth(req, res);
+  if (!auth) return;
+
+  const room = chatRooms.get(req.params.roomId);
+  if (!room) return res.status(404).json({ error: "ოთახი ვერ მოიძებნა" });
+  if (room.bannedUsers.includes(auth.usernameLower)) {
+    return res.status(403).json({ error: "ადმინისტრატორმა შეგზღუდათ ამ ოთახში წვდომა" });
+  }
+
+  res.json({
+    room: roomPublicSummary(room, auth.usernameLower),
+    messages: room.messages.map(roomMessagePublic),
+  });
 });
 
 // POST /api/friends/request
@@ -4493,7 +4662,7 @@ io.on("connection", (socket) => {
     onlineRegSockets.get(entry.usernameLower).add(socket.id);
 
     socket.join(`user:${entry.usernameLower}`);
-    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []) });
+    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin });
     console.log(`[AUTH] ${user.username} logged in`);
     io.emit("users:onlineChanged"); // let dashboards know the online list may have changed
   });
@@ -4521,7 +4690,7 @@ io.on("connection", (socket) => {
     if (!onlineRegSockets.has(entry.usernameLower)) onlineRegSockets.set(entry.usernameLower, new Set());
     onlineRegSockets.get(entry.usernameLower).add(socket.id);
     socket.join(`user:${entry.usernameLower}`);
-    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []) });
+    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin });
     console.log(`[AUTH] ${user.username} logged in via auth:token`);
     io.emit("users:onlineChanged"); // let dashboards know the online list may have changed
   });
@@ -5331,6 +5500,218 @@ io.on("connection", (socket) => {
     if (host) io.sockets.sockets.get(host.socketId)?.emit("drawGuess:inviteDeclined", { username: socket._regUser.username });
   });
 
+  // ══════════════════════════════════════════════════════════════════════
+  // Rooms ("ოთახები") — Discord-style topic rooms, registered users only.
+  // Opening a room in the client auto-joins it (rooms:join): no separate
+  // approval step, matches "no approval required to join a room". Reading
+  // history is allowed for any registered user regardless of membership —
+  // membership just tracks who's a current member (shown in the member
+  // list, and what a Leave button clears). Sending requires you either be
+  // a member already or join automatically as part of the send.
+  // ══════════════════════════════════════════════════════════════════════
+
+  socket.on("rooms:join", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const room = chatRooms.get(roomId);
+    if (!room) { socket.emit("rooms:error", { message: "ოთახი ვერ მოიძებნა" }); return; }
+    const lc = socket._regUser.usernameLower;
+    if (room.bannedUsers.includes(lc)) {
+      socket.emit("rooms:error", { message: "ადმინისტრატორმა შეგზღუდათ ამ ოთახში მონაწილეობა" });
+      return;
+    }
+
+    socket.join(`roomchat:${roomId}`);
+    if (!room.members.includes(lc)) {
+      room.members.push(lc);
+      saveChatRooms();
+      socket.to(`roomchat:${roomId}`).emit("rooms:memberJoined", { roomId, username: socket._regUser.username });
+    }
+
+    const amAdmin = isRoomAdmin(lc);
+    socket.emit("rooms:room", {
+      room: roomPublicSummary(room, lc),
+      messages: room.messages.map(roomMessagePublic),
+      isAdmin: amAdmin,
+      members: room.members.map(m => registeredUsers.get(m)?.username || m),
+      bannedUsers: amAdmin ? room.bannedUsers.map(m => registeredUsers.get(m)?.username || m) : undefined,
+    });
+  });
+
+  socket.on("rooms:leave", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const room = chatRooms.get(roomId);
+    socket.leave(`roomchat:${roomId}`);
+    if (!room) return;
+    const lc = socket._regUser.usernameLower;
+    if (room.members.includes(lc)) {
+      room.members = room.members.filter(m => m !== lc);
+      saveChatRooms();
+      io.to(`roomchat:${roomId}`).emit("rooms:memberLeft", { roomId, username: socket._regUser.username });
+    }
+    socket.emit("rooms:left", { roomId });
+  });
+
+  socket.on("rooms:send", ({ roomId, text }) => {
+    if (!socket._regUser || typeof text !== "string") return;
+    const room = chatRooms.get(roomId);
+    if (!room) { socket.emit("rooms:error", { message: "ოთახი ვერ მოიძებნა" }); return; }
+    const lc = socket._regUser.usernameLower;
+    if (room.bannedUsers.includes(lc)) {
+      socket.emit("rooms:error", { message: "ადმინისტრატორმა შეგზღუდათ ამ ოთახში მონაწილეობა" });
+      return;
+    }
+
+    const clean = text.slice(0, MSG_MAX).replace(/<[^>]*>/g, "").trim();
+    if (!clean) return;
+    if (mediaRateLimited(socket, "roomMsg", 10, 10_000)) {
+      socket.emit("rooms:error", { message: "ძალიან ბევრი შეტყობინება — ცოტა დაელოდე." });
+      return;
+    }
+
+    // Sending implies joining — matches the "no approval needed" join flow
+    // and means you never have to think about joining as a separate step.
+    if (!room.members.includes(lc)) {
+      room.members.push(lc);
+      socket.join(`roomchat:${roomId}`);
+      io.to(`roomchat:${roomId}`).emit("rooms:memberJoined", { roomId, username: socket._regUser.username });
+    }
+
+    const msg = {
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      fromLc: lc,
+      fromUsername: socket._regUser.username,
+      text: clean,
+      ts: new Date().toISOString(),
+    };
+    room.messages.push(msg);
+    if (room.messages.length > ROOM_MSG_CAP) room.messages.shift();
+    saveChatRooms();
+
+    io.to(`roomchat:${roomId}`).emit("rooms:message", { roomId, message: roomMessagePublic(msg) });
+  });
+
+  // ── Admin-only room management ──────────────────────────────────────────
+  // Every handler below re-checks isRoomAdmin() itself — a client can never
+  // grant itself admin by editing local state or replaying a captured
+  // request, since the flag is looked up fresh from registeredUsers.
+
+  socket.on("rooms:create", ({ name }) => {
+    if (!socket._regUser || !isRoomAdmin(socket._regUser.usernameLower)) {
+      socket.emit("rooms:error", { message: "მხოლოდ ადმინისტრატორს შეუძლია ოთახის შექმნა" });
+      return;
+    }
+    const clean = cleanRoomName(name);
+    if (!clean) { socket.emit("rooms:error", { message: "ოთახის სახელი სავალდებულოა" }); return; }
+
+    const room = {
+      id: makeRoomId(),
+      name: clean,
+      createdBy: socket._regUser.usernameLower,
+      createdByUsername: socket._regUser.username,
+      createdAt: new Date().toISOString(),
+      members: [],
+      bannedUsers: [],
+      messages: [],
+    };
+    chatRooms.set(room.id, room);
+    saveChatRooms();
+    io.emit("rooms:updated");
+    socket.emit("rooms:created", { roomId: room.id });
+  });
+
+  socket.on("rooms:edit", ({ roomId, name }) => {
+    if (!socket._regUser || !isRoomAdmin(socket._regUser.usernameLower)) {
+      socket.emit("rooms:error", { message: "მხოლოდ ადმინისტრატორს შეუძლია ოთახის რედაქტირება" });
+      return;
+    }
+    const room = chatRooms.get(roomId);
+    if (!room) { socket.emit("rooms:error", { message: "ოთახი ვერ მოიძებნა" }); return; }
+    const clean = cleanRoomName(name);
+    if (!clean) { socket.emit("rooms:error", { message: "ოთახის სახელი სავალდებულოა" }); return; }
+
+    room.name = clean;
+    saveChatRooms();
+    io.emit("rooms:updated");
+    io.to(`roomchat:${roomId}`).emit("rooms:roomEdited", { roomId, name: room.name });
+  });
+
+  socket.on("rooms:delete", ({ roomId }) => {
+    if (!socket._regUser || !isRoomAdmin(socket._regUser.usernameLower)) {
+      socket.emit("rooms:error", { message: "მხოლოდ ადმინისტრატორს შეუძლია ოთახის წაშლა" });
+      return;
+    }
+    const room = chatRooms.get(roomId);
+    if (!room) { socket.emit("rooms:error", { message: "ოთახი ვერ მოიძებნა" }); return; }
+
+    io.to(`roomchat:${roomId}`).emit("rooms:roomDeleted", { roomId });
+    io.in(`roomchat:${roomId}`).socketsLeave(`roomchat:${roomId}`);
+    chatRooms.delete(roomId);
+    saveChatRooms();
+    io.emit("rooms:updated");
+  });
+
+  socket.on("rooms:deleteMessage", ({ roomId, messageId }) => {
+    if (!socket._regUser || !isRoomAdmin(socket._regUser.usernameLower)) {
+      socket.emit("rooms:error", { message: "მხოლოდ ადმინისტრატორს შეუძლია შეტყობინების წაშლა" });
+      return;
+    }
+    const room = chatRooms.get(roomId);
+    if (!room) return;
+    const before = room.messages.length;
+    room.messages = room.messages.filter(m => m.id !== messageId);
+    if (room.messages.length === before) return; // nothing removed
+    saveChatRooms();
+    io.to(`roomchat:${roomId}`).emit("rooms:messageDeleted", { roomId, messageId });
+  });
+
+  socket.on("rooms:kickUser", ({ roomId, username }) => {
+    if (!socket._regUser || !isRoomAdmin(socket._regUser.usernameLower)) {
+      socket.emit("rooms:error", { message: "მხოლოდ ადმინისტრატორს შეუძლია მომხმარებლის ამოღება" });
+      return;
+    }
+    const room = chatRooms.get(roomId);
+    if (!room || typeof username !== "string") return;
+    const targetLc = username.toLowerCase().trim();
+
+    room.members = room.members.filter(m => m !== targetLc);
+    saveChatRooms();
+    forceLeaveRoomSockets(targetLc, roomId);
+    io.to(`user:${targetLc}`).emit("rooms:kicked", { roomId, roomName: room.name });
+    io.to(`roomchat:${roomId}`).emit("rooms:memberLeft", { roomId, username });
+  });
+
+  socket.on("rooms:banUser", ({ roomId, username }) => {
+    if (!socket._regUser || !isRoomAdmin(socket._regUser.usernameLower)) {
+      socket.emit("rooms:error", { message: "მხოლოდ ადმინისტრატორს შეუძლია მომხმარებლის დაბლოკვა" });
+      return;
+    }
+    const room = chatRooms.get(roomId);
+    if (!room || typeof username !== "string") return;
+    const targetLc = username.toLowerCase().trim();
+    if (targetLc === socket._regUser.usernameLower) return; // can't ban yourself
+
+    if (!room.bannedUsers.includes(targetLc)) room.bannedUsers.push(targetLc);
+    room.members = room.members.filter(m => m !== targetLc);
+    saveChatRooms();
+    forceLeaveRoomSockets(targetLc, roomId);
+    io.to(`user:${targetLc}`).emit("rooms:banned", { roomId, roomName: room.name });
+    io.to(`roomchat:${roomId}`).emit("rooms:memberLeft", { roomId, username });
+  });
+
+  socket.on("rooms:unbanUser", ({ roomId, username }) => {
+    if (!socket._regUser || !isRoomAdmin(socket._regUser.usernameLower)) {
+      socket.emit("rooms:error", { message: "მხოლოდ ადმინისტრატორს შეუძლია შეზღუდვის მოხსნა" });
+      return;
+    }
+    const room = chatRooms.get(roomId);
+    if (!room || typeof username !== "string") return;
+    const targetLc = username.toLowerCase().trim();
+
+    room.bannedUsers = room.bannedUsers.filter(u => u !== targetLc);
+    saveChatRooms();
+    socket.emit("rooms:unbanned", { roomId, username });
+  });
+
   // ── Disconnect ───────────────────────────────────────────────────────────
   socket.on("disconnect", () => {
     console.log(`[SOCKET] Disconnected: ${socket.id}`);
@@ -5382,6 +5763,7 @@ process.on('SIGTERM', () => {
   if (authUsersDirty) _saveAuthUsersToDisk();
   if (privMsgsDirty) _savePrivateMsgsToDisk();
   if (statsDirty) _saveStatsToDisk();
+  if (roomsDirty) _saveChatRoomsToDisk();
   process.exit(0);
 });
 
@@ -5390,12 +5772,15 @@ process.on('SIGINT', () => {
   if (authUsersDirty) _saveAuthUsersToDisk();
   if (privMsgsDirty) _savePrivateMsgsToDisk();
   if (statsDirty) _saveStatsToDisk();
+  if (roomsDirty) _saveChatRoomsToDisk();
   process.exit(0);
 });
 
-server.listen(PORT, () => {
-  console.log(`\n🚀 GAICANI Server running on port ${PORT}\n`);
-  console.log(`   URL: http://localhost:${PORT}`);
-  console.log(`   Admin panel: http://localhost:${PORT}${ROUTE.panel}`);
-  console.log(`   Stats: http://localhost:${PORT}${ROUTE.stats}\n`);
+adminSeedPromise.then(() => {
+  server.listen(PORT, () => {
+    console.log(`\n🚀 GAICANI Server running on port ${PORT}\n`);
+    console.log(`   URL: http://localhost:${PORT}`);
+    console.log(`   Admin panel: http://localhost:${PORT}${ROUTE.panel}`);
+    console.log(`   Stats: http://localhost:${PORT}${ROUTE.stats}\n`);
+  });
 });
