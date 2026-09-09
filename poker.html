@@ -684,6 +684,10 @@
     socket.emit("poker:getBalance");
   }
   $("lobbyBackBtn").addEventListener("click", () => { socket.emit("poker:leave"); backToSetup(); });
+  $("startTableBtn").addEventListener("click", () => {
+    if (!currentRoomId) return;
+    socket.emit("poker:start", { roomId: currentRoomId });
+  });
   $("lobbyLeaveBtn").addEventListener("click", () => { socket.emit("poker:leave"); backToSetup(); });
   $("tableBackBtn").addEventListener("click", backToSetup); // stay seated — just go look at the lobby list; membership persists
   $("tableLeaveBtn").addEventListener("click", () => {
