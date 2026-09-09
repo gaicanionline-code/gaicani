@@ -400,11 +400,10 @@
   function renderOnlineFriends() {
     const list = $("onlineFriendsList");
     if (!onlineUsers.length) {
-      list.innerHTML = `<div class="pk-empty-state">ახლა არავინ არის ონლაინ.<br><small>დაელოდე ვინმეს შემოსვლას, ან შექმენი მაგიდა და დაელოდე შემოერთებას.</small></div>`;
-      $("createTableBtn").disabled = false;
+      list.innerHTML = `<div class="pk-empty-state">ახლა არავინ არის ონლაინ.<br><small>დაელოდე ვინმეს შემოსვლას.</small></div>`;
+      $("createTableBtn").disabled = true;
       return;
     }
-    $("createTableBtn").disabled = false;
     list.innerHTML = "";
     onlineUsers.forEach(u => {
       const row = document.createElement("div");
@@ -423,9 +422,11 @@
         const lc = u.username.toLowerCase();
         if (selectedInvitees.has(lc)) selectedInvitees.delete(lc); else selectedInvitees.add(lc);
         row.classList.toggle("selected");
+        $("createTableBtn").disabled = selectedInvitees.size === 0;
       });
       list.appendChild(row);
     });
+    $("createTableBtn").disabled = selectedInvitees.size === 0;
   }
 
   function renderPublicRooms(rooms) {
