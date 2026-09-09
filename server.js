@@ -4880,6 +4880,7 @@ function pokerRoomStateForViewer(room, viewerLc) {
     players: room.players.map((p, i) => ({
       seatIndex: i,
       username: p.username,
+      avatar: registeredUsers.get(p.lc)?.avatar || DEFAULT_AVATAR,
       stack: p.stack,
       connected: p.connected,
       folded: !!p.folded,

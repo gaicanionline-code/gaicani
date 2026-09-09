@@ -86,7 +86,8 @@
       background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 7px; cursor: pointer;
     }
     .pk-friend-pick-row.selected { border-color: var(--accent); background: rgba(88,101,242,0.1); }
-    .pk-pick-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--surface-2); display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
+    .pk-pick-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--surface-2); display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; overflow: hidden; }
+    .pk-pick-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .pk-pick-name { flex: 1; font-size: 0.9em; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pk-pick-check { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--muted); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 0.7em; }
     .pk-friend-pick-row.selected .pk-pick-check { background: var(--accent); border-color: var(--accent); }
@@ -111,11 +112,89 @@
     .pk-lobby-hint { text-align: center; color: var(--muted); font-size: 0.8em; padding: 6px 0; }
 
     /* ── Table screen ────────────────────────────────────────────── */
-    .pk-table-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; background: radial-gradient(ellipse at 50% 30%, var(--felt) 0%, #142720 70%, #0e1a15 100%); }
-    .pk-pot-row { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 0 4px; }
-    .pk-pot-amount { font-size: 1.05em; font-weight: 800; color: var(--gold); }
-    .pk-community-cards { display: flex; gap: 6px; justify-content: center; min-height: 54px; flex-wrap: wrap; }
-    .pk-stage-label { font-size: 0.7em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .pk-table-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; padding: 10px 10px 6px; gap: 8px; background: radial-gradient(ellipse at 50% 0%, #241014 0%, #17181d 60%); }
+
+    /* ── Oval felt table ─────────────────────────────────────────── */
+    .pk-table-oval {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      margin: 6px 4px 0;
+      border-radius: 50% / 38%;
+      background: radial-gradient(ellipse at 50% 40%, #7a1f2b 0%, #5c1420 55%, #3d0d16 100%);
+      border: 5px solid #caa14a;
+      box-shadow: 0 0 0 2px #7a5a20, inset 0 0 40px rgba(0,0,0,0.5), 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .pk-stage-label {
+      position: absolute; top: 8%; left: 50%; transform: translateX(-50%);
+      font-size: 0.68em; color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700;
+    }
+    .pk-center-pot {
+      position: absolute; top: 34%; left: 50%; transform: translate(-50%, -50%);
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+    }
+    .pk-pot-amount {
+      font-size: 0.95em; font-weight: 800; color: var(--gold);
+      background: rgba(0,0,0,0.35); padding: 4px 14px; border-radius: 20px; border: 1px solid rgba(242,201,76,0.4);
+      white-space: nowrap;
+    }
+    .pk-community-cards {
+      position: absolute; top: 48%; left: 50%; transform: translate(-50%, -50%);
+      display: flex; gap: 5px; justify-content: center; flex-wrap: nowrap;
+    }
+
+    /* ── Opponent seats, absolutely positioned around the oval ─────── */
+    .pk-opponents { position: absolute; inset: 0; }
+    .pk-opp-seat {
+      position: absolute; transform: translate(-50%, -50%);
+      display: flex; flex-direction: column; align-items: center; gap: 2px; width: 64px;
+      transition: filter 0.2s;
+    }
+    .pk-opp-seat.folded { filter: grayscale(0.7) brightness(0.6); }
+    .pk-opp-avatar-wrap { position: relative; }
+    .pk-opp-avatar {
+      width: 46px; height: 46px; border-radius: 50%; object-fit: cover;
+      border: 2px solid rgba(255,255,255,0.35); background: var(--surface-2); display: block;
+    }
+    .pk-opp-seat.acting .pk-opp-avatar { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(242,201,76,0.35), 0 0 16px rgba(242,201,76,0.5); }
+    .pk-opp-cardback-row { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); display: flex; gap: 1px; }
+    .pk-opp-cardback-row .pk-card { width: 14px; height: 20px; border-radius: 3px; }
+    .pk-opp-name {
+      font-size: 0.68em; font-weight: 700; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+      max-width: 68px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .pk-opp-stack {
+      font-size: 0.64em; font-weight: 700; color: var(--gold); text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+      display: flex; align-items: center; gap: 2px;
+    }
+    .pk-opp-bet-chip {
+      position: absolute; background: rgba(0,0,0,0.55); border: 1px solid rgba(242,201,76,0.5);
+      color: var(--gold); font-size: 0.62em; font-weight: 800; padding: 2px 7px; border-radius: 10px;
+      white-space: nowrap; top: 56px;
+    }
+    .pk-dealer-chip {
+      position: absolute; top: -4px; right: -4px; width: 18px; height: 18px; border-radius: 50%;
+      background: #fff; color: #1a1a1a; font-size: 0.6em; font-weight: 900;
+      display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+    }
+    .pk-status-chip {
+      font-size: 0.58em; font-weight: 800; text-transform: uppercase; padding: 1px 6px; border-radius: 5px; margin-top: 1px;
+    }
+    .pk-status-allin { background: rgba(242,63,66,0.85); color: #fff; }
+    .pk-status-folded { background: rgba(0,0,0,0.55); color: rgba(255,255,255,0.6); }
+    .pk-status-disc { background: rgba(125,129,160,0.55); color: #fff; }
+
+    /* ── "Me" panel — fixed below the oval ──────────────────────── */
+    .pk-me-panel { display: flex; align-items: center; gap: 10px; padding: 6px 6px calc(4px + var(--safe-bottom)); flex-shrink: 0; }
+    .pk-me-cards { display: flex; gap: 4px; }
+    .pk-me-cards .pk-card { width: 40px; height: 56px; font-size: 0.95em; }
+    .pk-me-avatar-wrap { position: relative; flex-shrink: 0; }
+    .pk-me-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent-lt); display: block; }
+    .pk-me-panel.acting .pk-me-avatar { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(242,201,76,0.35); }
+    .pk-me-info { min-width: 0; }
+    .pk-me-name { font-size: 0.86em; font-weight: 800; }
+    .pk-me-stack { font-size: 0.78em; font-weight: 700; color: var(--gold); }
+    .pk-me-bet { margin-left: auto; font-size: 0.7em; font-weight: 700; color: var(--accent-lt); background: rgba(88,101,242,0.15); padding: 4px 10px; border-radius: 12px; white-space: nowrap; }
 
     .pk-card {
       width: 34px; height: 48px; border-radius: 6px; background: #fff; color: #1a1a1a;
@@ -127,32 +206,10 @@
     .pk-card.pk-card-back { background: repeating-linear-gradient(45deg, var(--accent), var(--accent) 4px, var(--accent-dk) 4px, var(--accent-dk) 8px); }
     .pk-card.pk-card-empty { background: rgba(255,255,255,0.06); box-shadow: none; border: 1px dashed rgba(255,255,255,0.15); }
 
-    .pk-seats { display: flex; flex-direction: column; gap: 8px; }
-    .pk-seat {
-      display: flex; align-items: center; gap: 10px; padding: 10px 12px;
-      background: rgba(38,39,46,0.92); border: 1px solid var(--border); border-radius: 12px;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-    .pk-seat.acting { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold), 0 0 14px rgba(242,201,76,0.25); }
-    .pk-seat.folded { opacity: 0.45; }
-    .pk-seat.me { background: rgba(88,101,242,0.12); }
-    .pk-seat-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--surface-2); display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; font-size: 0.9em; }
-    .pk-seat-info { flex: 1; min-width: 0; }
-    .pk-seat-name { font-size: 0.88em; font-weight: 700; display: flex; align-items: center; gap: 6px; }
-    .pk-seat-name .disc { color: var(--muted); font-weight: 400; font-size: 0.85em; }
-    .pk-seat-stack { color: var(--gold); font-size: 0.76em; margin-top: 1px; }
-    .pk-seat-badge { font-size: 0.64em; font-weight: 800; padding: 2px 6px; border-radius: 5px; text-transform: uppercase; letter-spacing: 0.03em; }
-    .pk-badge-dealer { background: #fff; color: #1a1a1a; }
-    .pk-badge-allin { background: rgba(242,63,66,0.2); color: var(--danger); }
-    .pk-badge-folded { background: rgba(125,129,160,0.2); color: var(--muted); }
-    .pk-seat-cards { display: flex; gap: 3px; flex-shrink: 0; }
-    .pk-seat-cards .pk-card { width: 26px; height: 36px; font-size: 0.7em; }
-    .pk-seat-bet { color: var(--accent-lt); font-size: 0.76em; font-weight: 700; flex-shrink: 0; white-space: nowrap; }
-
     .pk-empty-hand { color: var(--muted); font-size: 0.85em; text-align: center; padding: 30px 20px; }
 
     /* ── Action bar ──────────────────────────────────────────────── */
-    .pk-action-bar { padding: 10px 12px calc(10px + var(--safe-bottom)); background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0; display: none; flex-direction: column; gap: 8px; }
+    .pk-action-bar { padding: 8px 10px calc(8px + var(--safe-bottom)); background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0; display: none; flex-direction: column; gap: 7px; }
     .pk-action-bar.show { display: flex; }
     .pk-timer-track { height: 3px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
     .pk-timer-fill { height: 100%; background: var(--gold); width: 100%; transition: width 1s linear; }
@@ -160,13 +217,13 @@
     .pk-raise-row input[type=range] { flex: 1; accent-color: var(--accent); }
     .pk-raise-amount { font-weight: 800; color: var(--gold); font-size: 0.9em; min-width: 52px; text-align: right; }
     .pk-action-btns { display: flex; gap: 7px; }
-    .pk-action-btns button { flex: 1; border: none; border-radius: 10px; padding: 12px 4px; font-weight: 800; font-size: 0.86em; cursor: pointer; }
-    .pk-btn-fold { background: rgba(242,63,66,0.16); color: var(--danger); }
-    .pk-btn-check { background: var(--surface-2); color: var(--text); }
-    .pk-btn-call { background: var(--accent); color: #fff; }
-    .pk-btn-raise { background: var(--good); color: #fff; }
-    .pk-btn-allin { background: var(--gold); color: #1a1a1a; }
-    .pk-action-btns button:disabled { opacity: 0.35; }
+    .pk-action-btns button { flex: 1; border: none; border-radius: 24px; padding: 13px 4px; font-weight: 800; font-size: 0.85em; cursor: pointer; letter-spacing: 0.01em; box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
+    .pk-btn-fold { background: linear-gradient(180deg, #3a3b42, #26272e); color: #ff8a8d; }
+    .pk-btn-check { background: linear-gradient(180deg, #4a4c56, #33343c); color: #fff; }
+    .pk-btn-call { background: linear-gradient(180deg, #4bc873, var(--good)); color: #fff; }
+    .pk-btn-raise { background: linear-gradient(180deg, #4a90e2, var(--accent-dk)); color: #fff; }
+    .pk-btn-allin { background: linear-gradient(180deg, #ffdb70, var(--gold)); color: #4a3a00; }
+    .pk-action-btns button:disabled { opacity: 0.35; box-shadow: none; }
 
     .pk-leave-table-row { padding: 8px 14px; text-align: center; }
     .pk-leave-table-row button { background: none; border: none; color: var(--muted); font-size: 0.8em; cursor: pointer; text-decoration: underline; }
@@ -273,12 +330,26 @@
       <div class="pk-coin-chip">🪙 <span id="tableCoins">—</span></div>
     </header>
     <div class="pk-table-body">
-      <div class="pk-pot-row">
+      <div class="pk-table-oval" id="tableOval">
         <div class="pk-stage-label" id="stageLabel">PREFLOP</div>
-        <div class="pk-pot-amount">🪙 <span id="potAmount">0</span></div>
+        <div class="pk-center-pot">
+          <div class="pk-pot-amount">🪙 <span id="potAmount">0</span></div>
+        </div>
         <div class="pk-community-cards" id="communityCards"></div>
+        <div class="pk-opponents" id="opponentSeats"></div>
       </div>
-      <div class="pk-seats" id="seatsList"></div>
+      <div class="pk-me-panel" id="mePanel">
+        <div class="pk-me-cards" id="myCards"></div>
+        <div class="pk-me-avatar-wrap">
+          <img id="myAvatarImg" class="pk-me-avatar" alt="" />
+          <div class="pk-dealer-chip" id="myDealerBadge" style="display:none">D</div>
+        </div>
+        <div class="pk-me-info">
+          <div class="pk-me-name" id="myName"></div>
+          <div class="pk-me-stack">🪙 <span id="myStackDisplay">0</span></div>
+        </div>
+        <div class="pk-me-bet" id="myBetChip" style="display:none"></div>
+      </div>
     </div>
     <div class="pk-leave-table-row"><button id="tableLeaveBtn">მაგიდის დატოვება</button></div>
 
@@ -372,6 +443,19 @@
     el.className = "pk-card pk-card-back";
     return el;
   }
+  // Fills an avatar container with the person's chosen profile photo, falling
+  // back to a letter if they somehow have none set.
+  function setAvatar(container, avatarFile, username) {
+    container.innerHTML = "";
+    if (avatarFile) {
+      const img = document.createElement("img");
+      img.src = "/" + avatarFile;
+      img.alt = username || "";
+      container.appendChild(img);
+    } else {
+      container.textContent = (username || "?").charAt(0).toUpperCase();
+    }
+  }
 
   const { token, username } = loadAuth();
   const myUsernameLower = (username || "").toLowerCase();
@@ -410,7 +494,7 @@
       row.className = "pk-friend-pick-row" + (selectedInvitees.has(u.username.toLowerCase()) ? " selected" : "");
       const avatar = document.createElement("div");
       avatar.className = "pk-pick-avatar";
-      avatar.textContent = u.username.charAt(0).toUpperCase();
+      setAvatar(avatar, u.avatar, u.username);
       const name = document.createElement("div");
       name.className = "pk-pick-name";
       name.textContent = u.username;
@@ -473,7 +557,7 @@
       row.className = "pk-lobby-player";
       const avatar = document.createElement("div");
       avatar.className = "pk-pick-avatar";
-      avatar.textContent = p.username.charAt(0).toUpperCase();
+      setAvatar(avatar, p.avatar, p.username);
       const name = document.createElement("div");
       name.className = "pk-pick-name";
       name.textContent = p.username;
@@ -518,7 +602,7 @@
         row.className = "pk-friend-pick-row";
         const avatar = document.createElement("div");
         avatar.className = "pk-pick-avatar";
-        avatar.textContent = u.username.charAt(0).toUpperCase();
+        setAvatar(avatar, u.avatar, u.username);
         const name = document.createElement("div");
         name.className = "pk-pick-name";
         name.textContent = u.username;
@@ -536,6 +620,16 @@
   $("inviteMoreClose").addEventListener("click", () => $("inviteMoreModal").classList.remove("show"));
 
   /* ── Table screen ────────────────────────────────────────────── */
+  // Percent positions (left%, top%) for opponents around the top arc of the
+  // oval, keyed by opponent count — "me" is always shown separately below.
+  const OPP_POSITIONS = {
+    1: [[50, 14]],
+    2: [[22, 26], [78, 26]],
+    3: [[12, 48], [50, 12], [88, 48]],
+    4: [[10, 54], [32, 16], [68, 16], [90, 54]],
+    5: [[8, 62], [22, 24], [50, 10], [78, 24], [92, 62]],
+  };
+
   function renderTable(room) {
     latestRoom = room;
     $("stageLabel").textContent = ({ lobby: "მზადება", waiting: "შემდეგი ხელი მალე...", preflop: "PREFLOP", flop: "FLOP", turn: "TURN", river: "RIVER", showdown: "SHOWDOWN" })[room.stage] || room.stage;
@@ -547,53 +641,102 @@
       cc.appendChild(room.communityCards[i] ? cardEl(room.communityCards[i]) : (function () { const e = document.createElement("div"); e.className = "pk-card pk-card-empty"; return e; })());
     }
 
-    const seats = $("seatsList");
-    seats.innerHTML = "";
-    room.players.forEach((p, i) => {
+    const myIndex = room.players.findIndex(p => p.username.toLowerCase() === myUsernameLower);
+    const n = room.players.length;
+    // Rotate so the person to my left comes first, wrapping around to the
+    // person on my right — same convention every poker client uses so "I"
+    // always sit at the bottom regardless of my actual table seat index.
+    const opponents = [];
+    if (myIndex !== -1) {
+      for (let i = 1; i < n; i++) opponents.push(room.players[(myIndex + i) % n]);
+    } else {
+      opponents.push(...room.players); // spectating edge case
+    }
+
+    const oppWrap = $("opponentSeats");
+    oppWrap.innerHTML = "";
+    const positions = OPP_POSITIONS[Math.min(opponents.length, 5)] || [];
+    opponents.forEach((p, idx) => {
+      const pos = positions[idx] || [50, 30];
       const seat = document.createElement("div");
-      seat.className = "pk-seat" + (i === room.actingSeatIndex ? " acting" : "") + (p.folded ? " folded" : "") + (p.username.toLowerCase() === myUsernameLower ? " me" : "");
+      seat.className = "pk-opp-seat" + (p.seatIndex === room.actingSeatIndex ? " acting" : "") + (p.folded ? " folded" : "");
+      seat.style.left = pos[0] + "%";
+      seat.style.top = pos[1] + "%";
 
-      const avatar = document.createElement("div");
-      avatar.className = "pk-seat-avatar";
-      avatar.textContent = p.username.charAt(0).toUpperCase();
+      const avatarWrap = document.createElement("div");
+      avatarWrap.className = "pk-opp-avatar-wrap";
+      const avatarImg = document.createElement("img");
+      avatarImg.className = "pk-opp-avatar";
+      avatarImg.src = "/" + (p.avatar || "avatar1.png");
+      avatarImg.alt = p.username;
+      avatarWrap.appendChild(avatarImg);
 
-      const info = document.createElement("div");
-      info.className = "pk-seat-info";
-      const nameRow = document.createElement("div");
-      nameRow.className = "pk-seat-name";
-      const nameSpan = document.createElement("span");
-      nameSpan.textContent = p.username;
-      nameRow.appendChild(nameSpan);
-      if (i === room.dealerSeatIndex) { const b = document.createElement("span"); b.className = "pk-seat-badge pk-badge-dealer"; b.textContent = "D"; nameRow.appendChild(b); }
-      if (p.allIn) { const b = document.createElement("span"); b.className = "pk-seat-badge pk-badge-allin"; b.textContent = "ALL-IN"; nameRow.appendChild(b); }
-      if (p.folded) { const b = document.createElement("span"); b.className = "pk-seat-badge pk-badge-folded"; b.textContent = "FOLD"; nameRow.appendChild(b); }
-      if (!p.connected) { const d = document.createElement("span"); d.className = "disc"; d.textContent = "(კავშირი გაწყვეტილია)"; nameRow.appendChild(d); }
-      const stackRow = document.createElement("div");
-      stackRow.className = "pk-seat-stack";
-      stackRow.textContent = "🪙 " + p.stack;
-      info.appendChild(nameRow); info.appendChild(stackRow);
-
-      const cardsWrap = document.createElement("div");
-      cardsWrap.className = "pk-seat-cards";
       if (p.hasCards && !p.folded) {
-        if (p.holeCards && p.holeCards.length) {
-          p.holeCards.forEach(c => cardsWrap.appendChild(cardEl(c)));
-        } else {
-          cardsWrap.appendChild(cardBackEl()); cardsWrap.appendChild(cardBackEl());
-        }
+        const cardRow = document.createElement("div");
+        cardRow.className = "pk-opp-cardback-row";
+        cardRow.appendChild(cardBackEl());
+        cardRow.appendChild(cardBackEl());
+        avatarWrap.appendChild(cardRow);
+      }
+      if (p.seatIndex === room.dealerSeatIndex) {
+        const d = document.createElement("div");
+        d.className = "pk-dealer-chip";
+        d.textContent = "D";
+        avatarWrap.appendChild(d);
+      }
+      seat.appendChild(avatarWrap);
+
+      const name = document.createElement("div");
+      name.className = "pk-opp-name";
+      name.textContent = p.username;
+      seat.appendChild(name);
+
+      const stack = document.createElement("div");
+      stack.className = "pk-opp-stack";
+      stack.textContent = "🪙" + p.stack;
+      seat.appendChild(stack);
+
+      if (p.allIn) {
+        const s = document.createElement("div"); s.className = "pk-status-chip pk-status-allin"; s.textContent = "ALL-IN"; seat.appendChild(s);
+      } else if (p.folded) {
+        const s = document.createElement("div"); s.className = "pk-status-chip pk-status-folded"; s.textContent = "FOLD"; seat.appendChild(s);
+      } else if (!p.connected) {
+        const s = document.createElement("div"); s.className = "pk-status-chip pk-status-disc"; s.textContent = "OFFLINE"; seat.appendChild(s);
       }
 
-      seat.appendChild(avatar);
-      seat.appendChild(info);
-      seat.appendChild(cardsWrap);
       if (p.currentBet > 0) {
         const bet = document.createElement("div");
-        bet.className = "pk-seat-bet";
+        bet.className = "pk-opp-bet-chip";
         bet.textContent = "🔵" + p.currentBet;
         seat.appendChild(bet);
       }
-      seats.appendChild(seat);
+
+      oppWrap.appendChild(seat);
     });
+
+    // "Me" panel — always at the bottom, with my own cards shown larger.
+    if (myIndex !== -1) {
+      const me = room.players[myIndex];
+      $("mePanel").classList.toggle("acting", myIndex === room.actingSeatIndex);
+      $("myAvatarImg").src = "/" + (me.avatar || "avatar1.png");
+      $("myAvatarImg").alt = me.username;
+      $("myName").textContent = me.username;
+      $("myStackDisplay").textContent = me.stack;
+      $("myDealerBadge").style.display = myIndex === room.dealerSeatIndex ? "flex" : "none";
+
+      const betChip = $("myBetChip");
+      if (me.currentBet > 0) { betChip.style.display = "block"; betChip.textContent = "🔵" + me.currentBet; }
+      else betChip.style.display = "none";
+
+      const myCards = $("myCards");
+      myCards.innerHTML = "";
+      if (me.holeCards && me.holeCards.length) {
+        me.holeCards.forEach(c => myCards.appendChild(cardEl(c)));
+      } else if (me.hasCards && !me.folded) {
+        myCards.appendChild(cardBackEl()); myCards.appendChild(cardBackEl());
+      }
+      $("mePanel").style.opacity = me.folded ? "0.5" : "1";
+    }
 
     updateActionBar(room);
   }
