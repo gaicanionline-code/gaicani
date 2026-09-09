@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content, maximum-scale=1, user-scalable=no" />
+  <title>GAICANI – პოკერი</title>
+  <meta name="theme-color" content="#17181d" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <link rel="icon" type="image/png" href="/logo.png" />
+  <link rel="manifest" href="/manifest.json" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #17181d;
+      --surface:   #26272e;
+      --surface-2: #2f3037;
+      --border:    rgba(255,255,255,0.08);
+      --accent:    #5865f2;
+      --accent-dk: #4752c4;
+      --accent-lt: #8b93ff;
+      --text:      #e4e5ea;
+      --muted:     #7d81a0;
+      --good:      #3ba55d;
+      --warn:      #faa61a;
+      --danger:    #f23f42;
+      --gold:      #f2c94c;
+      --felt:      #1c3a2e;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-top:    env(safe-area-inset-top, 0px);
+    }
+
+    html, body {
+      height: 100%; height: 100dvh; height: var(--app-height, 100dvh);
+      background: radial-gradient(circle at 50% 0%, #22232c 0%, #17181d 55%);
+      color: var(--text); font-family: "Segoe UI", Arial, sans-serif;
+      overflow: hidden; -webkit-text-size-adjust: 100%;
+    }
+    #app { display: flex; flex-direction: column; height: 100%; height: 100dvh; height: var(--app-height, 100dvh); }
+
+    .pk-loading, .pk-center-screen {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 100%; gap: 14px; text-align: center; padding: 24px;
+    }
+    .pk-loading.hidden, .pk-center-screen.hidden { display: none; }
+    .spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--accent-lt); animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .pk-center-screen p { max-width: 280px; line-height: 1.5; }
+    .pk-center-screen a { color: #fff; text-decoration: none; font-weight: 700; font-size: 0.92em; background: var(--accent); padding: 11px 24px; border-radius: 10px; }
+
+    .pk-screen { display: none; flex-direction: column; height: 100%; overflow: hidden; }
+    .pk-screen.visible { display: flex; }
+
+    /* ── Header ──────────────────────────────────────────────────── */
+    .pk-header {
+      display: flex; align-items: center; gap: 8px;
+      min-height: 54px; flex-shrink: 0; padding: 0 10px; padding-top: var(--safe-top);
+      background: var(--surface); border-bottom: 1px solid var(--border);
+    }
+    .pk-icon-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
+      background: transparent; border: none; color: var(--text);
+      text-decoration: none; font-size: 1.15em; cursor: pointer;
+      transition: background 0.15s; -webkit-tap-highlight-color: transparent;
+    }
+    .pk-icon-btn:hover { background: rgba(255,255,255,0.08); }
+    .pk-header-title { font-weight: 700; font-size: 1.02em; flex: 1; min-width: 0; }
+    .pk-coin-chip {
+      display: flex; align-items: center; gap: 5px;
+      background: rgba(242,201,76,0.14); border: 1px solid rgba(242,201,76,0.35);
+      color: var(--gold); padding: 5px 11px; border-radius: 20px; font-size: 0.82em; font-weight: 700; white-space: nowrap;
+    }
+
+    /* ── Setup screen ────────────────────────────────────────────── */
+    .pk-setup-body { flex: 1; overflow-y: auto; padding: 16px 14px calc(16px + var(--safe-bottom)); display: flex; flex-direction: column; gap: 16px; }
+    .pk-new-table-btn {
+      border: none; border-radius: 12px; padding: 14px; font-weight: 800; font-size: 0.98em;
+      background: linear-gradient(135deg, var(--accent), var(--accent-dk)); color: #fff; cursor: pointer;
+    }
+    .pk-new-table-btn:disabled { opacity: 0.5; }
+    .pk-section-label { font-size: 0.76em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+    .pk-friend-pick-row {
+      display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 7px; cursor: pointer;
+    }
+    .pk-friend-pick-row.selected { border-color: var(--accent); background: rgba(88,101,242,0.1); }
+    .pk-pick-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--surface-2); display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
+    .pk-pick-name { flex: 1; font-size: 0.9em; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pk-pick-check { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--muted); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 0.7em; }
+    .pk-friend-pick-row.selected .pk-pick-check { background: var(--accent); border-color: var(--accent); }
+    .pk-empty-state { color: var(--muted); font-size: 0.86em; text-align: center; padding: 20px 10px; line-height: 1.6; }
+
+    .pk-public-room-row { display: flex; align-items: center; gap: 10px; padding: 11px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 7px; }
+    .pk-public-room-info { flex: 1; min-width: 0; }
+    .pk-public-room-host { font-weight: 700; font-size: 0.9em; }
+    .pk-public-room-meta { color: var(--muted); font-size: 0.76em; margin-top: 2px; }
+    .pk-join-room-btn { border: none; border-radius: 8px; padding: 8px 14px; font-weight: 700; font-size: 0.82em; cursor: pointer; background: var(--accent); color: #fff; }
+
+    /* ── Lobby screen ────────────────────────────────────────────── */
+    .pk-lobby-body { flex: 1; overflow-y: auto; padding: 16px 14px; }
+    .pk-lobby-player { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 7px; }
+    .pk-lobby-tag { font-size: 0.68em; font-weight: 700; background: rgba(88,101,242,0.18); color: var(--accent-lt); padding: 2px 8px; border-radius: 20px; }
+    .pk-lobby-stack { color: var(--gold); font-size: 0.82em; font-weight: 700; margin-left: auto; }
+    .pk-lobby-actions { padding: 12px 14px calc(12px + var(--safe-bottom)); border-top: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; gap: 8px; }
+    .pk-start-btn { border: none; border-radius: 10px; padding: 13px; font-weight: 800; background: var(--good); color: #fff; cursor: pointer; font-size: 0.95em; }
+    .pk-start-btn:disabled { opacity: 0.45; }
+    .pk-invite-more-btn, .pk-leave-btn { border: none; border-radius: 10px; padding: 11px; font-weight: 700; cursor: pointer; font-size: 0.88em; background: var(--surface-2); color: var(--text); }
+    .pk-leave-btn { color: var(--danger); }
+    .pk-lobby-hint { text-align: center; color: var(--muted); font-size: 0.8em; padding: 6px 0; }
+
+    /* ── Table screen ────────────────────────────────────────────── */
+    .pk-table-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; background: radial-gradient(ellipse at 50% 30%, var(--felt) 0%, #142720 70%, #0e1a15 100%); }
+    .pk-pot-row { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 0 4px; }
+    .pk-pot-amount { font-size: 1.05em; font-weight: 800; color: var(--gold); }
+    .pk-community-cards { display: flex; gap: 6px; justify-content: center; min-height: 54px; flex-wrap: wrap; }
+    .pk-stage-label { font-size: 0.7em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+
+    .pk-card {
+      width: 34px; height: 48px; border-radius: 6px; background: #fff; color: #1a1a1a;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 0.85em; line-height: 1; box-shadow: 0 2px 6px rgba(0,0,0,0.4); flex-shrink: 0;
+    }
+    .pk-card.red { color: #d0332f; }
+    .pk-card .pk-card-suit { font-size: 1.1em; margin-top: 1px; }
+    .pk-card.pk-card-back { background: repeating-linear-gradient(45deg, var(--accent), var(--accent) 4px, var(--accent-dk) 4px, var(--accent-dk) 8px); }
+    .pk-card.pk-card-empty { background: rgba(255,255,255,0.06); box-shadow: none; border: 1px dashed rgba(255,255,255,0.15); }
+
+    .pk-seats { display: flex; flex-direction: column; gap: 8px; }
+    .pk-seat {
+      display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+      background: rgba(38,39,46,0.92); border: 1px solid var(--border); border-radius: 12px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .pk-seat.acting { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold), 0 0 14px rgba(242,201,76,0.25); }
+    .pk-seat.folded { opacity: 0.45; }
+    .pk-seat.me { background: rgba(88,101,242,0.12); }
+    .pk-seat-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--surface-2); display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; font-size: 0.9em; }
+    .pk-seat-info { flex: 1; min-width: 0; }
+    .pk-seat-name { font-size: 0.88em; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+    .pk-seat-name .disc { color: var(--muted); font-weight: 400; font-size: 0.85em; }
+    .pk-seat-stack { color: var(--gold); font-size: 0.76em; margin-top: 1px; }
+    .pk-seat-badge { font-size: 0.64em; font-weight: 800; padding: 2px 6px; border-radius: 5px; text-transform: uppercase; letter-spacing: 0.03em; }
+    .pk-badge-dealer { background: #fff; color: #1a1a1a; }
+    .pk-badge-allin { background: rgba(242,63,66,0.2); color: var(--danger); }
+    .pk-badge-folded { background: rgba(125,129,160,0.2); color: var(--muted); }
+    .pk-seat-cards { display: flex; gap: 3px; flex-shrink: 0; }
+    .pk-seat-cards .pk-card { width: 26px; height: 36px; font-size: 0.7em; }
+    .pk-seat-bet { color: var(--accent-lt); font-size: 0.76em; font-weight: 700; flex-shrink: 0; white-space: nowrap; }
+
+    .pk-empty-hand { color: var(--muted); font-size: 0.85em; text-align: center; padding: 30px 20px; }
+
+    /* ── Action bar ──────────────────────────────────────────────── */
+    .pk-action-bar { padding: 10px 12px calc(10px + var(--safe-bottom)); background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0; display: none; flex-direction: column; gap: 8px; }
+    .pk-action-bar.show { display: flex; }
+    .pk-timer-track { height: 3px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+    .pk-timer-fill { height: 100%; background: var(--gold); width: 100%; transition: width 1s linear; }
+    .pk-raise-row { display: flex; align-items: center; gap: 8px; }
+    .pk-raise-row input[type=range] { flex: 1; accent-color: var(--accent); }
+    .pk-raise-amount { font-weight: 800; color: var(--gold); font-size: 0.9em; min-width: 52px; text-align: right; }
+    .pk-action-btns { display: flex; gap: 7px; }
+    .pk-action-btns button { flex: 1; border: none; border-radius: 10px; padding: 12px 4px; font-weight: 800; font-size: 0.86em; cursor: pointer; }
+    .pk-btn-fold { background: rgba(242,63,66,0.16); color: var(--danger); }
+    .pk-btn-check { background: var(--surface-2); color: var(--text); }
+    .pk-btn-call { background: var(--accent); color: #fff; }
+    .pk-btn-raise { background: var(--good); color: #fff; }
+    .pk-btn-allin { background: var(--gold); color: #1a1a1a; }
+    .pk-action-btns button:disabled { opacity: 0.35; }
+
+    .pk-leave-table-row { padding: 8px 14px; text-align: center; }
+    .pk-leave-table-row button { background: none; border: none; color: var(--muted); font-size: 0.8em; cursor: pointer; text-decoration: underline; }
+
+    /* ── Hand result overlay ─────────────────────────────────────── */
+    .pk-result-overlay {
+      position: fixed; inset: 0; z-index: 550; display: none; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.6); padding: 20px;
+    }
+    .pk-result-overlay.show { display: flex; }
+    .pk-result-box { background: var(--surface); border-radius: 16px; padding: 22px 20px; max-width: 340px; width: 100%; text-align: center; }
+    .pk-result-title { font-size: 1.1em; font-weight: 800; margin-bottom: 12px; }
+    .pk-result-winner { color: var(--gold); font-weight: 700; margin-bottom: 4px; font-size: 0.92em; }
+    .pk-result-hand { color: var(--muted); font-size: 0.78em; margin-bottom: 10px; }
+
+    /* ── Modals (invite more / raise etc share this) ────────────── */
+    .pk-modal { position: fixed; inset: 0; z-index: 500; display: none; align-items: flex-end; justify-content: center; background: rgba(0,0,0,0.55); }
+    .pk-modal.show { display: flex; }
+    @media (min-width: 560px) { .pk-modal { align-items: center; padding: 20px; } }
+    .pk-modal-box { background: var(--surface); width: 100%; max-width: 420px; border-radius: 18px 18px 0 0; padding: 18px; max-height: 80vh; display: flex; flex-direction: column; }
+    @media (min-width: 560px) { .pk-modal-box { border-radius: 16px; } }
+    .pk-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .pk-modal-header button { background: rgba(255,255,255,0.08); border: none; color: var(--muted); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; }
+    .pk-modal-list { overflow-y: auto; }
+
+    #pkToast {
+      position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%) translateY(20px);
+      background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+      padding: 10px 18px; border-radius: 20px; font-size: 0.88em;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 600; max-width: 90vw; text-align: center;
+    }
+    #pkToast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    .pk-invite-bar {
+      position: fixed; left: 12px; right: 12px; bottom: calc(12px + var(--safe-bottom)); z-index: 998;
+      background: var(--surface); border: 1px solid var(--accent); border-radius: 12px;
+      padding: 12px 14px; display: none; align-items: center; gap: 10px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.45); max-width: 420px; margin: 0 auto;
+    }
+    .pk-invite-bar.show { display: flex; }
+    .pk-invite-bar span { flex: 1; font-size: 0.86em; }
+    .pk-invite-bar button { border: none; border-radius: 8px; padding: 7px 12px; font-weight: 700; font-size: 0.85em; cursor: pointer; }
+    .pk-invite-accept { background: var(--good); color: #fff; }
+    .pk-invite-decline { background: var(--surface-2); color: var(--text); }
+
+    @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="pkLoading" class="pk-loading"><div class="spinner"></div></div>
+
+  <div id="pkAuthScreen" class="pk-center-screen hidden">
+    <div style="font-size:2.4em;">🔒</div>
+    <p>პოკერის სათამაშოდ საჭიროა შესვლა — ყველას 1000 მონეტა ერგება დასაწყისისთვის.</p>
+    <a href="/">რეგისტრაცია / შესვლა</a>
+  </div>
+
+  <!-- SETUP SCREEN -->
+  <div id="setupScreen" class="pk-screen">
+    <header class="pk-header">
+      <a href="/dashboard.html" class="pk-icon-btn" title="უკან">←</a>
+      <div class="pk-header-title">🃏 პოკერი</div>
+      <div class="pk-coin-chip">🪙 <span id="setupCoins">—</span></div>
+    </header>
+    <div class="pk-setup-body">
+      <button id="createTableBtn" class="pk-new-table-btn" disabled>➕ ახალი მაგიდის შექმნა</button>
+
+      <div>
+        <div class="pk-section-label">მოწვევა — ონლაინ მეგობრები</div>
+        <div id="onlineFriendsList"></div>
+      </div>
+
+      <div>
+        <div class="pk-section-label">აქტიური მაგიდები</div>
+        <div id="publicRoomList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOBBY SCREEN -->
+  <div id="lobbyScreen" class="pk-screen">
+    <header class="pk-header">
+      <button id="lobbyBackBtn" class="pk-icon-btn" title="უკან">←</button>
+      <div class="pk-header-title">მაგიდის ლობი</div>
+      <div class="pk-coin-chip">🪙 <span id="lobbyCoins">—</span></div>
+    </header>
+    <div class="pk-lobby-body">
+      <div id="lobbyPlayers"></div>
+      <div id="lobbyWaitHint" class="pk-lobby-hint"></div>
+    </div>
+    <div class="pk-lobby-actions">
+      <button id="startTableBtn" class="pk-start-btn" style="display:none">🎲 თამაშის დაწყება</button>
+      <div id="lobbyInviteMoreWrap"></div>
+      <button id="lobbyLeaveBtn" class="pk-leave-btn">მაგიდის დატოვება</button>
+    </div>
+  </div>
+
+  <!-- TABLE / PLAY SCREEN -->
+  <div id="tableScreen" class="pk-screen">
+    <header class="pk-header">
+      <button id="tableBackBtn" class="pk-icon-btn" title="უკან">←</button>
+      <div class="pk-header-title">🃏 პოკერი</div>
+      <div class="pk-coin-chip">🪙 <span id="tableCoins">—</span></div>
+    </header>
+    <div class="pk-table-body">
+      <div class="pk-pot-row">
+        <div class="pk-stage-label" id="stageLabel">PREFLOP</div>
+        <div class="pk-pot-amount">🪙 <span id="potAmount">0</span></div>
+        <div class="pk-community-cards" id="communityCards"></div>
+      </div>
+      <div class="pk-seats" id="seatsList"></div>
+    </div>
+    <div class="pk-leave-table-row"><button id="tableLeaveBtn">მაგიდის დატოვება</button></div>
+
+    <div id="actionBar" class="pk-action-bar">
+      <div class="pk-timer-track"><div class="pk-timer-fill" id="timerFill"></div></div>
+      <div class="pk-raise-row" id="raiseRow" style="display:none">
+        <input type="range" id="raiseSlider" min="0" max="100" value="0" />
+        <div class="pk-raise-amount" id="raiseAmountLabel">0</div>
+      </div>
+      <div class="pk-action-btns">
+        <button id="foldBtn" class="pk-btn-fold">📤 ფოლდი</button>
+        <button id="checkCallBtn" class="pk-btn-check">✓ ჩექი</button>
+        <button id="raiseBtn" class="pk-btn-raise">⬆ რეიზი</button>
+        <button id="allinBtn" class="pk-btn-allin">🔥 ოლ-ინი</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="pkToast"></div>
+  <div id="pkInviteBar" class="pk-invite-bar"></div>
+</div>
+
+<!-- Hand result overlay -->
+<div id="resultOverlay" class="pk-result-overlay">
+  <div class="pk-result-box">
+    <div class="pk-result-title" id="resultTitle">შედეგი</div>
+    <div id="resultWinners"></div>
+    <div id="resultHands" style="margin-top:10px;"></div>
+  </div>
+</div>
+
+<!-- Invite-more modal (reuses friend list) -->
+<div id="inviteMoreModal" class="pk-modal">
+  <div class="pk-modal-box">
+    <div class="pk-modal-header"><h3 style="margin:0;">მეგობრის მოწვევა</h3><button id="inviteMoreClose">✕</button></div>
+    <div id="inviteMoreList" class="pk-modal-list"></div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  (function () {
+    function setAppHeight() {
+      var h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      document.documentElement.style.setProperty("--app-height", h + "px");
+    }
+    setAppHeight();
+    if (window.visualViewport) { window.visualViewport.addEventListener("resize", setAppHeight); window.visualViewport.addEventListener("scroll", setAppHeight); }
+    window.addEventListener("resize", setAppHeight);
+    window.addEventListener("orientationchange", function () { setTimeout(setAppHeight, 200); });
+  })();
+</script>
+<script>
+(function () {
+  "use strict";
+
+  /* ── Helpers ─────────────────────────────────────────────────── */
+  function $(id) { return document.getElementById(id); }
+  function showToast(msg, ms = 3200) {
+    const t = $("pkToast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove("show"), ms);
+  }
+  function loadAuth() {
+    try { return { token: localStorage.getItem("gaicani_auth_token"), username: localStorage.getItem("gaicani_auth_user") }; }
+    catch (_) { return {}; }
+  }
+  function getRoomParam() { return (new URLSearchParams(window.location.search).get("room") || "").trim(); }
+
+  const SUIT_SYMBOLS = { s: "♠", h: "♥", d: "♦", c: "♣" };
+  const RANK_DISPLAY = { T: "10" };
+  function cardEl(card, small) {
+    const el = document.createElement("div");
+    el.className = "pk-card" + (small ? "" : "");
+    if (!card) { el.classList.add("pk-card-empty"); return el; }
+    const rank = card[0], suit = card[1];
+    if (suit === "h" || suit === "d") el.classList.add("red");
+    const rankSpan = document.createElement("div");
+    rankSpan.textContent = RANK_DISPLAY[rank] || rank;
+    const suitSpan = document.createElement("div");
+    suitSpan.className = "pk-card-suit";
+    suitSpan.textContent = SUIT_SYMBOLS[suit] || "";
+    el.appendChild(rankSpan);
+    el.appendChild(suitSpan);
+    return el;
+  }
+  function cardBackEl() {
+    const el = document.createElement("div");
+    el.className = "pk-card pk-card-back";
+    return el;
+  }
+
+  const { token, username } = loadAuth();
+  const myUsernameLower = (username || "").toLowerCase();
+  let myCoins = 0;
+
+  const elLoading = $("pkLoading");
+  const elAuth = $("pkAuthScreen");
+  const screens = { setup: $("setupScreen"), lobby: $("lobbyScreen"), table: $("tableScreen") };
+  if (!token || !username) { elLoading.classList.add("hidden"); elAuth.classList.remove("hidden"); }
+  function showScreen(name) { Object.entries(screens).forEach(([k, el]) => el.classList.toggle("visible", k === name)); }
+
+  function setCoinsDisplay(v) {
+    myCoins = v;
+    ["setupCoins", "lobbyCoins", "tableCoins"].forEach(id => { const el = $(id); if (el) el.textContent = v; });
+  }
+
+  /* ── State ───────────────────────────────────────────────────── */
+  let socket = null;
+  let currentRoomId = getRoomParam() || null;
+  let onlineUsers = [];
+  let selectedInvitees = new Set();
+  let latestRoom = null;
+  let timerInterval = null;
+
+  /* ── Setup screen: friend picker + public tables ────────────────── */
+  function renderOnlineFriends() {
+    const list = $("onlineFriendsList");
+    if (!onlineUsers.length) {
+      list.innerHTML = `<div class="pk-empty-state">ახლა არავინ არის ონლაინ.<br><small>დაელოდე ვინმეს შემოსვლას, ან შექმენი მაგიდა და დაელოდე შემოერთებას.</small></div>`;
+      $("createTableBtn").disabled = false;
+      return;
+    }
+    $("createTableBtn").disabled = false;
+    list.innerHTML = "";
+    onlineUsers.forEach(u => {
+      const row = document.createElement("div");
+      row.className = "pk-friend-pick-row" + (selectedInvitees.has(u.username.toLowerCase()) ? " selected" : "");
+      const avatar = document.createElement("div");
+      avatar.className = "pk-pick-avatar";
+      avatar.textContent = u.username.charAt(0).toUpperCase();
+      const name = document.createElement("div");
+      name.className = "pk-pick-name";
+      name.textContent = u.username;
+      const check = document.createElement("div");
+      check.className = "pk-pick-check";
+      check.textContent = "✓";
+      row.appendChild(avatar); row.appendChild(name); row.appendChild(check);
+      row.addEventListener("click", () => {
+        const lc = u.username.toLowerCase();
+        if (selectedInvitees.has(lc)) selectedInvitees.delete(lc); else selectedInvitees.add(lc);
+        row.classList.toggle("selected");
+      });
+      list.appendChild(row);
+    });
+  }
+
+  function renderPublicRooms(rooms) {
+    const list = $("publicRoomList");
+    list.innerHTML = "";
+    if (!rooms || !rooms.length) {
+      list.innerHTML = `<div class="pk-empty-state">ახლა აქტიური მაგიდა არ არის.</div>`;
+      return;
+    }
+    rooms.forEach(r => {
+      const row = document.createElement("div");
+      row.className = "pk-public-room-row";
+      const info = document.createElement("div");
+      info.className = "pk-public-room-info";
+      const host = document.createElement("div");
+      host.className = "pk-public-room-host";
+      host.textContent = "🃏 " + r.hostUsername + "-ის მაგიდა";
+      const meta = document.createElement("div");
+      meta.className = "pk-public-room-meta";
+      meta.textContent = `${r.playerCount}/${r.maxPlayers} მოთამაშე · ${r.status === "playing" ? "მიმდინარეობს" : "ლობი"}`;
+      info.appendChild(host); info.appendChild(meta);
+      const btn = document.createElement("button");
+      btn.className = "pk-join-room-btn";
+      btn.textContent = "შემოერთება";
+      btn.addEventListener("click", () => { socket.emit("poker:join", { roomId: r.roomId }); });
+      row.appendChild(info); row.appendChild(btn);
+      list.appendChild(row);
+    });
+  }
+
+  $("createTableBtn").addEventListener("click", () => {
+    const usernames = [...selectedInvitees];
+    socket.emit("poker:invite", { toUsernames: usernames });
+  });
+
+  /* ── Lobby screen ────────────────────────────────────────────── */
+  let isHost = false;
+  function renderLobby(room) {
+    isHost = room.hostUsername.toLowerCase() === myUsernameLower;
+    const list = $("lobbyPlayers");
+    list.innerHTML = "";
+    room.players.forEach(p => {
+      const row = document.createElement("div");
+      row.className = "pk-lobby-player";
+      const avatar = document.createElement("div");
+      avatar.className = "pk-pick-avatar";
+      avatar.textContent = p.username.charAt(0).toUpperCase();
+      const name = document.createElement("div");
+      name.className = "pk-pick-name";
+      name.textContent = p.username;
+      row.appendChild(avatar); row.appendChild(name);
+      if (p.username.toLowerCase() === room.hostUsername.toLowerCase()) {
+        const tag = document.createElement("span"); tag.className = "pk-lobby-tag"; tag.textContent = "მასპინძელი"; row.appendChild(tag);
+      }
+      const stack = document.createElement("div");
+      stack.className = "pk-lobby-stack";
+      stack.textContent = "🪙 " + p.stack;
+      row.appendChild(stack);
+      list.appendChild(row);
+    });
+
+    $("startTableBtn").style.display = isHost ? "block" : "none";
+    $("startTableBtn").disabled = room.players.length < 2;
+    $("lobbyWaitHint").textContent = isHost
+      ? (room.players.length < 2 ? "დაელოდე მინიმუმ 1 მეგობრის შემოერთებას." : "მზად ხარ დასაწყებად!")
+      : "მასპინძლის მოლოდინში...";
+
+    const wrap = $("lobbyInviteMoreWrap");
+    wrap.innerHTML = "";
+    if (isHost) {
+      const btn = document.createElement("button");
+      btn.className = "pk-invite-more-btn";
+      btn.textContent = "+ მეტი მეგობრის მოწვევა";
+      btn.addEventListener("click", openInviteMoreModal);
+      wrap.appendChild(btn);
+    }
+  }
+
+  function openInviteMoreModal() {
+    const inRoom = new Set((latestRoom?.players || []).map(p => p.username.toLowerCase()));
+    const available = onlineUsers.filter(u => !inRoom.has(u.username.toLowerCase()));
+    const list = $("inviteMoreList");
+    list.innerHTML = "";
+    if (!available.length) {
+      list.innerHTML = `<div class="pk-empty-state">ყველა ონლაინ მომხმარებელი უკვე მაგიდასთანაა.</div>`;
+    } else {
+      available.forEach(u => {
+        const row = document.createElement("div");
+        row.className = "pk-friend-pick-row";
+        const avatar = document.createElement("div");
+        avatar.className = "pk-pick-avatar";
+        avatar.textContent = u.username.charAt(0).toUpperCase();
+        const name = document.createElement("div");
+        name.className = "pk-pick-name";
+        name.textContent = u.username;
+        row.appendChild(avatar); row.appendChild(name);
+        row.addEventListener("click", () => {
+          socket.emit("poker:invite", { toUsernames: [u.username] });
+          showToast(`მოწვევა გაეგზავნა ${u.username}-ს`);
+          $("inviteMoreModal").classList.remove("show");
+        });
+        list.appendChild(row);
+      });
+    }
+    $("inviteMoreModal").classList.add("show");
+  }
+  $("inviteMoreClose").addEventListener("click", () => $("inviteMoreModal").classList.remove("show"));
+
+  /* ── Table screen ────────────────────────────────────────────── */
+  function renderTable(room) {
+    latestRoom = room;
+    $("stageLabel").textContent = ({ lobby: "მზადება", waiting: "შემდეგი ხელი მალე...", preflop: "PREFLOP", flop: "FLOP", turn: "TURN", river: "RIVER", showdown: "SHOWDOWN" })[room.stage] || room.stage;
+    $("potAmount").textContent = room.pot;
+
+    const cc = $("communityCards");
+    cc.innerHTML = "";
+    for (let i = 0; i < 5; i++) {
+      cc.appendChild(room.communityCards[i] ? cardEl(room.communityCards[i]) : (function () { const e = document.createElement("div"); e.className = "pk-card pk-card-empty"; return e; })());
+    }
+
+    const seats = $("seatsList");
+    seats.innerHTML = "";
+    room.players.forEach((p, i) => {
+      const seat = document.createElement("div");
+      seat.className = "pk-seat" + (i === room.actingSeatIndex ? " acting" : "") + (p.folded ? " folded" : "") + (p.username.toLowerCase() === myUsernameLower ? " me" : "");
+
+      const avatar = document.createElement("div");
+      avatar.className = "pk-seat-avatar";
+      avatar.textContent = p.username.charAt(0).toUpperCase();
+
+      const info = document.createElement("div");
+      info.className = "pk-seat-info";
+      const nameRow = document.createElement("div");
+      nameRow.className = "pk-seat-name";
+      const nameSpan = document.createElement("span");
+      nameSpan.textContent = p.username;
+      nameRow.appendChild(nameSpan);
+      if (i === room.dealerSeatIndex) { const b = document.createElement("span"); b.className = "pk-seat-badge pk-badge-dealer"; b.textContent = "D"; nameRow.appendChild(b); }
+      if (p.allIn) { const b = document.createElement("span"); b.className = "pk-seat-badge pk-badge-allin"; b.textContent = "ALL-IN"; nameRow.appendChild(b); }
+      if (p.folded) { const b = document.createElement("span"); b.className = "pk-seat-badge pk-badge-folded"; b.textContent = "FOLD"; nameRow.appendChild(b); }
+      if (!p.connected) { const d = document.createElement("span"); d.className = "disc"; d.textContent = "(კავშირი გაწყვეტილია)"; nameRow.appendChild(d); }
+      const stackRow = document.createElement("div");
+      stackRow.className = "pk-seat-stack";
+      stackRow.textContent = "🪙 " + p.stack;
+      info.appendChild(nameRow); info.appendChild(stackRow);
+
+      const cardsWrap = document.createElement("div");
+      cardsWrap.className = "pk-seat-cards";
+      if (p.hasCards && !p.folded) {
+        if (p.holeCards && p.holeCards.length) {
+          p.holeCards.forEach(c => cardsWrap.appendChild(cardEl(c)));
+        } else {
+          cardsWrap.appendChild(cardBackEl()); cardsWrap.appendChild(cardBackEl());
+        }
+      }
+
+      seat.appendChild(avatar);
+      seat.appendChild(info);
+      seat.appendChild(cardsWrap);
+      if (p.currentBet > 0) {
+        const bet = document.createElement("div");
+        bet.className = "pk-seat-bet";
+        bet.textContent = "🔵" + p.currentBet;
+        seat.appendChild(bet);
+      }
+      seats.appendChild(seat);
+    });
+
+    updateActionBar(room);
+  }
+
+  /* ── Action bar ──────────────────────────────────────────────── */
+  function clearTimerInterval() { if (timerInterval) { clearInterval(timerInterval); timerInterval = null; } }
+
+  function updateActionBar(room) {
+    const mySeatIndex = room.players.findIndex(p => p.username.toLowerCase() === myUsernameLower);
+    const myTurn = mySeatIndex !== -1 && mySeatIndex === room.actingSeatIndex;
+    const bar = $("actionBar");
+    clearTimerInterval();
+
+    if (!myTurn) { bar.classList.remove("show"); return; }
+    bar.classList.add("show");
+
+    const me = room.players[mySeatIndex];
+    const toCall = room.currentBet - me.currentBet;
+
+    $("foldBtn").disabled = false;
+    if (toCall <= 0) { $("checkCallBtn").textContent = "✓ ჩექი"; $("checkCallBtn").dataset.action = "check"; }
+    else { $("checkCallBtn").textContent = `☎ კოლი (${Math.min(toCall, me.stack)})`; $("checkCallBtn").dataset.action = "call"; }
+
+    const canRaise = me.stack > toCall;
+    $("raiseBtn").disabled = !canRaise;
+    $("allinBtn").disabled = me.stack <= 0;
+
+    if (canRaise) {
+      const minTotal = Math.min(me.currentBet + toCall + room.minRaise, me.currentBet + me.stack);
+      const maxTotal = me.currentBet + me.stack;
+      const slider = $("raiseSlider");
+      slider.min = minTotal; slider.max = Math.max(maxTotal, minTotal); slider.value = minTotal;
+      $("raiseRow").style.display = maxTotal > minTotal ? "flex" : "none";
+      $("raiseAmountLabel").textContent = slider.value;
+      slider.oninput = () => { $("raiseAmountLabel").textContent = slider.value; };
+    } else {
+      $("raiseRow").style.display = "none";
+    }
+
+    if (room.actionDeadline) {
+      const total = room.actionDeadline - Date.now() + 500;
+      const fill = $("timerFill");
+      fill.style.transition = "none"; fill.style.width = "100%";
+      requestAnimationFrame(() => { fill.style.transition = `width ${Math.max(total, 0)}ms linear`; fill.style.width = "0%"; });
+    }
+  }
+
+  $("foldBtn").addEventListener("click", () => { if (currentRoomId) socket.emit("poker:action", { roomId: currentRoomId, action: "fold" }); });
+  $("checkCallBtn").addEventListener("click", () => { if (currentRoomId) socket.emit("poker:action", { roomId: currentRoomId, action: $("checkCallBtn").dataset.action || "check" }); });
+  $("raiseBtn").addEventListener("click", () => {
+    if (!currentRoomId) return;
+    const amount = Number($("raiseSlider").value);
+    socket.emit("poker:action", { roomId: currentRoomId, action: "raise", amount });
+  });
+  $("allinBtn").addEventListener("click", () => { if (currentRoomId) socket.emit("poker:action", { roomId: currentRoomId, action: "allin" }); });
+
+  /* ── Hand result overlay ─────────────────────────────────────── */
+  const HAND_NAME_FALLBACK = "";
+  function showHandResult(data) {
+    $("resultTitle").textContent = data.uncontested ? "🏆 ყველამ დაანება!" : "🏆 შედეგი";
+    const winnersEl = $("resultWinners");
+    winnersEl.innerHTML = "";
+    (data.winners || []).forEach(w => {
+      const row = document.createElement("div");
+      row.className = "pk-result-winner";
+      row.textContent = `${w.username} მოიგო 🪙${w.amount}`;
+      winnersEl.appendChild(row);
+    });
+    const handsEl = $("resultHands");
+    handsEl.innerHTML = "";
+    (data.hands || []).forEach(h => {
+      const row = document.createElement("div");
+      row.className = "pk-result-hand";
+      row.textContent = `${h.username}: ${h.handName}`;
+      handsEl.appendChild(row);
+    });
+    $("resultOverlay").classList.add("show");
+    setTimeout(() => $("resultOverlay").classList.remove("show"), 4200);
+  }
+
+  /* ── Navigation ──────────────────────────────────────────────── */
+  function backToSetup() {
+    currentRoomId = null;
+    latestRoom = null;
+    history.replaceState(null, "", "/poker.html");
+    clearTimerInterval();
+    showScreen("setup");
+    socket.emit("poker:listPublicRooms");
+    socket.emit("poker:getBalance");
+  }
+  $("lobbyBackBtn").addEventListener("click", () => { socket.emit("poker:leave"); backToSetup(); });
+  $("lobbyLeaveBtn").addEventListener("click", () => { socket.emit("poker:leave"); backToSetup(); });
+  $("tableBackBtn").addEventListener("click", backToSetup); // stay seated — just go look at the lobby list; membership persists
+  $("tableLeaveBtn").addEventListener("click", () => {
+    if (confirm("დარწმუნებული ხარ, გინდა მაგიდის დატოვება?")) { socket.emit("poker:leave"); backToSetup(); }
+  });
+
+  /* ── Boot ────────────────────────────────────────────────────── */
+  function init() {
+    if (!token || !username) return;
+    socket = io();
+    socket.on("connect", () => socket.emit("auth:token", { token }));
+
+    socket.on("auth:authenticated", () => {
+      elLoading.classList.add("hidden");
+      socket.emit("users:listOnline");
+      socket.emit("poker:listPublicRooms");
+      socket.emit("poker:getBalance");
+      if (currentRoomId) socket.emit("poker:join", { roomId: currentRoomId });
+      else showScreen("setup");
+    });
+    socket.on("auth:invalid", () => { window.location.href = "/"; });
+
+    socket.on("poker:balance", ({ coins }) => { if (!latestRoom) setCoinsDisplay(coins); });
+
+    socket.on("users:onlineList", ({ users }) => {
+      onlineUsers = (users || []).filter(u => u.username.toLowerCase() !== myUsernameLower);
+      renderOnlineFriends();
+    });
+    socket.on("users:onlineChanged", () => socket.emit("users:listOnline"));
+
+    socket.on("poker:publicRooms", renderPublicRooms);
+
+    socket.on("poker:invited", ({ roomId, fromUsername }) => {
+      const bar = $("pkInviteBar");
+      bar.innerHTML = "";
+      const span = document.createElement("span");
+      span.textContent = `🃏 ${fromUsername}-მა მოგიწვია პოკერზე`;
+      const acceptBtn = document.createElement("button");
+      acceptBtn.className = "pk-invite-accept"; acceptBtn.textContent = "✅";
+      const declineBtn = document.createElement("button");
+      declineBtn.className = "pk-invite-decline"; declineBtn.textContent = "❌";
+      bar.appendChild(span); bar.appendChild(acceptBtn); bar.appendChild(declineBtn);
+      bar.classList.add("show");
+      acceptBtn.onclick = () => { bar.classList.remove("show"); socket.emit("poker:join", { roomId }); };
+      declineBtn.onclick = () => { bar.classList.remove("show"); socket.emit("poker:declineInvite", { roomId }); };
+    });
+    socket.on("poker:inviteSent", ({ invited, cooldown }) => {
+      if (invited && invited.length) showToast("მოწვევა გაეგზავნა: " + invited.join(", "));
+      if (cooldown && cooldown.length) showToast(cooldown.join(", ") + " ცოტა ხნის წინ უარი განაცხადა — სცადე მოგვიანებით.");
+    });
+    socket.on("poker:inviteDeclined", ({ username: who }) => showToast(`${who}-მ უარყო მოწვევა.`));
+
+    socket.on("poker:room", (room) => {
+      currentRoomId = room.roomId;
+      history.replaceState(null, "", "/poker.html?room=" + encodeURIComponent(room.roomId));
+      if (room.status === "lobby") { showScreen("lobby"); renderLobby(room); }
+      else { showScreen("table"); renderTable(room); }
+    });
+
+    socket.on("poker:newHand", () => { $("resultOverlay").classList.remove("show"); });
+
+    socket.on("poker:handResult", showHandResult);
+
+    socket.on("poker:bustedOut", () => {
+      showToast("💸 დაასრულე მონეტები ამ მაგიდაზე — თუ სულ გამოილია, ავტომატურად აღდგება 24 საათში.");
+    });
+
+    socket.on("poker:error", ({ message }) => showToast(message));
+
+    // Coin balance: derive from whatever the latest room view says about me,
+    // or default display while browsing the setup screen.
+    socket.on("poker:room", (room) => {
+      const me = room.players.find(p => p.username.toLowerCase() === myUsernameLower);
+      if (me) setCoinsDisplay(me.stack);
+    });
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

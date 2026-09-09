@@ -317,6 +317,25 @@
       };
     });
 
+    // ── Invited to a Poker table — same fixed overlay bar, same everywhere-
+    // you-are behavior as the Draw & Guess invite above.
+    s.on("poker:invited", ({ roomId, fromUsername }) => {
+      const bar = document.getElementById("dgInviteBar");
+      if (!bar) return;
+      bar.innerHTML =
+        `<span>🃏 <strong>${esc(fromUsername)}</strong>-მა მოგიწვია პოკერზე</span>` +
+        `<button class="dg-invite-accept">✅</button>` +
+        `<button class="dg-invite-decline">❌</button>`;
+      bar.classList.add("show");
+      bar.querySelector(".dg-invite-accept").onclick = () => {
+        window.location.href = "/poker.html?room=" + encodeURIComponent(roomId);
+      };
+      bar.querySelector(".dg-invite-decline").onclick = () => {
+        bar.classList.remove("show");
+        s.emit("poker:declineInvite", { roomId });
+      };
+    });
+
     // ── Request accepted (by the other person) ────────────────────────
     s.on("friend:acceptedByOther", ({ byUsername, friends }) => {
       if (authUser && friends) authUser.friends = friends;

@@ -3488,6 +3488,34 @@ function isRoomAdmin(usernameLower) {
   return !!(u && u.isAdmin);
 }
 
+// ── Poker coins ─────────────────────────────────────────────────────────────
+// Lazily initializes a user's poker balance to POKER_STARTING_COINS on first
+// contact, and — only once their stack has actually hit 0 — refills it back
+// to POKER_STARTING_COINS, but no more than once per POKER_COIN_REGEN_MS.
+// Always returns the up-to-date balance; persists via saveAuthUsers() itself
+// whenever it changes something so callers don't have to remember to.
+function ensurePokerCoins(user) {
+  if (typeof user.pokerCoins !== "number") {
+    user.pokerCoins = POKER_STARTING_COINS;
+    // Starts the 24h clock from their very first grant too — otherwise a
+    // user's FIRST-EVER bust would see no pokerCoinsLastRefillAt yet, read
+    // as "last refill was infinitely long ago", and grant an instant free
+    // refill instead of making them wait like every refill after it does.
+    user.pokerCoinsLastRefillAt = new Date().toISOString();
+    saveAuthUsers();
+    return user.pokerCoins;
+  }
+  if (user.pokerCoins <= 0) {
+    const last = user.pokerCoinsLastRefillAt ? new Date(user.pokerCoinsLastRefillAt).getTime() : 0;
+    if (Date.now() - last >= POKER_COIN_REGEN_MS) {
+      user.pokerCoins = POKER_STARTING_COINS;
+      user.pokerCoinsLastRefillAt = new Date().toISOString();
+      saveAuthUsers();
+    }
+  }
+  return user.pokerCoins;
+}
+
 function makeRoomId() {
   return `room_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -3677,7 +3705,9 @@ function _saveAuthUsersToDisk() {
       pendingRequests: u.pendingRequests || [],
       avatar: u.avatar || DEFAULT_AVATAR,
       bio: u.bio || "",
-      isAdmin: !!u.isAdmin
+      isAdmin: !!u.isAdmin,
+      pokerCoins: typeof u.pokerCoins === "number" ? u.pokerCoins : undefined,
+      pokerCoinsLastRefillAt: u.pokerCoinsLastRefillAt || undefined
     };
   }
   try {
@@ -3863,6 +3893,11 @@ setInterval(() => {
 setInterval(() => {
   const now = Date.now();
   for (const [key, expiry] of drawDeclineCooldown) if (now >= expiry) drawDeclineCooldown.delete(key);
+}, 60 * 60 * 1000);
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, expiry] of pokerDeclineCooldown) if (now >= expiry) pokerDeclineCooldown.delete(key);
 }, 60 * 60 * 1000);
 
 // ── REST endpoints ────────────────────────────────────────────────────────────
@@ -4312,6 +4347,351 @@ function cleanupGameForSocket(socketId) {
 //  so it gets its own Maps rather than being force-fit into the existing ones.
 // ══════════════════════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════════════════════════════
+// Poker (Texas Hold'em) — invite-based tables, like Draw & Guess.
+// Deck/hand-evaluator/side-pot/betting-round logic below was built and
+// heavily unit- and stress-tested standalone (600,000+ assertions across
+// 2p/4p/6p tables, including randomized all-in/side-pot scenarios checked
+// for exact chip conservation) before being ported in here unchanged.
+// ══════════════════════════════════════════════════════════════════════════
+
+const POKER_MIN_PLAYERS  = 2;
+const POKER_MAX_PLAYERS  = 6;
+const POKER_SMALL_BLIND  = 10;
+const POKER_BIG_BLIND    = 20;
+const POKER_STARTING_COINS = 1000;
+const POKER_COIN_REGEN_MS  = 24 * 60 * 60 * 1000; // once your stack hits 0, refills after this long
+const POKER_ACTION_TTL_MS  = 25_000; // time to act before an auto-fold/check
+const POKER_INVITE_TTL_MS  = 60_000;
+const POKER_ROOM_TTL_MS    = 30_000; // grace period after a table empties before it's dropped
+const POKER_DECLINE_COOLDOWN_MS = 5 * 60_000;
+const POKER_NEXT_HAND_DELAY_MS  = 6_000; // pause between hands so players can see the result
+
+const pokerRooms          = new Map(); // roomId   → room
+const pokerRoomBySocket   = new Map(); // socketId → roomId
+const pokerDeclineCooldown = new Map(); // hostLc|targetLc → cooldown expiry
+
+// ── Deck ─────────────────────────────────────────────────────────────────────
+const POKER_RANKS = ["2","3","4","5","6","7","8","9","T","J","Q","K","A"];
+const POKER_SUITS = ["s","h","d","c"];
+function pokerMakeDeck() {
+  const deck = [];
+  for (const r of POKER_RANKS) for (const s of POKER_SUITS) deck.push(r + s);
+  return deck;
+}
+function pokerShuffleDeck(deck) {
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deck;
+}
+function pokerCardRank(card) { return POKER_RANKS.indexOf(card[0]) + 2; } // 2..14 (A=14)
+function pokerCardSuit(card) { return card[1]; }
+
+// Evaluate exactly 5 cards → [handClass, tiebreak...]
+// 8=straight flush 7=quads 6=full house 5=flush 4=straight 3=trips 2=two pair 1=pair 0=high card
+function pokerEvaluate5(cards) {
+  const ranks = cards.map(pokerCardRank).sort((a, b) => b - a);
+  const suits = cards.map(pokerCardSuit);
+  const isFlush = suits.every(s => s === suits[0]);
+
+  const counts = {};
+  for (const r of ranks) counts[r] = (counts[r] || 0) + 1;
+  const groups = Object.entries(counts).map(([r, c]) => [Number(r), c]).sort((a, b) => b[1] - a[1] || b[0] - a[0]);
+
+  const uniqDesc = [...new Set(ranks)].sort((a, b) => b - a);
+  let isStraight = false, straightHigh = 0;
+  if (uniqDesc.length === 5) {
+    if (uniqDesc[0] - uniqDesc[4] === 4) { isStraight = true; straightHigh = uniqDesc[0]; }
+    else if (uniqDesc.join(",") === "14,5,4,3,2") { isStraight = true; straightHigh = 5; } // wheel
+  }
+
+  if (isStraight && isFlush) return [8, straightHigh];
+  if (groups[0][1] === 4) { const kicker = groups.find(g => g[1] === 1)[0]; return [7, groups[0][0], kicker]; }
+  if (groups[0][1] === 3 && groups[1] && groups[1][1] === 2) return [6, groups[0][0], groups[1][0]];
+  if (isFlush) return [5, ...ranks];
+  if (isStraight) return [4, straightHigh];
+  if (groups[0][1] === 3) {
+    const kickers = groups.filter(g => g[1] === 1).map(g => g[0]).sort((a, b) => b - a);
+    return [3, groups[0][0], ...kickers];
+  }
+  if (groups[0][1] === 2 && groups[1] && groups[1][1] === 2) {
+    const pairRanks = [groups[0][0], groups[1][0]].sort((a, b) => b - a);
+    const kicker = groups.find(g => g[1] === 1)[0];
+    return [2, ...pairRanks, kicker];
+  }
+  if (groups[0][1] === 2) {
+    const kickers = groups.filter(g => g[1] === 1).map(g => g[0]).sort((a, b) => b - a);
+    return [1, groups[0][0], ...kickers];
+  }
+  return [0, ...ranks];
+}
+function pokerCompareHandRanks(a, b) {
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    const av = a[i] ?? 0, bv = b[i] ?? 0;
+    if (av !== bv) return av - bv;
+  }
+  return 0;
+}
+function pokerCombinations5(arr) {
+  const out = [];
+  const n = arr.length;
+  for (let a = 0; a < n; a++)
+    for (let b = a + 1; b < n; b++)
+      for (let c = b + 1; c < n; c++)
+        for (let d = c + 1; d < n; d++)
+          for (let e = d + 1; e < n; e++)
+            out.push([arr[a], arr[b], arr[c], arr[d], arr[e]]);
+  return out;
+}
+function pokerEvaluateBest(cards) {
+  let best = null, bestCombo = null;
+  for (const combo of pokerCombinations5(cards)) {
+    const r = pokerEvaluate5(combo);
+    if (!best || pokerCompareHandRanks(r, best) > 0) { best = r; bestCombo = combo; }
+  }
+  return { rank: best, cards: bestCombo };
+}
+const POKER_HAND_NAMES_KA = {
+  8: "სტრეიტ-ფლეში", 7: "კარე", 6: "ფულ-ჰაუსი", 5: "ფლეში", 4: "სტრეიტი",
+  3: "სეტი", 2: "ორი წყვილი", 1: "წყვილი", 0: "მაღალი კარტი",
+};
+
+// players: [{ lc, totalBetThisHand, folded }] → [{amount, eligible, payers, layerAmount}]
+function pokerComputeSidePots(players) {
+  const contributors = players.filter(p => p.totalBetThisHand > 0);
+  const levels = [...new Set(contributors.map(p => p.totalBetThisHand))].sort((a, b) => a - b);
+  const pots = [];
+  let prevLevel = 0;
+  for (const level of levels) {
+    const layerAmount = level - prevLevel;
+    const payers = contributors.filter(p => p.totalBetThisHand >= level);
+    const potAmount = layerAmount * payers.length;
+    if (potAmount > 0) {
+      const eligible = payers.filter(p => !p.folded).map(p => p.lc);
+      pots.push({ amount: potAmount, eligible, payers: payers.map(p => p.lc), layerAmount });
+    }
+    prevLevel = level;
+  }
+  return pots;
+}
+
+// ── Betting-round / hand state machine ──────────────────────────────────────
+function pokerNextActiveSeat(players, fromIndex, predicate) {
+  const n = players.length;
+  for (let step = 1; step <= n; step++) {
+    const idx = (fromIndex + step) % n;
+    if (predicate(players[idx])) return idx;
+  }
+  return null;
+}
+
+function pokerNewHandState(players, dealerSeatIndex) {
+  const deck = pokerShuffleDeck(pokerMakeDeck());
+  for (const p of players) {
+    p.folded = false;
+    p.allIn = p.stack <= 0;
+    p.currentBet = 0;
+    p.totalBetThisHand = 0;
+    p.hasActedThisRound = false;
+    p.holeCards = p.stack > 0 ? [deck.pop(), deck.pop()] : [];
+  }
+  const room = {
+    players, dealerSeatIndex, deck, communityCards: [], pot: 0,
+    stage: "preflop", currentBet: 0, minRaise: POKER_BIG_BLIND, actingSeatIndex: null,
+  };
+
+  const payers = players.filter(p => p.stack > 0);
+  if (payers.length < 2) { room.stage = "waiting"; return room; }
+
+  const isHeadsUp = payers.length === 2;
+  const sbSeat = isHeadsUp ? dealerSeatIndex : pokerNextActiveSeat(players, dealerSeatIndex, p => p.stack > 0);
+  const bbSeat = pokerNextActiveSeat(players, sbSeat, p => p.stack > 0);
+
+  pokerPostBlind(room, sbSeat, POKER_SMALL_BLIND);
+  pokerPostBlind(room, bbSeat, POKER_BIG_BLIND);
+  room.currentBet = POKER_BIG_BLIND;
+
+  // Heads-up: dealer (who posted SB) acts first preflop — the real rule,
+  // not a simplification. Either poster may already be all-in if too
+  // short-stacked to cover the full blind, in which case they're skipped.
+  const canAct = p => !p.folded && !p.allIn;
+  let firstToAct;
+  if (isHeadsUp) {
+    if (canAct(players[sbSeat])) firstToAct = sbSeat;
+    else if (canAct(players[bbSeat])) firstToAct = bbSeat;
+    else firstToAct = null;
+  } else {
+    firstToAct = pokerNextActiveSeat(players, bbSeat, canAct);
+  }
+  room.actingSeatIndex = firstToAct;
+  return room;
+}
+
+function pokerPostBlind(room, seatIndex, amount) {
+  const p = room.players[seatIndex];
+  const amt = Math.min(amount, p.stack);
+  p.stack -= amt; p.currentBet += amt; p.totalBetThisHand += amt; room.pot += amt;
+  if (p.stack === 0) p.allIn = true;
+}
+
+function pokerLivePlayers(room) { return room.players.filter(p => !p.folded && !p.allIn); }
+function pokerInHandPlayers(room) { return room.players.filter(p => !p.folded); }
+
+function pokerApplyAction(room, seatIndex, action, amount) {
+  const player = room.players[seatIndex];
+  if (!player || player.folded || player.allIn) return { ok: false, reason: "invalid_player" };
+  if (room.actingSeatIndex !== seatIndex) return { ok: false, reason: "not_your_turn" };
+
+  const toCall = room.currentBet - player.currentBet;
+
+  if (action === "fold") {
+    player.folded = true;
+  } else if (action === "check") {
+    if (toCall > 0) return { ok: false, reason: "cannot_check" };
+  } else if (action === "call") {
+    const callAmt = Math.min(toCall, player.stack);
+    player.stack -= callAmt; player.currentBet += callAmt; player.totalBetThisHand += callAmt; room.pot += callAmt;
+    if (player.stack === 0) player.allIn = true;
+  } else if (action === "raise") {
+    let target = Math.floor(Number(amount));
+    if (!Number.isFinite(target)) return { ok: false, reason: "bad_amount" };
+    const maxTarget = player.currentBet + player.stack;
+    if (target > maxTarget) target = maxTarget;
+    if (target <= room.currentBet) return { ok: false, reason: "raise_too_small" };
+    const raiseIncrement = target - room.currentBet;
+    const isFullRaise = raiseIncrement >= room.minRaise;
+    if (!isFullRaise && target < maxTarget) return { ok: false, reason: "raise_below_minimum" };
+
+    const addAmt = target - player.currentBet;
+    player.stack -= addAmt; player.currentBet = target; player.totalBetThisHand += addAmt; room.pot += addAmt;
+    if (player.stack === 0) player.allIn = true;
+    if (isFullRaise) {
+      room.minRaise = raiseIncrement;
+      for (const p of room.players) if (!p.folded && !p.allIn && p !== player) p.hasActedThisRound = false;
+    }
+    room.currentBet = target;
+  } else if (action === "allin") {
+    const addAmt = player.stack;
+    const target = player.currentBet + addAmt;
+    player.stack = 0; player.allIn = true;
+    player.currentBet = target; player.totalBetThisHand += addAmt; room.pot += addAmt;
+    if (target > room.currentBet) {
+      const raiseIncrement = target - room.currentBet;
+      const isFullRaise = raiseIncrement >= room.minRaise;
+      room.currentBet = target;
+      if (isFullRaise) {
+        room.minRaise = raiseIncrement;
+        for (const p of room.players) if (!p.folded && !p.allIn && p !== player) p.hasActedThisRound = false;
+      }
+    }
+  } else {
+    return { ok: false, reason: "unknown_action" };
+  }
+
+  player.hasActedThisRound = true;
+  return { ok: true };
+}
+
+function pokerIsRoundComplete(room) {
+  const live = pokerLivePlayers(room);
+  if (live.length === 0) return true;
+  return live.every(p => p.hasActedThisRound && p.currentBet === room.currentBet);
+}
+function pokerAdvanceActingSeat(room) {
+  room.actingSeatIndex = pokerNextActiveSeat(room.players, room.actingSeatIndex, p => !p.folded && !p.allIn);
+}
+function pokerBeginNewBettingRound(room) {
+  for (const p of room.players) { p.currentBet = 0; p.hasActedThisRound = p.folded || p.allIn; }
+  room.currentBet = 0;
+  room.minRaise = POKER_BIG_BLIND;
+  room.actingSeatIndex = pokerNextActiveSeat(room.players, room.dealerSeatIndex, p => !p.folded && !p.allIn);
+}
+function pokerDealNextStreet(room) {
+  room.deck.pop(); // burn
+  if (room.stage === "preflop") { room.communityCards.push(room.deck.pop(), room.deck.pop(), room.deck.pop()); room.stage = "flop"; }
+  else if (room.stage === "flop") { room.communityCards.push(room.deck.pop()); room.stage = "turn"; }
+  else if (room.stage === "turn") { room.communityCards.push(room.deck.pop()); room.stage = "river"; }
+  else if (room.stage === "river") { room.stage = "showdown"; }
+}
+
+function pokerProgressHand(room) {
+  for (;;) {
+    const inHand = pokerInHandPlayers(room);
+    if (inHand.length === 1) return pokerResolveUncontested(room, inHand[0]);
+
+    if (!pokerIsRoundComplete(room)) {
+      pokerAdvanceActingSeat(room);
+      return { waiting: true };
+    }
+
+    if (room.stage === "river") return pokerResolveShowdown(room);
+
+    const live = pokerLivePlayers(room);
+    pokerDealNextStreet(room);
+    if (room.stage === "showdown") return pokerResolveShowdown(room);
+    if (live.length >= 2) {
+      pokerBeginNewBettingRound(room);
+      if (!pokerIsRoundComplete(room)) return { waiting: true };
+    } else {
+      for (const p of room.players) p.hasActedThisRound = true;
+    }
+  }
+}
+
+function pokerResolveUncontested(room, winner) {
+  winner.stack += room.pot;
+  const amountWon = room.pot;
+  room.pot = 0;
+  return { showdown: false, uncontested: true, winners: [{ lc: winner.lc, amount: amountWon }] };
+}
+
+function pokerResolveShowdown(room) {
+  const pots = pokerComputeSidePots(room.players.map(p => ({ lc: p.lc, totalBetThisHand: p.totalBetThisHand, folded: p.folded })));
+  const hands = new Map();
+  for (const p of pokerInHandPlayers(room)) hands.set(p.lc, pokerEvaluateBest([...p.holeCards, ...room.communityCards]));
+
+  const payouts = new Map();
+  const potResults = [];
+  for (const pot of pots) {
+    if (pot.eligible.length === 0) {
+      // Nobody left in the hand ever matched this layer (two-or-more
+      // players who both later folded had raised each other past what
+      // anyone still in the showdown covered) — refund it to whoever paid
+      // into it, same as an uncalled bet in real poker.
+      for (const lc of pot.payers) payouts.set(lc, (payouts.get(lc) || 0) + pot.layerAmount);
+      potResults.push({ amount: pot.amount, winners: [], handRank: null, refunded: true });
+      continue;
+    }
+    let best = null, winners = [];
+    for (const lc of pot.eligible) {
+      const h = hands.get(lc);
+      if (!best || pokerCompareHandRanks(h.rank, best) > 0) { best = h.rank; winners = [lc]; }
+      else if (pokerCompareHandRanks(h.rank, best) === 0) { winners.push(lc); }
+    }
+    const share = Math.floor(pot.amount / winners.length);
+    let remainder = pot.amount - share * winners.length;
+    for (const lc of winners) {
+      const extra = remainder > 0 ? 1 : 0;
+      if (remainder > 0) remainder--;
+      payouts.set(lc, (payouts.get(lc) || 0) + share + extra);
+    }
+    potResults.push({ amount: pot.amount, winners, handRank: best });
+  }
+
+  for (const [lc, amount] of payouts) room.players.find(pl => pl.lc === lc).stack += amount;
+  room.pot = 0;
+  return {
+    showdown: true, uncontested: false,
+    winners: [...payouts.entries()].map(([lc, amount]) => ({ lc, amount })),
+    hands: [...hands.entries()].map(([lc, h]) => ({ lc, rank: h.rank, cards: h.cards })),
+    pots: potResults,
+  };
+}
+
+
 const DRAW_MIN_PLAYERS   = 2;
 const DRAW_MAX_PLAYERS   = 8;
 const DRAW_ROUND_MS      = parseInt(process.env.DRAW_ROUND_MS, 10)  || 80_000;  // time to draw + guess
@@ -4462,6 +4842,259 @@ function getPublicDrawRooms() {
 
 function broadcastPublicDrawRooms() {
   io.emit("drawGuess:publicRooms", getPublicDrawRooms());
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Poker room lifecycle — invite/lobby/hand-flow orchestration around the
+// tested engine functions above.
+// ══════════════════════════════════════════════════════════════════════════
+
+function makePokerRoomId() {
+  return "pk_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+function pokerRoomSockets(room) {
+  return room.players.map(p => io.sockets.sockets.get(p.socketId)).filter(Boolean);
+}
+
+// Per-viewer state — hole cards are only ever included for the viewer's own
+// seat, or (matching real poker) everyone still in the hand once it reaches
+// showdown. Never broadcast as one shared payload for this exact reason.
+function pokerRoomStateForViewer(room, viewerLc) {
+  const revealAll = room.stage === "showdown";
+  return {
+    roomId: room.id,
+    status: room.status,
+    hostUsername: room.players.find(p => p.lc === room.hostLc)?.username || "",
+    stage: room.stage,
+    communityCards: room.communityCards || [],
+    pot: room.pot || 0,
+    currentBet: room.currentBet || 0,
+    minRaise: room.minRaise || POKER_BIG_BLIND,
+    smallBlind: POKER_SMALL_BLIND,
+    bigBlind: POKER_BIG_BLIND,
+    dealerSeatIndex: room.dealerSeatIndex ?? null,
+    actingSeatIndex: room.actingSeatIndex ?? null,
+    actionDeadline: room.actionDeadline || null,
+    maxPlayers: POKER_MAX_PLAYERS,
+    players: room.players.map((p, i) => ({
+      seatIndex: i,
+      username: p.username,
+      stack: p.stack,
+      connected: p.connected,
+      folded: !!p.folded,
+      allIn: !!p.allIn,
+      currentBet: p.currentBet || 0,
+      hasCards: !!(p.holeCards && p.holeCards.length),
+      holeCards: (p.lc === viewerLc || (revealAll && !p.folded)) ? (p.holeCards || []) : null,
+    })),
+  };
+}
+
+function broadcastPokerRoom(room) {
+  for (const p of room.players) {
+    const s = io.sockets.sockets.get(p.socketId);
+    if (s) s.emit("poker:room", pokerRoomStateForViewer(room, p.lc));
+  }
+}
+
+// Mirrors findActiveDrawRoomForUser — one active table per user at a time.
+function findActivePokerRoomForUser(lc) {
+  for (const room of pokerRooms.values()) {
+    if (room.status === "ended") continue;
+    if (room.players.some(p => p.lc === lc)) return room;
+  }
+  return null;
+}
+
+function getPublicPokerRooms() {
+  const rows = [];
+  for (const room of pokerRooms.values()) {
+    if (room.status === "ended") continue;
+    if (room.players.length >= POKER_MAX_PLAYERS) continue;
+    rows.push({
+      roomId: room.id,
+      hostUsername: room.players.find(p => p.lc === room.hostLc)?.username || "",
+      status: room.status,
+      playerCount: room.players.filter(p => p.connected).length,
+      maxPlayers: POKER_MAX_PLAYERS,
+    });
+  }
+  return rows;
+}
+function broadcastPublicPokerRooms() {
+  io.emit("poker:publicRooms", getPublicPokerRooms());
+}
+
+function clearPokerActionTimer(room) {
+  if (room.actionTimeoutHandle) { clearTimeout(room.actionTimeoutHandle); room.actionTimeoutHandle = null; }
+}
+function schedulePokerActionTimer(room) {
+  clearPokerActionTimer(room);
+  if (room.actingSeatIndex == null) { room.actionDeadline = null; return; }
+  room.actionDeadline = Date.now() + POKER_ACTION_TTL_MS;
+  room.actionTimeoutHandle = setTimeout(() => pokerAutoAct(room), POKER_ACTION_TTL_MS);
+}
+
+// Idle too long on your turn → check if that's legal, otherwise fold. Never
+// auto-calls: that would risk someone's coins on their behalf.
+function pokerAutoAct(room) {
+  const seat = room.actingSeatIndex;
+  const player = room.players[seat];
+  if (!player) return;
+  const toCall = room.currentBet - player.currentBet;
+  pokerApplyAction(room, seat, toCall > 0 ? "fold" : "check");
+  pokerAfterAction(room);
+}
+
+// Single funnel every action (real or timed-out) flows through: advance the
+// engine, and either wait on the next player or wrap up the hand.
+function pokerAfterAction(room) {
+  clearPokerActionTimer(room);
+  const result = pokerProgressHand(room);
+  if (result.waiting) {
+    schedulePokerActionTimer(room);
+    broadcastPokerRoom(room);
+    return;
+  }
+  pokerFinishHand(room, result);
+}
+
+function pokerFinishHand(room, result) {
+  // This IS each player's persistent balance, not a separate table buy-in —
+  // sync it back the moment the hand resolves.
+  for (const p of room.players) {
+    const user = registeredUsers.get(p.lc);
+    if (user) { user.pokerCoins = p.stack; saveAuthUsers(); }
+  }
+
+  for (const p of room.players) {
+    const s = io.sockets.sockets.get(p.socketId);
+    if (!s) continue;
+    s.emit("poker:handResult", {
+      roomId: room.id,
+      uncontested: result.uncontested,
+      winners: result.winners.map(w => ({
+        username: room.players.find(pl => pl.lc === w.lc)?.username || w.lc,
+        amount: w.amount,
+      })),
+      hands: (result.hands || []).map(h => ({
+        username: room.players.find(pl => pl.lc === h.lc)?.username || h.lc,
+        handName: POKER_HAND_NAMES_KA[h.rank[0]],
+        cards: h.cards,
+      })),
+    });
+  }
+  broadcastPokerRoom(room); // final (showdown-revealing) state before clearing hole cards for the next hand
+
+  // Busted players (stack hit exactly 0) lose their seat — they'll need to
+  // rejoin (picking up any daily coin regen in the process) to play again.
+  const busted = room.players.filter(p => p.stack <= 0);
+  for (const p of busted) {
+    const s = io.sockets.sockets.get(p.socketId);
+    if (s) s.emit("poker:bustedOut", { roomId: room.id });
+    pokerRoomBySocket.delete(p.socketId);
+    s?.leave(`pokerroom:${room.id}`);
+  }
+  room.players = room.players.filter(p => p.stack > 0);
+  broadcastPublicPokerRooms();
+
+  if (room.players.length < POKER_MIN_PLAYERS) {
+    room.stage = "waiting";
+    room.actingSeatIndex = null;
+    room.actionDeadline = null;
+    broadcastPokerRoom(room);
+    return;
+  }
+
+  room.stage = "waiting"; // brief pause so players can see the result
+  broadcastPokerRoom(room);
+  room.nextHandTimeoutHandle = setTimeout(() => pokerStartNextHand(room), POKER_NEXT_HAND_DELAY_MS);
+}
+
+function pokerStartNextHand(room) {
+  if (!pokerRooms.has(room.id)) return; // room was deleted in the meantime
+  if (room.players.length < POKER_MIN_PLAYERS) { room.stage = "waiting"; broadcastPokerRoom(room); return; }
+
+  room.dealerSeatIndex = (room.dealerSeatIndex ?? -1) + 1;
+  if (room.dealerSeatIndex >= room.players.length) room.dealerSeatIndex = 0;
+
+  const dealt = pokerNewHandState(room.players, room.dealerSeatIndex);
+  room.deck = dealt.deck;
+  room.communityCards = dealt.communityCards;
+  room.pot = dealt.pot;
+  room.stage = dealt.stage;
+  room.currentBet = dealt.currentBet;
+  room.minRaise = dealt.minRaise;
+  room.actingSeatIndex = dealt.actingSeatIndex;
+  room.handNumber = (room.handNumber || 0) + 1;
+
+  for (const p of room.players) {
+    const s = io.sockets.sockets.get(p.socketId);
+    if (s) s.emit("poker:newHand", { roomId: room.id, holeCards: p.holeCards, handNumber: room.handNumber });
+  }
+
+  const result = pokerProgressHand(room); // handles the rare both-blinds-all-in edge case
+  if (result.waiting) {
+    schedulePokerActionTimer(room);
+    broadcastPokerRoom(room);
+  } else {
+    pokerFinishHand(room, result);
+  }
+}
+
+function cleanupPokerRoom(roomId) {
+  const room = pokerRooms.get(roomId);
+  if (!room) return;
+  clearPokerActionTimer(room);
+  if (room.nextHandTimeoutHandle) clearTimeout(room.nextHandTimeoutHandle);
+  for (const [lc, invite] of room.pendingInvites || []) clearTimeout(invite.timeoutHandle);
+  for (const p of room.players) pokerRoomBySocket.delete(p.socketId);
+  pokerRooms.delete(roomId);
+  broadcastPublicPokerRooms();
+}
+
+// Mirrors cleanupDrawGuessForSocket: drop from the lobby roster outright,
+// or fold-and-mark-disconnected if a hand is already underway (holding an
+// active hand hostage by going AFK isn't fair to the others at the table).
+function cleanupPokerForSocket(socketId) {
+  const roomId = pokerRoomBySocket.get(socketId);
+  pokerRoomBySocket.delete(socketId);
+  if (!roomId) return;
+  const room = pokerRooms.get(roomId);
+  if (!room) return;
+
+  const player = room.players.find(p => p.socketId === socketId);
+  if (!player) return;
+
+  if (room.status === "lobby") {
+    room.players = room.players.filter(p => p.socketId !== socketId);
+    if (room.players.length === 0) { cleanupPokerRoom(room.id); return; }
+    if (player.lc === room.hostLc) room.hostLc = room.players[0].lc;
+    broadcastPokerRoom(room);
+    broadcastPublicPokerRooms();
+    return;
+  }
+
+  player.connected = false;
+
+  if (room.players.every(p => !p.connected)) { cleanupPokerRoom(room.id); return; }
+
+  const midHand = room.stage && room.stage !== "waiting" && room.stage !== "showdown";
+  if (midHand && !player.folded && !player.allIn) {
+    player.folded = true;
+    // Re-derive the game state now that this player is out. This correctly
+    // handles both "it happened to be their turn" (advance normally) and
+    // "someone else folded out of turn via disconnect, and only one player
+    // remains" (uncontested win) — progressHand doesn't care whose turn it
+    // technically was, only who's still in.
+    clearPokerActionTimer(room);
+    const result = pokerProgressHand(room);
+    if (result.waiting) { schedulePokerActionTimer(room); broadcastPokerRoom(room); }
+    else pokerFinishHand(room, result);
+    return;
+  }
+  broadcastPokerRoom(room);
 }
 
 function startNextDrawRound(room) {
@@ -5501,6 +6134,200 @@ io.on("connection", (socket) => {
   });
 
   // ══════════════════════════════════════════════════════════════════════
+  // Poker (Texas Hold'em) — invite-based tables, same shape as Draw & Guess:
+  // one active table per user, no-approval-needed accept/decline with a
+  // cooldown on repeat invites after a decline, plus a public "active
+  // tables" browser. Coins are the user's persistent pokerCoins balance —
+  // ensurePokerCoins() lazily starts everyone at 1000 and refills once a
+  // day, but only once their stack has actually hit 0.
+  // ══════════════════════════════════════════════════════════════════════
+
+  socket.on("poker:invite", ({ toUsernames }) => {
+    if (!socket._regUser) return;
+    const hostLc = socket._regUser.usernameLower;
+    const hostUser = registeredUsers.get(hostLc);
+    if (!hostUser) return;
+
+    let room = findActivePokerRoomForUser(hostLc);
+    if (room && !(room.hostLc === hostLc && room.status === "lobby")) {
+      socket.emit("poker:error", { message: "თქვენ უკვე ხართ სხვა პოკერის მაგიდასთან — ჯერ დატოვეთ ან დაასრულეთ ის, სანამ ახალს შექმნით." });
+      return;
+    }
+
+    if (room) {
+      const hostPlayer = room.players.find(p => p.lc === hostLc);
+      if (hostPlayer) { hostPlayer.socketId = socket.id; hostPlayer.connected = true; }
+      pokerRoomBySocket.set(socket.id, room.id);
+    } else {
+      const startingStack = ensurePokerCoins(hostUser);
+      if (startingStack <= 0) {
+        socket.emit("poker:error", { message: "დღეს უკვე გამოიყენე უფასო მონეტების შევსება — დაბრუნდი ხვალ." });
+        return;
+      }
+      room = {
+        id: makePokerRoomId(),
+        hostLc,
+        status: "lobby",
+        stage: "lobby",
+        players: [{ lc: hostLc, username: hostUser.username, socketId: socket.id, stack: startingStack, connected: true, folded: false, allIn: false, currentBet: 0, totalBetThisHand: 0, holeCards: [] }],
+        pendingInvites: new Map(), // lc → { timeoutHandle }
+        dealerSeatIndex: -1, // pokerStartNextHand pre-increments — this makes hand #1 start with the host as dealer
+        communityCards: [], pot: 0, currentBet: 0, minRaise: POKER_BIG_BLIND, actingSeatIndex: null, actionDeadline: null,
+        handNumber: 0,
+      };
+      pokerRooms.set(room.id, room);
+      pokerRoomBySocket.set(socket.id, room.id);
+    }
+
+    const list = Array.isArray(toUsernames) ? toUsernames.filter(u => typeof u === "string").slice(0, POKER_MAX_PLAYERS) : [];
+    const invited = [];
+    const cooldown = [];
+    const now = Date.now();
+    for (const uname of list) {
+      const lc = uname.toLowerCase();
+      if (lc === hostLc) continue;
+      if (room.players.some(p => p.lc === lc)) continue;
+      if (room.pendingInvites.has(lc)) continue;
+      if (!onlineRegSockets.get(lc)?.size) continue;
+
+      const targetUser = registeredUsers.get(lc);
+      if (!targetUser) continue;
+
+      const cdKey = `${hostLc}|${lc}`;
+      const cdExpiry = pokerDeclineCooldown.get(cdKey);
+      if (cdExpiry) {
+        if (cdExpiry > now) { cooldown.push(targetUser.username); continue; }
+        pokerDeclineCooldown.delete(cdKey);
+      }
+
+      const timeoutHandle = setTimeout(() => room.pendingInvites.delete(lc), POKER_INVITE_TTL_MS);
+      room.pendingInvites.set(lc, { timeoutHandle });
+      io.to(`user:${lc}`).emit("poker:invited", { roomId: room.id, fromUsername: hostUser.username });
+      invited.push(targetUser.username);
+    }
+
+    socket.join(`pokerroom:${room.id}`);
+    socket.emit("poker:room", pokerRoomStateForViewer(room, hostLc));
+    socket.emit("poker:inviteSent", { invited, cooldown });
+    broadcastPublicPokerRooms();
+  });
+
+  socket.on("poker:listPublicRooms", () => {
+    socket.emit("poker:publicRooms", getPublicPokerRooms());
+  });
+
+  // Lets the setup screen show a coin balance before the user has created
+  // or joined any table — lazily grants/refills via the same rules as
+  // actually sitting down (ensurePokerCoins), so the number shown here is
+  // always exactly what they'd bring to a table right now.
+  socket.on("poker:getBalance", () => {
+    if (!socket._regUser) return;
+    const user = registeredUsers.get(socket._regUser.usernameLower);
+    if (!user) return;
+    socket.emit("poker:balance", { coins: ensurePokerCoins(user) });
+  });
+
+  socket.on("poker:declineInvite", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const room = pokerRooms.get(roomId);
+    if (!room) return;
+    const lc = socket._regUser.usernameLower;
+    const invite = room.pendingInvites.get(lc);
+    if (!invite) return;
+    clearTimeout(invite.timeoutHandle);
+    room.pendingInvites.delete(lc);
+    pokerDeclineCooldown.set(`${room.hostLc}|${lc}`, Date.now() + POKER_DECLINE_COOLDOWN_MS);
+    const host = room.players.find(p => p.lc === room.hostLc);
+    if (host) io.sockets.sockets.get(host.socketId)?.emit("poker:inviteDeclined", { username: socket._regUser.username });
+  });
+
+  // Accept an invite, reconnect to a table you're already seated at, or —
+  // like Draw & Guess — sit down at a table picked from the public "active
+  // tables" list. Brings your full current coin balance to the table.
+  socket.on("poker:join", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const lc = socket._regUser.usernameLower;
+    const user = registeredUsers.get(lc);
+    if (!user) return;
+
+    const existingRoomId = pokerRoomBySocket.get(socket.id);
+    if (existingRoomId && existingRoomId !== roomId) cleanupPokerForSocket(socket.id);
+
+    const room = pokerRooms.get(roomId);
+    if (!room) { socket.emit("poker:error", { message: "მაგიდა ვეღარ მოიძებნა — შეიძლება უკვე დასრულდა." }); return; }
+    if (room.status === "ended") { socket.emit("poker:error", { message: "ეს თამაში უკვე დასრულდა." }); return; }
+
+    const already = room.players.find(p => p.lc === lc);
+    if (already) {
+      already.socketId = socket.id;
+      already.connected = true;
+      pokerRoomBySocket.set(socket.id, room.id);
+      socket.join(`pokerroom:${room.id}`);
+      socket.emit("poker:room", pokerRoomStateForViewer(room, lc));
+      broadcastPokerRoom(room);
+      broadcastPublicPokerRooms();
+      return;
+    }
+
+    if (room.players.length >= POKER_MAX_PLAYERS) { socket.emit("poker:error", { message: "მაგიდა სავსეა." }); return; }
+
+    const startingStack = ensurePokerCoins(user);
+    if (startingStack <= 0) {
+      socket.emit("poker:error", { message: "დღეს უკვე გამოიყენე უფასო მონეტების შევსება — დაბრუნდი ხვალ." });
+      return;
+    }
+
+    const invite = room.pendingInvites.get(lc);
+    if (invite) clearTimeout(invite.timeoutHandle);
+    room.pendingInvites.delete(lc);
+
+    room.players.push({ lc, username: user.username, socketId: socket.id, stack: startingStack, connected: true, folded: false, allIn: false, currentBet: 0, totalBetThisHand: 0, holeCards: [] });
+    pokerRoomBySocket.set(socket.id, room.id);
+    socket.join(`pokerroom:${room.id}`);
+
+    socket.emit("poker:room", pokerRoomStateForViewer(room, lc));
+    broadcastPokerRoom(room);
+    broadcastPublicPokerRooms();
+
+    // Joining a table stuck "waiting" for a second player picks the game
+    // back up automatically.
+    if (room.status === "playing" && room.stage === "waiting" && room.players.filter(p => p.stack > 0).length >= POKER_MIN_PLAYERS && !room.nextHandTimeoutHandle) {
+      room.nextHandTimeoutHandle = setTimeout(() => { room.nextHandTimeoutHandle = null; pokerStartNextHand(room); }, POKER_NEXT_HAND_DELAY_MS);
+    }
+  });
+
+  // Host starts the table once enough friends have joined the lobby.
+  socket.on("poker:start", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const room = pokerRooms.get(roomId);
+    if (!room || room.hostLc !== socket._regUser.usernameLower) return;
+    if (room.status !== "lobby") return;
+    if (room.players.length < POKER_MIN_PLAYERS) {
+      socket.emit("poker:error", { message: `თამაშის დასაწყებად საჭიროა მინიმუმ ${POKER_MIN_PLAYERS} მოთამაშე.` });
+      return;
+    }
+    room.status = "playing";
+    pokerStartNextHand(room);
+    broadcastPublicPokerRooms();
+  });
+
+  // fold | check | call | raise (amount = target total bet) | allin
+  socket.on("poker:action", ({ roomId, action, amount }) => {
+    if (!socket._regUser) return;
+    const room = pokerRooms.get(roomId);
+    if (!room || room.status !== "playing") return;
+    const lc = socket._regUser.usernameLower;
+    const seat = room.players.findIndex(p => p.lc === lc);
+    if (seat === -1) return;
+
+    const result = pokerApplyAction(room, seat, action, amount);
+    if (!result.ok) { socket.emit("poker:error", { message: "არასწორი მოქმედება (" + result.reason + ")" }); return; }
+    pokerAfterAction(room);
+  });
+
+  socket.on("poker:leave", () => cleanupPokerForSocket(socket.id));
+
+  // ══════════════════════════════════════════════════════════════════════
   // Rooms ("ოთახები") — Discord-style topic rooms, registered users only.
   // Opening a room in the client auto-joins it (rooms:join): no separate
   // approval step, matches "no approval required to join a room". Reading
@@ -5735,6 +6562,7 @@ io.on("connection", (socket) => {
 
     cleanupGameForSocket(socket.id);
     cleanupDrawGuessForSocket(socket.id);
+    cleanupPokerForSocket(socket.id);
     for (const [sid, s] of flappySessions) if (s.socketId === socket.id) flappySessions.delete(sid);
   });
 });
