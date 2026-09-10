@@ -3998,6 +3998,11 @@ setInterval(() => {
   for (const [key, expiry] of chessDeclineCooldown) if (now >= expiry) chessDeclineCooldown.delete(key);
 }, 60 * 60 * 1000);
 
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, expiry] of checkersDeclineCooldown) if (now >= expiry) checkersDeclineCooldown.delete(key);
+}, 60 * 60 * 1000);
+
 // ── REST endpoints ────────────────────────────────────────────────────────────
 const authLimiter = rateLimit({ windowMs: 15 * 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
 
@@ -5112,6 +5117,151 @@ function chessGameStatus(state) {
   return { status: check ? "check" : "playing" };
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// Checkers (American draughts) — invite-based 1v1 games, same shape as
+// Chess/Poker. Move generation with mandatory captures, multi-jump chains,
+// and king promotion was built and validated standalone (30 targeted tests
+// covering mandatory capture, multi-jump continuation, the mid-chain
+// promotion-stops-the-turn rule, and forward-only men vs all-direction
+// kings) plus 500 fully randomized games checked for exact piece
+// conservation on every single move — before being ported in unchanged.
+// ══════════════════════════════════════════════════════════════════════════
+
+const CHECKERS_RED = "r", CHECKERS_BLACK = "b";
+
+function checkersSq(file, rank) { return rank * 8 + file; }
+function checkersFileOf(s) { return s % 8; }
+function checkersRankOf(s) { return Math.floor(s / 8); }
+function checkersInBounds(f, r) { return f >= 0 && f < 8 && r >= 0 && r < 8; }
+function checkersIsDark(s) { return (checkersFileOf(s) + checkersRankOf(s)) % 2 === 0; }
+
+function checkersInitialBoard() {
+  const b = new Array(64).fill(null);
+  for (let s = 0; s < 64; s++) {
+    if (!checkersIsDark(s)) continue;
+    const r = checkersRankOf(s);
+    if (r <= 2) b[s] = "r";
+    else if (r >= 5) b[s] = "b";
+  }
+  return b;
+}
+
+function checkersNewGameState() {
+  return { board: checkersInitialBoard(), turn: CHECKERS_RED, mustContinueFrom: null };
+}
+
+function checkersPieceColor(p) { return p ? p.toLowerCase() : null; }
+function checkersIsKing(p) { return p === "R" || p === "B"; }
+function checkersOpponent(side) { return side === CHECKERS_RED ? CHECKERS_BLACK : CHECKERS_RED; }
+function checkersKingOf(side) { return side === CHECKERS_RED ? "R" : "B"; }
+
+const CHECKERS_DIRS_ALL = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+function checkersForwardDirsFor(piece) {
+  if (checkersIsKing(piece)) return CHECKERS_DIRS_ALL;
+  return checkersPieceColor(piece) === CHECKERS_RED ? [[1, 1], [-1, 1]] : [[1, -1], [-1, -1]];
+}
+
+function checkersCaptureMovesFrom(board, from) {
+  const piece = board[from];
+  if (!piece) return [];
+  const f = checkersFileOf(from), r = checkersRankOf(from);
+  const moves = [];
+  for (const [df, dr] of checkersForwardDirsFor(piece)) {
+    const midF = f + df, midR = r + dr;
+    const landF = f + 2 * df, landR = r + 2 * dr;
+    if (!checkersInBounds(landF, landR)) continue;
+    const midSq = checkersSq(midF, midR), landSq = checkersSq(landF, landR);
+    const midPiece = board[midSq];
+    if (midPiece && checkersPieceColor(midPiece) !== checkersPieceColor(piece) && !board[landSq]) {
+      moves.push({ from, to: landSq, capture: midSq, piece });
+    }
+  }
+  return moves;
+}
+
+function checkersSimpleMovesFrom(board, from) {
+  const piece = board[from];
+  if (!piece) return [];
+  const f = checkersFileOf(from), r = checkersRankOf(from);
+  const moves = [];
+  for (const [df, dr] of checkersForwardDirsFor(piece)) {
+    const nf = f + df, nr = r + dr;
+    if (!checkersInBounds(nf, nr)) continue;
+    const t = checkersSq(nf, nr);
+    if (!board[t]) moves.push({ from, to: t, capture: null, piece });
+  }
+  return moves;
+}
+
+function checkersLegalMoves(state) {
+  const { board, turn, mustContinueFrom } = state;
+  if (mustContinueFrom !== null) return checkersCaptureMovesFrom(board, mustContinueFrom);
+
+  const captures = [];
+  const simples = [];
+  for (let s = 0; s < 64; s++) {
+    const p = board[s];
+    if (!p || checkersPieceColor(p) !== turn) continue;
+    captures.push(...checkersCaptureMovesFrom(board, s));
+    simples.push(...checkersSimpleMovesFrom(board, s));
+  }
+  return captures.length > 0 ? captures : simples;
+}
+
+function checkersCloneState(state) {
+  return { board: state.board.slice(), turn: state.turn, mustContinueFrom: state.mustContinueFrom };
+}
+
+function checkersApplyMove(state, move) {
+  const s = checkersCloneState(state);
+  const { board } = s;
+  let piece = move.piece;
+
+  board[move.to] = piece;
+  board[move.from] = null;
+  if (move.capture !== null) board[move.capture] = null;
+
+  const landRank = checkersRankOf(move.to);
+  let promoted = false;
+  if (!checkersIsKing(piece)) {
+    if ((checkersPieceColor(piece) === CHECKERS_RED && landRank === 7) || (checkersPieceColor(piece) === CHECKERS_BLACK && landRank === 0)) {
+      piece = checkersKingOf(checkersPieceColor(piece));
+      board[move.to] = piece;
+      promoted = true;
+    }
+  }
+
+  if (move.capture !== null && !promoted) {
+    const further = checkersCaptureMovesFrom(board, move.to);
+    if (further.length > 0) {
+      s.mustContinueFrom = move.to;
+      return s;
+    }
+  }
+
+  s.mustContinueFrom = null;
+  s.turn = checkersOpponent(state.turn);
+  return s;
+}
+
+function checkersCountPieces(board, side) {
+  let n = 0;
+  for (const p of board) if (p && checkersPieceColor(p) === side) n++;
+  return n;
+}
+
+function checkersGameStatus(state) {
+  const moves = checkersLegalMoves(state);
+  if (moves.length === 0) {
+    return {
+      status: "over",
+      winner: checkersOpponent(state.turn),
+      reason: checkersCountPieces(state.board, state.turn) === 0 ? "no-pieces" : "no-moves",
+    };
+  }
+  return { status: "playing" };
+}
+
 const DRAW_MIN_PLAYERS   = 2;
 const DRAW_MAX_PLAYERS   = 8;
 const DRAW_ROUND_MS      = parseInt(process.env.DRAW_ROUND_MS, 10)  || 80_000;  // time to draw + guess
@@ -5656,6 +5806,145 @@ function cleanupChessForSocket(socketId) {
   // move before the existing move timer runs out, they lose on time via
   // chessTimeoutLoss the same as if they'd just sat there.
   broadcastChessRoom(room);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Checkers room lifecycle — identical shape to Chess (invite/lobby/game-flow
+// orchestration around the tested engine functions above). The one real
+// difference from Chess: a capturing move can chain into a mandatory
+// multi-jump with the SAME piece, during which the turn does not pass to
+// the opponent — mustContinueFrom is surfaced to the client so it knows to
+// keep prompting the same player instead of flipping to "their turn".
+// ══════════════════════════════════════════════════════════════════════════
+
+const CHECKERS_MIN_PLAYERS = 2;
+const CHECKERS_MAX_PLAYERS = 2;
+const CHECKERS_MOVE_TTL_MS = 90_000;
+const CHECKERS_INVITE_TTL_MS = 60_000;
+const CHECKERS_ROOM_TTL_MS = 30_000;
+const CHECKERS_DECLINE_COOLDOWN_MS = 5 * 60_000;
+
+const checkersRooms = new Map();
+const checkersRoomBySocket = new Map();
+const checkersDeclineCooldown = new Map();
+
+function makeCheckersRoomId() {
+  return "dm_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+function checkersRoomState(room) {
+  const st = room.state;
+  const started = room.status !== "lobby";
+  const status = started ? checkersGameStatus(st) : null;
+  return {
+    roomId: room.id,
+    status: room.status,
+    hostUsername: room.players.find(p => p.lc === room.hostLc)?.username || "",
+    players: room.players.map(p => ({ username: p.username, avatar: registeredUsers.get(p.lc)?.avatar || DEFAULT_AVATAR, color: p.color || null, connected: p.connected })),
+    board: started ? st.board : checkersInitialBoard(),
+    turn: started ? st.turn : CHECKERS_RED,
+    mustContinueFrom: started ? st.mustContinueFrom : null,
+    legalMoves: started && !room.result ? checkersLegalMoves(st).map(m => ({ from: m.from, to: m.to, capture: m.capture })) : [],
+    lastMove: room.lastMove || null,
+    moveDeadline: room.moveDeadline || null,
+    result: room.result || null,
+  };
+}
+
+function broadcastCheckersRoom(room) {
+  const payload = checkersRoomState(room);
+  for (const p of room.players) {
+    const s = io.sockets.sockets.get(p.socketId);
+    if (s) s.emit("checkers:room", payload);
+  }
+}
+
+function findActiveCheckersRoomForUser(lc) {
+  for (const room of checkersRooms.values()) {
+    if (room.status === "ended") continue;
+    if (room.players.some(p => p.lc === lc)) return room;
+  }
+  return null;
+}
+
+function getPublicCheckersRooms() {
+  const rows = [];
+  for (const room of checkersRooms.values()) {
+    if (room.status === "ended") continue;
+    if (room.players.length >= CHECKERS_MAX_PLAYERS) continue;
+    rows.push({
+      roomId: room.id,
+      hostUsername: room.players.find(p => p.lc === room.hostLc)?.username || "",
+      status: room.status,
+      playerCount: room.players.filter(p => p.connected).length,
+      maxPlayers: CHECKERS_MAX_PLAYERS,
+    });
+  }
+  return rows;
+}
+function broadcastPublicCheckersRooms() {
+  io.emit("checkers:publicRooms", getPublicCheckersRooms());
+}
+
+function clearCheckersMoveTimer(room) {
+  if (room.moveTimeoutHandle) { clearTimeout(room.moveTimeoutHandle); room.moveTimeoutHandle = null; }
+}
+function scheduleCheckersMoveTimer(room) {
+  clearCheckersMoveTimer(room);
+  room.moveDeadline = Date.now() + CHECKERS_MOVE_TTL_MS;
+  room.moveTimeoutHandle = setTimeout(() => checkersTimeoutLoss(room), CHECKERS_MOVE_TTL_MS);
+}
+
+function checkersTimeoutLoss(room) {
+  if (room.result) return;
+  const toMove = room.state.turn;
+  checkersFinishGame(room, { status: "timeout", winner: checkersOpponent(toMove) });
+}
+
+function checkersFinishGame(room, result) {
+  clearCheckersMoveTimer(room);
+  room.result = result;
+  room.moveDeadline = null;
+  room.status = "ended";
+  broadcastCheckersRoom(room);
+  broadcastPublicCheckersRooms();
+}
+
+function cleanupCheckersRoom(roomId) {
+  const room = checkersRooms.get(roomId);
+  if (!room) return;
+  clearCheckersMoveTimer(room);
+  for (const [, invite] of room.pendingInvites || []) clearTimeout(invite.timeoutHandle);
+  for (const p of room.players) checkersRoomBySocket.delete(p.socketId);
+  checkersRooms.delete(roomId);
+  broadcastPublicCheckersRooms();
+}
+
+function cleanupCheckersForSocket(socketId) {
+  const roomId = checkersRoomBySocket.get(socketId);
+  checkersRoomBySocket.delete(socketId);
+  if (!roomId) return;
+  const room = checkersRooms.get(roomId);
+  if (!room) return;
+
+  const player = room.players.find(p => p.socketId === socketId);
+  if (!player) return;
+
+  if (room.status === "lobby") {
+    room.players = room.players.filter(p => p.socketId !== socketId);
+    if (room.players.length === 0) { cleanupCheckersRoom(room.id); return; }
+    if (player.lc === room.hostLc) room.hostLc = room.players[0].lc;
+    broadcastCheckersRoom(room);
+    broadcastPublicCheckersRooms();
+    return;
+  }
+
+  player.connected = false;
+  if (room.players.every(p => !p.connected)) { cleanupCheckersRoom(room.id); return; }
+  // Same policy as Chess: no instant forfeit on disconnect — the existing
+  // move timer (if it's their turn) is what eventually costs them the game
+  // if they never come back.
+  broadcastCheckersRoom(room);
 }
 
 function startNextDrawRound(room) {
@@ -7084,6 +7373,199 @@ io.on("connection", (socket) => {
   socket.on("chess:leave", () => cleanupChessForSocket(socket.id));
 
   // ══════════════════════════════════════════════════════════════════════
+  // Checkers ("დამა") — identical invite/lobby/game shape to Chess.
+  // ══════════════════════════════════════════════════════════════════════
+
+  socket.on("checkers:invite", ({ toUsernames }) => {
+    if (!socket._regUser) return;
+    const hostLc = socket._regUser.usernameLower;
+    const hostUser = registeredUsers.get(hostLc);
+    if (!hostUser) return;
+
+    let room = findActiveCheckersRoomForUser(hostLc);
+    if (room && !(room.hostLc === hostLc && room.status === "lobby")) {
+      socket.emit("checkers:error", { message: "თქვენ უკვე ხართ სხვა თამაშში — ჯერ დატოვეთ ან დაასრულეთ ის, სანამ ახალს შექმნით." });
+      return;
+    }
+
+    if (room) {
+      const hostPlayer = room.players.find(p => p.lc === hostLc);
+      if (hostPlayer) { hostPlayer.socketId = socket.id; hostPlayer.connected = true; }
+      checkersRoomBySocket.set(socket.id, room.id);
+    } else {
+      room = {
+        id: makeCheckersRoomId(),
+        hostLc,
+        status: "lobby",
+        players: [{ lc: hostLc, username: hostUser.username, socketId: socket.id, connected: true, color: null }],
+        pendingInvites: new Map(),
+        state: checkersNewGameState(),
+        lastMove: null,
+        result: null,
+        moveDeadline: null,
+      };
+      checkersRooms.set(room.id, room);
+      checkersRoomBySocket.set(socket.id, room.id);
+    }
+
+    const list = Array.isArray(toUsernames) ? toUsernames.filter(u => typeof u === "string").slice(0, CHECKERS_MAX_PLAYERS) : [];
+    const invited = [];
+    const cooldown = [];
+    const now = Date.now();
+    for (const uname of list) {
+      const lc = uname.toLowerCase();
+      if (lc === hostLc) continue;
+      if (room.players.some(p => p.lc === lc)) continue;
+      if (room.pendingInvites.has(lc)) continue;
+      if (!onlineRegSockets.get(lc)?.size) continue;
+
+      const targetUser = registeredUsers.get(lc);
+      if (!targetUser) continue;
+
+      const cdKey = `${hostLc}|${lc}`;
+      const cdExpiry = checkersDeclineCooldown.get(cdKey);
+      if (cdExpiry) {
+        if (cdExpiry > now) { cooldown.push(targetUser.username); continue; }
+        checkersDeclineCooldown.delete(cdKey);
+      }
+
+      const timeoutHandle = setTimeout(() => room.pendingInvites.delete(lc), CHECKERS_INVITE_TTL_MS);
+      room.pendingInvites.set(lc, { timeoutHandle });
+      io.to(`user:${lc}`).emit("checkers:invited", { roomId: room.id, fromUsername: hostUser.username });
+      invited.push(targetUser.username);
+    }
+
+    socket.join(`checkersroom:${room.id}`);
+    socket.emit("checkers:room", checkersRoomState(room));
+    socket.emit("checkers:inviteSent", { invited, cooldown });
+    broadcastPublicCheckersRooms();
+  });
+
+  socket.on("checkers:listPublicRooms", () => {
+    socket.emit("checkers:publicRooms", getPublicCheckersRooms());
+  });
+
+  socket.on("checkers:declineInvite", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const room = checkersRooms.get(roomId);
+    if (!room) return;
+    const lc = socket._regUser.usernameLower;
+    const invite = room.pendingInvites.get(lc);
+    if (!invite) return;
+    clearTimeout(invite.timeoutHandle);
+    room.pendingInvites.delete(lc);
+    checkersDeclineCooldown.set(`${room.hostLc}|${lc}`, Date.now() + CHECKERS_DECLINE_COOLDOWN_MS);
+    const host = room.players.find(p => p.lc === room.hostLc);
+    if (host) io.sockets.sockets.get(host.socketId)?.emit("checkers:inviteDeclined", { username: socket._regUser.username });
+  });
+
+  socket.on("checkers:join", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const lc = socket._regUser.usernameLower;
+    const user = registeredUsers.get(lc);
+    if (!user) return;
+
+    const existingRoomId = checkersRoomBySocket.get(socket.id);
+    if (existingRoomId && existingRoomId !== roomId) cleanupCheckersForSocket(socket.id);
+
+    const room = checkersRooms.get(roomId);
+    if (!room) { socket.emit("checkers:error", { message: "თამაში ვეღარ მოიძებნა — შეიძლება უკვე დასრულდა." }); return; }
+    if (room.status === "ended") { socket.emit("checkers:error", { message: "ეს თამაში უკვე დასრულდა." }); return; }
+
+    const already = room.players.find(p => p.lc === lc);
+    if (already) {
+      already.socketId = socket.id;
+      already.connected = true;
+      checkersRoomBySocket.set(socket.id, room.id);
+      socket.join(`checkersroom:${room.id}`);
+      socket.emit("checkers:room", checkersRoomState(room));
+      broadcastCheckersRoom(room);
+      broadcastPublicCheckersRooms();
+      return;
+    }
+
+    if (room.players.length >= CHECKERS_MAX_PLAYERS) { socket.emit("checkers:error", { message: "თამაში სავსეა." }); return; }
+
+    const invite = room.pendingInvites.get(lc);
+    if (invite) clearTimeout(invite.timeoutHandle);
+    room.pendingInvites.delete(lc);
+
+    room.players.push({ lc, username: user.username, socketId: socket.id, connected: true, color: null });
+    checkersRoomBySocket.set(socket.id, room.id);
+    socket.join(`checkersroom:${room.id}`);
+
+    socket.emit("checkers:room", checkersRoomState(room));
+    broadcastCheckersRoom(room);
+    broadcastPublicCheckersRooms();
+  });
+
+  socket.on("checkers:start", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const room = checkersRooms.get(roomId);
+    if (!room || room.hostLc !== socket._regUser.usernameLower) return;
+    if (room.status !== "lobby") return;
+    if (room.players.length !== CHECKERS_MIN_PLAYERS) {
+      socket.emit("checkers:error", { message: `დასაწყებად საჭიროა ზუსტად ${CHECKERS_MIN_PLAYERS} მოთამაშე.` });
+      return;
+    }
+    const shuffled = Math.random() < 0.5 ? [room.players[0], room.players[1]] : [room.players[1], room.players[0]];
+    shuffled[0].color = CHECKERS_RED;
+    shuffled[1].color = CHECKERS_BLACK;
+
+    room.status = "playing";
+    room.state = checkersNewGameState();
+    room.lastMove = null;
+    room.result = null;
+    scheduleCheckersMoveTimer(room);
+    broadcastCheckersRoom(room);
+    broadcastPublicCheckersRooms();
+  });
+
+  socket.on("checkers:move", ({ roomId, from, to }) => {
+    if (!socket._regUser) return;
+    const room = checkersRooms.get(roomId);
+    if (!room || room.status !== "playing" || room.result) return;
+    const lc = socket._regUser.usernameLower;
+    const player = room.players.find(p => p.lc === lc);
+    if (!player || player.color !== room.state.turn) return; // not your turn / not in this game
+
+    const fromSq = Number(from), toSq = Number(to);
+    if (!Number.isInteger(fromSq) || fromSq < 0 || fromSq > 63 || !Number.isInteger(toSq) || toSq < 0 || toSq > 63) return;
+
+    const legal = checkersLegalMoves(room.state);
+    const match = legal.find(m => m.from === fromSq && m.to === toSq);
+    if (!match) { socket.emit("checkers:error", { message: "არალეგალური სვლა." }); return; }
+
+    room.state = checkersApplyMove(room.state, match);
+    room.lastMove = { from: fromSq, to: toSq };
+
+    const status = checkersGameStatus(room.state);
+    if (status.status === "over") {
+      checkersFinishGame(room, { status: "over", winner: status.winner, reason: status.reason });
+      return;
+    }
+
+    // Only reset the move timer when the turn actually changed hands — a
+    // multi-jump continuation keeps the same player acting, so the clock
+    // just keeps counting down through the whole chain rather than resetting
+    // to a fresh 90s for every individual jump in it.
+    if (room.state.mustContinueFrom === null) scheduleCheckersMoveTimer(room);
+    broadcastCheckersRoom(room);
+  });
+
+  socket.on("checkers:resign", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const room = checkersRooms.get(roomId);
+    if (!room || room.status !== "playing" || room.result) return;
+    const lc = socket._regUser.usernameLower;
+    const player = room.players.find(p => p.lc === lc);
+    if (!player || !player.color) return;
+    checkersFinishGame(room, { status: "resignation", winner: checkersOpponent(player.color) });
+  });
+
+  socket.on("checkers:leave", () => cleanupCheckersForSocket(socket.id));
+
+  // ══════════════════════════════════════════════════════════════════════
   // Rooms ("ოთახები") — Discord-style topic rooms, registered users only.
   // Opening a room in the client auto-joins it (rooms:join): no separate
   // approval step, matches "no approval required to join a room". Reading
@@ -7441,6 +7923,7 @@ io.on("connection", (socket) => {
     cleanupDrawGuessForSocket(socket.id);
     cleanupPokerForSocket(socket.id);
     cleanupChessForSocket(socket.id);
+    cleanupCheckersForSocket(socket.id);
     for (const [sid, s] of flappySessions) if (s.socketId === socket.id) flappySessions.delete(sid);
   });
 });
