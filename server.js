@@ -3411,10 +3411,15 @@ const USERS_FILE        = path.join(DATA_PATH, "registered_users.json");
 const PRIV_MSGS_FILE    = path.join(DATA_PATH, "private_messages.json");
 const STREAKS_FILE      = path.join(DATA_PATH, "friend_streaks.json");
 const ROOMS_FILE        = path.join(DATA_PATH, "chat_rooms.json");
+const FORUM_FILE        = path.join(DATA_PATH, "forum_posts.json");
 const PRIVATE_MSG_TTL   = 3 * 60 * 60 * 1000; // 3 h — auto-delete
 const AUTH_TOKEN_TTL    = 7  * 24 * 60 * 60 * 1000; // 7 days
 const ROOM_MSG_CAP      = 200; // per-room stored history — oldest trimmed past this
 const ROOM_NAME_MAX     = 80;
+const FORUM_TITLE_MAX   = 120;
+const FORUM_BODY_MAX    = 5000;
+const FORUM_COMMENT_MAX = 2000;
+const FORUM_COMMENT_CAP = 500; // per-post stored comments — oldest trimmed past this
 
 // ── In-memory stores ─────────────────────────────────────────────────────────
 const registeredUsers   = new Map(); // lowerUsername → userObj
@@ -3428,6 +3433,13 @@ const friendStreaks     = new Map(); // roomId → { count, lastDate, lastFrom: 
 //            members: [usernameLower...], bannedUsers: [usernameLower...],
 //            messages: [{ id, fromLc, fromUsername, text, ts }] }
 const chatRooms = new Map();
+
+// ── Forum ("ფორუმი" — Reddit-style posts/comments) ─────────────────────────
+// postId → { id, title, body, authorLc, authorUsername, createdAt,
+//            votes: { usernameLower: 1 | -1 },
+//            comments: [{ id, body, authorLc, authorUsername, createdAt, votes: {} }] }
+// Moderated by the same isAdmin account that runs Rooms.
+const forumPosts = new Map();
 
 // ── Flappy Bird ("მფრინავი ჩიტი") state ────────────────────────────────────
 const flappySessions   = new Map(); // sessionId → { usernameLower, socketId, startAt, submitted }
@@ -3551,6 +3563,55 @@ function forceLeaveRoomSockets(usernameLower, roomId) {
   for (const sid of sockets) {
     io.sockets.sockets.get(sid)?.leave(`roomchat:${roomId}`);
   }
+}
+
+// ── Forum ("ფორუმი") helpers ─────────────────────────────────────────────────
+function makeForumPostId() {
+  return "fp_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+}
+function makeForumCommentId() {
+  return "fc_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+}
+function forumScore(votes) {
+  let s = 0;
+  for (const v of Object.values(votes || {})) s += v;
+  return s;
+}
+function cleanForumText(raw, maxLen) {
+  return String(raw || "").slice(0, maxLen).replace(/<[^>]*>/g, "").trim();
+}
+
+// Feed-list shape — no comments array (kept light for the listing screen).
+function forumPostSummary(post, forLc) {
+  return {
+    id: post.id,
+    title: post.title,
+    authorUsername: post.authorUsername,
+    createdAt: post.createdAt,
+    score: forumScore(post.votes),
+    myVote: forLc ? (post.votes[forLc] || 0) : 0,
+    commentCount: post.comments.length,
+  };
+}
+
+function forumCommentPublic(c, forLc) {
+  return {
+    id: c.id,
+    body: c.body,
+    authorUsername: c.authorUsername,
+    createdAt: c.createdAt,
+    score: forumScore(c.votes),
+    myVote: forLc ? (c.votes[forLc] || 0) : 0,
+  };
+}
+
+// Full detail shape — includes body + every comment, for the post-detail screen.
+function forumPostFull(post, forLc) {
+  return {
+    ...forumPostSummary(post, forLc),
+    body: post.body,
+    comments: post.comments.map(c => forumCommentPublic(c, forLc)),
+  };
 }
 
 // ── Crypto helpers ────────────────────────────────────────────────────────────
@@ -3681,6 +3742,7 @@ let authUsersDirty = false;
 let privMsgsDirty = false;
 let streaksDirty = false;
 let roomsDirty = false;
+let forumDirty = false;
 let saveTimer = null;
 
 function scheduleSave() {
@@ -3690,6 +3752,7 @@ function scheduleSave() {
     if (privMsgsDirty) _savePrivateMsgsToDisk();
     if (streaksDirty) _saveStreaksToDisk();
     if (roomsDirty) _saveChatRoomsToDisk();
+    if (forumDirty) _saveForumToDisk();
     saveTimer = null;
   }, SAVE_DEBOUNCE_MS);
 }
@@ -3728,6 +3791,18 @@ function _saveChatRoomsToDisk() {
   } catch (e) {
     console.error("[ROOMS] save failed:", e.message);
     roomsDirty = true;
+  }
+}
+
+function _saveForumToDisk() {
+  const obj = {};
+  for (const [id, p] of forumPosts) obj[id] = p;
+  try {
+    fs.writeFileSync(FORUM_FILE, JSON.stringify(obj, null, 2), "utf8");
+    forumDirty = false;
+  } catch (e) {
+    console.error("[FORUM] save failed:", e.message);
+    forumDirty = true;
   }
 }
 
@@ -3813,6 +3888,23 @@ function saveChatRooms() {
   scheduleSave();
 }
 
+function loadForum() {
+  try {
+    const obj = JSON.parse(fs.readFileSync(FORUM_FILE, "utf8"));
+    for (const [id, p] of Object.entries(obj)) {
+      p.votes    = p.votes && typeof p.votes === "object" ? p.votes : {};
+      p.comments = Array.isArray(p.comments) ? p.comments : [];
+      for (const c of p.comments) c.votes = c.votes && typeof c.votes === "object" ? c.votes : {};
+      forumPosts.set(id, p);
+    }
+    console.log(`[FORUM] Loaded ${forumPosts.size} post(s)`);
+  } catch { /* first run */ }
+}
+function saveForum() {
+  forumDirty = true;
+  scheduleSave();
+}
+
 // ── Seed the fixed Rooms administrator account ─────────────────────────────
 // Runs once at startup. If the account already exists (e.g. loaded from disk
 // on a restart) its password is left untouched — only the isAdmin flag is
@@ -3848,6 +3940,7 @@ loadAuthUsers();
 loadPrivateMsgs();
 loadStreaks();
 loadChatRooms();
+loadForum();
 loadStats();
 // server.listen() below is deliberately deferred until this resolves — closes
 // a narrow race where someone could register the admin username themselves
@@ -4126,6 +4219,30 @@ app.get("/api/rooms/:roomId/messages", (req, res) => {
     room: roomPublicSummary(room, auth.usernameLower),
     messages: room.messages.map(roomMessagePublic),
   });
+});
+
+// GET /api/forum/posts?sort=new|top — feed listing. Open to any
+// authenticated registered user, same "no approval needed" spirit as Rooms.
+app.get("/api/forum/posts", (req, res) => {
+  const auth = requireRegAuth(req, res);
+  if (!auth) return;
+
+  const list = [...forumPosts.values()].map(p => forumPostSummary(p, auth.usernameLower));
+  if (req.query.sort === "top") list.sort((a, b) => b.score - a.score || new Date(b.createdAt) - new Date(a.createdAt));
+  else list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  res.json({ posts: list, isAdmin: !!auth.user.isAdmin });
+});
+
+// GET /api/forum/posts/:postId — full post + every comment, for the detail screen.
+app.get("/api/forum/posts/:postId", (req, res) => {
+  const auth = requireRegAuth(req, res);
+  if (!auth) return;
+
+  const post = forumPosts.get(req.params.postId);
+  if (!post) return res.status(404).json({ error: "პოსტი ვერ მოიძებნა" });
+
+  res.json({ post: forumPostFull(post, auth.usernameLower), isAdmin: !!auth.user.isAdmin });
 });
 
 // POST /api/friends/request
@@ -7178,6 +7295,127 @@ io.on("connection", (socket) => {
     socket.emit("rooms:unbanned", { roomId, username });
   });
 
+  // ══════════════════════════════════════════════════════════════════════
+  // Forum ("ფორუმი") — Reddit-style posts/comments/voting, registered users
+  // only, moderated by the same isAdmin account that runs Rooms. Live
+  // updates are broadcast to everyone (io.emit) since the forum isn't a
+  // joined "room" the way chat rooms are — anyone with the page open should
+  // see new posts/comments/scores land in real time. Per-viewer vote state
+  // (myVote) is only ever sent back to the voter themselves, never broadcast.
+  // ══════════════════════════════════════════════════════════════════════
+
+  socket.on("forum:createPost", ({ title, body }) => {
+    if (!socket._regUser) return;
+    const cleanTitle = cleanForumText(title, FORUM_TITLE_MAX);
+    const cleanBody = cleanForumText(body, FORUM_BODY_MAX);
+    if (!cleanTitle) { socket.emit("forum:error", { message: "სათაური სავალდებულოა" }); return; }
+    if (mediaRateLimited(socket, "forumPost", 5, 60_000)) {
+      socket.emit("forum:error", { message: "ძალიან ბევრი პოსტი — ცოტა დაელოდე." });
+      return;
+    }
+
+    const post = {
+      id: makeForumPostId(),
+      title: cleanTitle,
+      body: cleanBody,
+      authorLc: socket._regUser.usernameLower,
+      authorUsername: socket._regUser.username,
+      createdAt: new Date().toISOString(),
+      votes: {},
+      comments: [],
+    };
+    forumPosts.set(post.id, post);
+    saveForum();
+
+    io.emit("forum:postCreated", { post: forumPostSummary(post, null) });
+    socket.emit("forum:postCreatedAck", { postId: post.id });
+  });
+
+  socket.on("forum:deletePost", ({ postId }) => {
+    if (!socket._regUser || !isRoomAdmin(socket._regUser.usernameLower)) {
+      socket.emit("forum:error", { message: "მხოლოდ ადმინისტრატორს შეუძლია პოსტის წაშლა" });
+      return;
+    }
+    if (!forumPosts.has(postId)) return;
+    forumPosts.delete(postId);
+    saveForum();
+    io.emit("forum:postDeleted", { postId });
+  });
+
+  socket.on("forum:comment", ({ postId, body }) => {
+    if (!socket._regUser) return;
+    const post = forumPosts.get(postId);
+    if (!post) { socket.emit("forum:error", { message: "პოსტი ვერ მოიძებნა" }); return; }
+    const cleanBody = cleanForumText(body, FORUM_COMMENT_MAX);
+    if (!cleanBody) return;
+
+    if (mediaRateLimited(socket, "forumComment", 10, 10_000)) {
+      socket.emit("forum:error", { message: "ძალიან ბევრი კომენტარი — ცოტა დაელოდე." });
+      return;
+    }
+
+    const comment = {
+      id: makeForumCommentId(),
+      body: cleanBody,
+      authorLc: socket._regUser.usernameLower,
+      authorUsername: socket._regUser.username,
+      createdAt: new Date().toISOString(),
+      votes: {},
+    };
+    post.comments.push(comment);
+    if (post.comments.length > FORUM_COMMENT_CAP) post.comments.shift();
+    saveForum();
+
+    io.emit("forum:commentAdded", { postId, comment: forumCommentPublic(comment, null) });
+  });
+
+  socket.on("forum:deleteComment", ({ postId, commentId }) => {
+    if (!socket._regUser || !isRoomAdmin(socket._regUser.usernameLower)) {
+      socket.emit("forum:error", { message: "მხოლოდ ადმინისტრატორს შეუძლია კომენტარის წაშლა" });
+      return;
+    }
+    const post = forumPosts.get(postId);
+    if (!post) return;
+    const before = post.comments.length;
+    post.comments = post.comments.filter(c => c.id !== commentId);
+    if (post.comments.length === before) return;
+    saveForum();
+    io.emit("forum:commentDeleted", { postId, commentId });
+  });
+
+  // direction: 1 (upvote), -1 (downvote), 0 (remove my vote)
+  socket.on("forum:vote", ({ postId, direction }) => {
+    if (!socket._regUser) return;
+    const post = forumPosts.get(postId);
+    if (!post) return;
+    const dir = Number(direction);
+    if (![1, -1, 0].includes(dir)) return;
+    const lc = socket._regUser.usernameLower;
+
+    if (dir === 0) delete post.votes[lc]; else post.votes[lc] = dir;
+    saveForum();
+
+    socket.emit("forum:myVoteUpdated", { postId, myVote: dir });
+    io.emit("forum:scoreUpdated", { postId, score: forumScore(post.votes) });
+  });
+
+  socket.on("forum:voteComment", ({ postId, commentId, direction }) => {
+    if (!socket._regUser) return;
+    const post = forumPosts.get(postId);
+    if (!post) return;
+    const comment = post.comments.find(c => c.id === commentId);
+    if (!comment) return;
+    const dir = Number(direction);
+    if (![1, -1, 0].includes(dir)) return;
+    const lc = socket._regUser.usernameLower;
+
+    if (dir === 0) delete comment.votes[lc]; else comment.votes[lc] = dir;
+    saveForum();
+
+    socket.emit("forum:myVoteUpdated", { postId, commentId, myVote: dir });
+    io.emit("forum:scoreUpdated", { postId, commentId, score: forumScore(comment.votes) });
+  });
+
   // ── Disconnect ───────────────────────────────────────────────────────────
   socket.on("disconnect", () => {
     console.log(`[SOCKET] Disconnected: ${socket.id}`);
@@ -7232,6 +7470,7 @@ process.on('SIGTERM', () => {
   if (privMsgsDirty) _savePrivateMsgsToDisk();
   if (statsDirty) _saveStatsToDisk();
   if (roomsDirty) _saveChatRoomsToDisk();
+  if (forumDirty) _saveForumToDisk();
   process.exit(0);
 });
 
@@ -7241,6 +7480,7 @@ process.on('SIGINT', () => {
   if (privMsgsDirty) _savePrivateMsgsToDisk();
   if (statsDirty) _saveStatsToDisk();
   if (roomsDirty) _saveChatRoomsToDisk();
+  if (forumDirty) _saveForumToDisk();
   process.exit(0);
 });
 
