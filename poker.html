@@ -148,15 +148,20 @@
     .pk-opp-seat {
       position: absolute; transform: translate(-50%, -50%);
       display: flex; flex-direction: column; align-items: center; gap: 2px; width: 64px;
-      transition: filter 0.2s;
+      transition: filter 0.4s ease, opacity 0.4s ease;
     }
-    .pk-opp-seat.folded { filter: grayscale(0.7) brightness(0.6); }
+    .pk-opp-seat.folded { filter: grayscale(0.7) brightness(0.6); opacity: 0.7; }
     .pk-opp-avatar-wrap { position: relative; }
     .pk-opp-avatar {
       width: 46px; height: 46px; border-radius: 50%; object-fit: cover;
       border: 2px solid rgba(255,255,255,0.35); background: var(--surface-2); display: block;
+      transition: border-color 0.3s ease;
     }
-    .pk-opp-seat.acting .pk-opp-avatar { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(242,201,76,0.35), 0 0 16px rgba(242,201,76,0.5); }
+    @keyframes pkTurnPulse {
+      0%, 100% { box-shadow: 0 0 0 3px rgba(242,201,76,0.35), 0 0 16px rgba(242,201,76,0.45); }
+      50%      { box-shadow: 0 0 0 6px rgba(242,201,76,0.55), 0 0 26px rgba(242,201,76,0.75); }
+    }
+    .pk-opp-seat.acting .pk-opp-avatar { border-color: var(--gold); animation: pkTurnPulse 1.3s ease-in-out infinite; }
     .pk-opp-cardback-row { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); display: flex; gap: 1px; }
     .pk-opp-cardback-row .pk-card { width: 14px; height: 20px; border-radius: 3px; }
     .pk-opp-name {
@@ -185,16 +190,40 @@
     .pk-status-disc { background: rgba(125,129,160,0.55); color: #fff; }
 
     /* ── "Me" panel — fixed below the oval ──────────────────────── */
-    .pk-me-panel { display: flex; align-items: center; gap: 10px; padding: 6px 6px calc(4px + var(--safe-bottom)); flex-shrink: 0; }
+    .pk-me-panel { display: flex; align-items: center; gap: 10px; padding: 6px 6px calc(4px + var(--safe-bottom)); flex-shrink: 0; transition: opacity 0.4s ease, filter 0.4s ease; }
+    .pk-me-panel.folded-visual { opacity: 0.6; filter: grayscale(0.6); }
     .pk-me-cards { display: flex; gap: 4px; }
     .pk-me-cards .pk-card { width: 40px; height: 56px; font-size: 0.95em; }
     .pk-me-avatar-wrap { position: relative; flex-shrink: 0; }
-    .pk-me-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent-lt); display: block; }
-    .pk-me-panel.acting .pk-me-avatar { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(242,201,76,0.35); }
+    .pk-me-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent-lt); display: block; transition: border-color 0.3s ease; }
+    .pk-me-panel.acting .pk-me-avatar { border-color: var(--gold); animation: pkTurnPulse 1.3s ease-in-out infinite; }
     .pk-me-info { min-width: 0; }
     .pk-me-name { font-size: 0.86em; font-weight: 800; }
-    .pk-me-stack { font-size: 0.78em; font-weight: 700; color: var(--gold); }
-    .pk-me-bet { margin-left: auto; font-size: 0.7em; font-weight: 700; color: var(--accent-lt); background: rgba(88,101,242,0.15); padding: 4px 10px; border-radius: 12px; white-space: nowrap; }
+    .pk-me-stack { font-size: 0.78em; font-weight: 700; color: var(--gold); display: inline-block; transition: transform 0.25s ease; }
+    .pk-me-bet { margin-left: auto; font-size: 0.7em; font-weight: 700; color: var(--accent-lt); background: rgba(88,101,242,0.15); padding: 4px 10px; border-radius: 12px; white-space: nowrap; transition: transform 0.2s ease; }
+
+    @keyframes pkStackFlash { 0%, 100% { transform: scale(1); } 40% { transform: scale(1.28); } }
+    .pk-stack-flash { animation: pkStackFlash 0.5s ease; }
+    @keyframes pkPopIn { 0% { transform: scale(0.5); opacity: 0; } 60% { transform: scale(1.15); } 100% { transform: scale(1); opacity: 1; } }
+    .pk-pop-in { animation: pkPopIn 0.35s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+    /* ── Flying chip / pot tokens (positioned dynamically via JS) ──── */
+    .pk-flying-chip {
+      position: fixed; z-index: 700; pointer-events: none;
+      background: rgba(10,10,14,0.85); border: 1px solid rgba(242,201,76,0.6);
+      color: var(--gold); font-size: 0.74em; font-weight: 800;
+      padding: 4px 10px; border-radius: 14px; white-space: nowrap;
+      transition: transform 0.5s cubic-bezier(0.4,0,0.2,1), opacity 0.5s ease 0.15s;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    .pk-flying-pot {
+      position: fixed; z-index: 700; pointer-events: none;
+      background: rgba(10,10,14,0.9); border: 2px solid var(--gold);
+      color: var(--gold); font-size: 1em; font-weight: 900;
+      padding: 7px 18px; border-radius: 22px; white-space: nowrap;
+      transition: transform 0.65s cubic-bezier(0.4,0,0.2,1), opacity 0.65s ease 0.25s;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    }
 
     .pk-card {
       width: 34px; height: 48px; border-radius: 6px; background: #fff; color: #1a1a1a;
@@ -206,24 +235,49 @@
     .pk-card.pk-card-back { background: repeating-linear-gradient(45deg, var(--accent), var(--accent) 4px, var(--accent-dk) 4px, var(--accent-dk) 8px); }
     .pk-card.pk-card-empty { background: rgba(255,255,255,0.06); box-shadow: none; border: 1px dashed rgba(255,255,255,0.15); }
 
+    @keyframes pkDealIn {
+      from { opacity: 0; transform: scale(0.35) translateY(-18px) rotate(-10deg); }
+      to   { opacity: 1; transform: scale(1) translateY(0) rotate(0); }
+    }
+    .pk-card.pk-deal-in { animation: pkDealIn 0.4s cubic-bezier(0.34,1.56,0.64,1) both; }
+    @keyframes pkFlipReveal {
+      0%   { transform: rotateY(0deg) scale(1); }
+      50%  { transform: rotateY(90deg) scale(1.08); }
+      100% { transform: rotateY(0deg) scale(1); }
+    }
+    .pk-card.pk-flip-reveal { animation: pkFlipReveal 0.45s ease-in-out both; }
+
     .pk-empty-hand { color: var(--muted); font-size: 0.85em; text-align: center; padding: 30px 20px; }
 
-    /* ── Action bar ──────────────────────────────────────────────── */
-    .pk-action-bar { padding: 8px 10px calc(8px + var(--safe-bottom)); background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0; display: none; flex-direction: column; gap: 7px; }
-    .pk-action-bar.show { display: flex; }
+    /* ── Action bar — fixed in place always; only the buttons' enabled
+       state changes with whose turn it is, so nothing pops in/out ──── */
+    .pk-action-bar { padding: 8px 10px calc(8px + var(--safe-bottom)); background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0; display: flex; flex-direction: column; gap: 7px; min-height: 78px; justify-content: center; }
     .pk-timer-track { height: 3px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
     .pk-timer-fill { height: 100%; background: var(--gold); width: 100%; transition: width 1s linear; }
+    .pk-waiting-label {
+      display: none; text-align: center; color: var(--muted); font-size: 0.85em; font-weight: 600;
+      padding: 10px 0; animation: pkWaitPulse 1.6s ease-in-out infinite;
+    }
+    .pk-action-bar.waiting .pk-waiting-label { display: block; }
+    .pk-action-bar.waiting .pk-action-btns,
+    .pk-action-bar.waiting .pk-raise-row { display: none; }
+    @keyframes pkWaitPulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
     .pk-raise-row { display: flex; align-items: center; gap: 8px; }
     .pk-raise-row input[type=range] { flex: 1; accent-color: var(--accent); }
     .pk-raise-amount { font-weight: 800; color: var(--gold); font-size: 0.9em; min-width: 52px; text-align: right; }
     .pk-action-btns { display: flex; gap: 7px; }
-    .pk-action-btns button { flex: 1; border: none; border-radius: 24px; padding: 13px 4px; font-weight: 800; font-size: 0.85em; cursor: pointer; letter-spacing: 0.01em; box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
+    .pk-action-btns button {
+      flex: 1; border: none; border-radius: 24px; padding: 13px 4px; font-weight: 800; font-size: 0.85em; cursor: pointer;
+      letter-spacing: 0.01em; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      transition: transform 0.12s ease, opacity 0.25s ease, filter 0.25s ease, box-shadow 0.25s ease;
+    }
     .pk-btn-fold { background: linear-gradient(180deg, #3a3b42, #26272e); color: #ff8a8d; }
     .pk-btn-check { background: linear-gradient(180deg, #4a4c56, #33343c); color: #fff; }
     .pk-btn-call { background: linear-gradient(180deg, #4bc873, var(--good)); color: #fff; }
     .pk-btn-raise { background: linear-gradient(180deg, #4a90e2, var(--accent-dk)); color: #fff; }
     .pk-btn-allin { background: linear-gradient(180deg, #ffdb70, var(--gold)); color: #4a3a00; }
-    .pk-action-btns button:disabled { opacity: 0.35; box-shadow: none; }
+    .pk-action-btns button:active:not(:disabled) { transform: scale(0.94); }
+    .pk-action-btns button:disabled { opacity: 0.35; box-shadow: none; filter: grayscale(0.4); cursor: default; }
 
     .pk-leave-table-row { padding: 8px 14px; text-align: center; }
     .pk-leave-table-row button { background: none; border: none; color: var(--muted); font-size: 0.8em; cursor: pointer; text-decoration: underline; }
@@ -332,8 +386,8 @@
     <div class="pk-table-body">
       <div class="pk-table-oval" id="tableOval">
         <div class="pk-stage-label" id="stageLabel">PREFLOP</div>
-        <div class="pk-center-pot">
-          <div class="pk-pot-amount">🪙 <span id="potAmount">0</span></div>
+        <div class="pk-center-pot" id="centerPot">
+          <div class="pk-pot-amount" id="potAmountBox">🪙 <span id="potAmount">0</span></div>
         </div>
         <div class="pk-community-cards" id="communityCards"></div>
         <div class="pk-opponents" id="opponentSeats"></div>
@@ -355,11 +409,12 @@
 
     <div id="actionBar" class="pk-action-bar">
       <div class="pk-timer-track"><div class="pk-timer-fill" id="timerFill"></div></div>
+      <div class="pk-waiting-label" id="waitingLabel">მოწინააღმდეგის სვლაა...</div>
       <div class="pk-raise-row" id="raiseRow" style="display:none">
         <input type="range" id="raiseSlider" min="0" max="100" value="0" />
         <div class="pk-raise-amount" id="raiseAmountLabel">0</div>
       </div>
-      <div class="pk-action-btns">
+      <div class="pk-action-btns" id="actionBtnsRow">
         <button id="foldBtn" class="pk-btn-fold">📤 ფოლდი</button>
         <button id="checkCallBtn" class="pk-btn-check">✓ ჩექი</button>
         <button id="raiseBtn" class="pk-btn-raise">⬆ რეიზი</button>
@@ -443,6 +498,46 @@
     el.className = "pk-card pk-card-back";
     return el;
   }
+
+  // Animates a small token flying from one element's screen position to
+  // another's — used for chips moving to the pot and the pot paying out to
+  // the winner. Positions are read fresh each call so it works regardless
+  // of the oval-table layout or screen size.
+  function flyToken(fromEl, toEl, text, className, duration) {
+    if (!fromEl || !toEl) return;
+    const fromRect = fromEl.getBoundingClientRect();
+    const toRect = toEl.getBoundingClientRect();
+    const startX = fromRect.left + fromRect.width / 2;
+    const startY = fromRect.top + fromRect.height / 2;
+    const endX = toRect.left + toRect.width / 2;
+    const endY = toRect.top + toRect.height / 2;
+
+    const chip = document.createElement("div");
+    chip.className = className;
+    chip.textContent = text;
+    chip.style.left = startX + "px";
+    chip.style.top = startY + "px";
+    chip.style.transform = "translate(-50%, -50%)";
+    chip.style.opacity = "1";
+    document.body.appendChild(chip);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        chip.style.transform = `translate(calc(-50% + ${endX - startX}px), calc(-50% + ${endY - startY}px))`;
+        chip.style.opacity = "0.1";
+      });
+    });
+    setTimeout(() => chip.remove(), (duration || 650) + 80);
+  }
+
+  function flashStackEl(el) {
+    if (!el) return;
+    el.classList.remove("pk-stack-flash");
+    // Re-trigger the animation even if it's still mid-flight from a rapid update.
+    void el.offsetWidth;
+    el.classList.add("pk-stack-flash");
+  }
+
   // Fills an avatar container with the person's chosen profile photo, falling
   // back to a letter if they somehow have none set.
   function setAvatar(container, avatarFile, username) {
@@ -630,15 +725,27 @@
     5: [[8, 62], [22, 24], [50, 10], [78, 24], [92, 62]],
   };
 
+  // Snapshot of the previous render, used purely to detect *changes* worth
+  // animating (a new bet, a stack that moved, a freshly-dealt card) without
+  // re-triggering the animation on every routine re-render.
+  let prevSnap = null;
+
   function renderTable(room) {
     latestRoom = room;
     $("stageLabel").textContent = ({ lobby: "მზადება", waiting: "შემდეგი ხელი მალე...", preflop: "PREFLOP", flop: "FLOP", turn: "TURN", river: "RIVER", showdown: "SHOWDOWN" })[room.stage] || room.stage;
     $("potAmount").textContent = room.pot;
 
+    const prevCommunityCount = prevSnap ? prevSnap.community : 0;
     const cc = $("communityCards");
     cc.innerHTML = "";
     for (let i = 0; i < 5; i++) {
-      cc.appendChild(room.communityCards[i] ? cardEl(room.communityCards[i]) : (function () { const e = document.createElement("div"); e.className = "pk-card pk-card-empty"; return e; })());
+      if (room.communityCards[i]) {
+        const el = cardEl(room.communityCards[i]);
+        if (i >= prevCommunityCount) { el.classList.add("pk-deal-in"); el.style.animationDelay = (i - prevCommunityCount) * 90 + "ms"; }
+        cc.appendChild(el);
+      } else {
+        const e = document.createElement("div"); e.className = "pk-card pk-card-empty"; cc.appendChild(e);
+      }
     }
 
     const myIndex = room.players.findIndex(p => p.username.toLowerCase() === myUsernameLower);
@@ -653,13 +760,19 @@
       opponents.push(...room.players); // spectating edge case
     }
 
+    const potEl = $("potAmountBox");
+    const newSnapPlayers = {};
+
     const oppWrap = $("opponentSeats");
     oppWrap.innerHTML = "";
     const positions = OPP_POSITIONS[Math.min(opponents.length, 5)] || [];
     opponents.forEach((p, idx) => {
+      const lc = p.username.toLowerCase();
+      const prev = prevSnap && prevSnap.players[lc];
       const pos = positions[idx] || [50, 30];
       const seat = document.createElement("div");
       seat.className = "pk-opp-seat" + (p.seatIndex === room.actingSeatIndex ? " acting" : "") + (p.folded ? " folded" : "");
+      seat.dataset.username = lc;
       seat.style.left = pos[0] + "%";
       seat.style.top = pos[1] + "%";
 
@@ -676,6 +789,7 @@
         cardRow.className = "pk-opp-cardback-row";
         cardRow.appendChild(cardBackEl());
         cardRow.appendChild(cardBackEl());
+        if (!prev || !prev.hasCards) cardRow.classList.add("pk-pop-in");
         avatarWrap.appendChild(cardRow);
       }
       if (p.seatIndex === room.dealerSeatIndex) {
@@ -712,31 +826,52 @@
       }
 
       oppWrap.appendChild(seat);
+
+      if (prev && p.currentBet > prev.currentBet) flyToken(avatarImg, potEl, "🔵" + (p.currentBet - prev.currentBet), "pk-flying-chip", 500);
+      if (prev && p.stack !== prev.stack) flashStackEl(stack);
+
+      newSnapPlayers[lc] = { stack: p.stack, currentBet: p.currentBet, folded: p.folded, hasCards: p.hasCards };
     });
 
     // "Me" panel — always at the bottom, with my own cards shown larger.
     if (myIndex !== -1) {
       const me = room.players[myIndex];
+      const lc = me.username.toLowerCase();
+      const prevMe = prevSnap && prevSnap.players[lc];
+
       $("mePanel").classList.toggle("acting", myIndex === room.actingSeatIndex);
+      $("mePanel").classList.toggle("folded-visual", !!me.folded);
       $("myAvatarImg").src = "/" + (me.avatar || "avatar1.png");
       $("myAvatarImg").alt = me.username;
       $("myName").textContent = me.username;
-      $("myStackDisplay").textContent = me.stack;
+      const stackEl = $("myStackDisplay");
+      stackEl.textContent = me.stack;
+      if (prevMe && me.stack !== prevMe.stack) flashStackEl(stackEl);
       $("myDealerBadge").style.display = myIndex === room.dealerSeatIndex ? "flex" : "none";
 
       const betChip = $("myBetChip");
       if (me.currentBet > 0) { betChip.style.display = "block"; betChip.textContent = "🔵" + me.currentBet; }
       else betChip.style.display = "none";
 
+      if (prevMe && me.currentBet > prevMe.currentBet) flyToken($("myAvatarImg"), potEl, "🔵" + (me.currentBet - prevMe.currentBet), "pk-flying-chip", 500);
+
       const myCards = $("myCards");
+      const hadCardsBefore = prevMe && prevMe.hasCards;
       myCards.innerHTML = "";
       if (me.holeCards && me.holeCards.length) {
-        me.holeCards.forEach(c => myCards.appendChild(cardEl(c)));
+        me.holeCards.forEach((c, i) => {
+          const el = cardEl(c);
+          if (!hadCardsBefore) { el.classList.add("pk-deal-in"); el.style.animationDelay = i * 100 + "ms"; }
+          myCards.appendChild(el);
+        });
       } else if (me.hasCards && !me.folded) {
         myCards.appendChild(cardBackEl()); myCards.appendChild(cardBackEl());
       }
-      $("mePanel").style.opacity = me.folded ? "0.5" : "1";
+
+      newSnapPlayers[lc] = { stack: me.stack, currentBet: me.currentBet, folded: me.folded, hasCards: me.hasCards };
     }
+
+    prevSnap = { community: room.communityCards.length, players: newSnapPlayers };
 
     updateActionBar(room);
   }
@@ -750,8 +885,13 @@
     const bar = $("actionBar");
     clearTimerInterval();
 
-    if (!myTurn) { bar.classList.remove("show"); return; }
-    bar.classList.add("show");
+    if (!myTurn) {
+      bar.classList.add("waiting");
+      $("waitingLabel").textContent = mySeatIndex === -1 ? "მაგიდის თვალყურის დევნება..." : "მოწინააღმდეგის სვლაა...";
+      $("timerFill").style.transition = "none"; $("timerFill").style.width = "0%";
+      return;
+    }
+    bar.classList.remove("waiting");
 
     const me = room.players[mySeatIndex];
     const toCall = room.currentBet - me.currentBet;
@@ -795,6 +935,31 @@
 
   /* ── Hand result overlay ─────────────────────────────────────── */
   const HAND_NAME_FALLBACK = "";
+
+  // Flies the pot to each winner's avatar before the result overlay opens —
+  // "waitMs" gives the animation time to land first.
+  function animatePotToWinners(data, whenDone) {
+    const potEl = $("potAmountBox");
+    const winners = data.winners || [];
+    if (!potEl || !winners.length) { whenDone(); return; }
+
+    let flewAny = false;
+    winners.forEach(w => {
+      const lc = (w.username || "").toLowerCase();
+      let targetAvatar = null;
+      if (lc === myUsernameLower) targetAvatar = $("myAvatarImg");
+      else {
+        const seat = document.querySelector(`.pk-opp-seat[data-username="${lc}"]`);
+        targetAvatar = seat ? seat.querySelector(".pk-opp-avatar") : null;
+      }
+      if (targetAvatar) {
+        flyToken(potEl, targetAvatar, "🪙" + w.amount, "pk-flying-pot", 650);
+        flewAny = true;
+      }
+    });
+    setTimeout(whenDone, flewAny ? 750 : 0);
+  }
+
   function showHandResult(data) {
     $("resultTitle").textContent = data.uncontested ? "🏆 ყველამ დაანება!" : "🏆 შედეგი";
     const winnersEl = $("resultWinners");
@@ -891,9 +1056,14 @@
       else { showScreen("table"); renderTable(room); }
     });
 
-    socket.on("poker:newHand", () => { $("resultOverlay").classList.remove("show"); });
+    socket.on("poker:newHand", () => {
+      $("resultOverlay").classList.remove("show");
+      prevSnap = null; // fresh hand — let every card/seat animate in again
+    });
 
-    socket.on("poker:handResult", showHandResult);
+    socket.on("poker:handResult", (data) => {
+      animatePotToWinners(data, () => showHandResult(data));
+    });
 
     socket.on("poker:bustedOut", () => {
       showToast("💸 დაასრულე მონეტები ამ მაგიდაზე — თუ სულ გამოილია, ავტომატურად აღდგება 24 საათში.");
