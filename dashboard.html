@@ -856,6 +856,40 @@
           socket.emit("drawGuess:declineInvite", { roomId });
         };
       });
+
+      // ── Invited to a Poker table by a friend ───────────────────────────────
+      socket.on("poker:invited", ({ roomId, fromUsername }) => {
+        const bar = document.getElementById("dgInviteBar");
+        bar.innerHTML = `
+          <span>🃏 <strong>${esc(fromUsername)}</strong>-მა მოგიწვია პოკერზე</span>
+          <button class="dg-invite-accept">✅</button>
+          <button class="dg-invite-decline">❌</button>`;
+        bar.classList.add("show");
+        bar.querySelector(".dg-invite-accept").onclick = () => {
+          window.location.href = "/poker.html?room=" + encodeURIComponent(roomId);
+        };
+        bar.querySelector(".dg-invite-decline").onclick = () => {
+          bar.classList.remove("show");
+          socket.emit("poker:declineInvite", { roomId });
+        };
+      });
+
+      // ── Invited to a Chess game by a friend ────────────────────────────────
+      socket.on("chess:invited", ({ roomId, fromUsername }) => {
+        const bar = document.getElementById("dgInviteBar");
+        bar.innerHTML = `
+          <span>♟️ <strong>${esc(fromUsername)}</strong>-მა მოგიწვია ჭადრაკზე</span>
+          <button class="dg-invite-accept">✅</button>
+          <button class="dg-invite-decline">❌</button>`;
+        bar.classList.add("show");
+        bar.querySelector(".dg-invite-accept").onclick = () => {
+          window.location.href = "/chess.html?room=" + encodeURIComponent(roomId);
+        };
+        bar.querySelector(".dg-invite-decline").onclick = () => {
+          bar.classList.remove("show");
+          socket.emit("chess:declineInvite", { roomId });
+        };
+      });
     }
 
     /* ── Unread dot helpers ──────────────────────────────────────── */
