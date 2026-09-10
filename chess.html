@@ -663,6 +663,7 @@
     latestRoom = null;
     selectedSquare = null;
     clearTimerInterval();
+    $("resultOverlay").classList.remove("show"); // it's a fixed full-screen overlay — must be dismissed explicitly, or it just sits on top of the setup screen looking like nothing happened
     history.replaceState(null, "", "/chess.html");
     showScreen("setup");
     socket.emit("chess:listPublicRooms");

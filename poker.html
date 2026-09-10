@@ -986,6 +986,7 @@
   function backToSetup() {
     currentRoomId = null;
     latestRoom = null;
+    $("resultOverlay").classList.remove("show"); // fixed full-screen overlay — must be dismissed explicitly
     history.replaceState(null, "", "/poker.html");
     clearTimerInterval();
     showScreen("setup");
