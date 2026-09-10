@@ -57,6 +57,7 @@
     .jk-header {
       display: flex; align-items: center; gap: 8px;
       min-height: 54px; flex-shrink: 0; padding: 0 10px; padding-top: var(--safe-top);
+      padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right));
       background: var(--surface); border-bottom: 1px solid var(--border);
     }
     .jk-icon-btn {
@@ -305,7 +306,7 @@
     .jk-chat-msg.mine { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
     .jk-chat-msg .jk-chat-author { font-size: 0.76em; font-weight: 700; color: var(--accent-lt); margin-bottom: 2px; }
     .jk-chat-msg.mine .jk-chat-author { display: none; }
-    .jk-chat-input-row { display: flex; gap: 8px; padding: 10px 14px calc(10px + var(--safe-bottom)); border-top: 1px solid var(--border); flex-shrink: 0; }
+    .jk-chat-input-row { display: flex; gap: 8px; padding: 10px 14px calc(10px + var(--safe-bottom)); border-top: 1px solid var(--border); flex-shrink: 0; padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); }
     #chatInput { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; color: var(--text); font-size: 16px; padding: 9px 14px; }
     #chatInput:focus { outline: none; border-color: rgba(88,101,242,0.5); }
     #chatSendBtn { flex-shrink: 0; width: 38px; height: 38px; border-radius: 50%; border: none; background: var(--accent); color: #fff; font-size: 1em; cursor: pointer; }

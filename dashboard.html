@@ -18,7 +18,14 @@
       background: #1e1f22;
       color: #dcddde;
       min-height: 100%;
+      min-height: 100dvh;
+      min-height: var(--app-height, 100dvh);
+      -webkit-text-size-adjust: 100%;
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior: contain;
+      padding-bottom: env(safe-area-inset-bottom);
     }
+    button, a, [role="button"] { touch-action: manipulation; }
 
     /* ── TOP BAR ── */
     .top-bar {
@@ -26,7 +33,10 @@
       background: #2b2d31;
       border-bottom: 1px solid #1a1b1e;
       padding: 0 20px;
-      height: 52px;
+      padding-left: max(20px, env(safe-area-inset-left));
+      padding-right: max(20px, env(safe-area-inset-right));
+      padding-top: env(safe-area-inset-top);
+      min-height: 52px;
       display: flex; align-items: center; justify-content: space-between;
     }
     .site-name {
@@ -337,7 +347,7 @@
     /* ── Loading state ── */
     #loading-screen {
       display: flex; align-items: center; justify-content: center;
-      min-height: calc(100vh - 52px);
+      min-height: calc(100vh - 52px); min-height: calc(var(--app-height, 100dvh) - 52px);
     }
     .spinner {
       width: 36px; height: 36px;
@@ -352,7 +362,7 @@
     #auth-screen {
       display: none;
       align-items: center; justify-content: center;
-      min-height: calc(100vh - 52px);
+      min-height: calc(100vh - 52px); min-height: calc(var(--app-height, 100dvh) - 52px);
       flex-direction: column; gap: 14px; padding: 24px;
     }
     .auth-message {
@@ -369,7 +379,11 @@
     .btn-go-home:hover { background: #4752c4; }
 
     @media (max-width: 480px) {
-      .page { padding: 20px 12px 60px; }
+      .page {
+        padding: 20px 12px 60px;
+        padding-left: max(12px, env(safe-area-inset-left));
+        padding-right: max(12px, env(safe-area-inset-right));
+      }
     }
 
     /* ── Avatar image + change button ── */
@@ -462,6 +476,21 @@
   </style>
 </head>
 <body>
+  <script>
+    (function () {
+      function setAppHeight() {
+        var h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        document.documentElement.style.setProperty("--app-height", h + "px");
+      }
+      setAppHeight();
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", setAppHeight, { passive: true });
+      } else {
+        window.addEventListener("resize", setAppHeight, { passive: true });
+      }
+      window.addEventListener("orientationchange", function () { setTimeout(setAppHeight, 200); });
+    })();
+  </script>
 
   <div class="top-bar">
     <a href="/" class="site-name">GAICANI</a>

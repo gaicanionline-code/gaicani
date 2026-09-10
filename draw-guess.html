@@ -10,6 +10,7 @@
   <link rel="icon" type="image/png" href="/logo.png" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    button, a, [role="button"] { touch-action: manipulation; }
 
     :root {
       --bg:        #17181d;
@@ -24,6 +25,7 @@
       --warn:      #faa61a;
       --danger:    #f23f42;
       --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-top: env(safe-area-inset-top, 0px);
     }
 
     html, body {
@@ -33,6 +35,9 @@
       color: var(--text);
       font-family: "Segoe UI", Arial, sans-serif;
       overflow: hidden;
+      -webkit-text-size-adjust: 100%;
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior: contain;
     }
 
     #app { display: flex; flex-direction: column; height: 100%; height: 100dvh; height: var(--app-height, 100dvh); }
@@ -55,7 +60,10 @@
 
     .dg-header {
       display: flex; align-items: center; gap: 10px;
-      height: 54px; flex-shrink: 0; padding: 0 14px;
+      min-height: 54px; flex-shrink: 0; padding: 0 14px;
+      padding-left: max(14px, env(safe-area-inset-left));
+      padding-right: max(14px, env(safe-area-inset-right));
+      padding-top: env(safe-area-inset-top);
       background: var(--surface); border-bottom: 1px solid var(--border);
     }
     .dg-back { color: var(--text); text-decoration: none; font-size: 1.3em; opacity: 0.85; padding: 4px; }

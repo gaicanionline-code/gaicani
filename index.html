@@ -71,6 +71,29 @@
 
 
   <script>
+    // Keeps --app-height in sync for browsers that don't natively support the
+    // 100dvh unit yet (style-MOBILE-FIX.css already references var(--app-height,
+    // 100dvh) — this just fills in that fallback; on modern browsers 100dvh
+    // already works on its own and this has no visible effect there).
+    // Independent of script.js's keyboard-avoidance logic below, which sets
+    // body.style.height directly (an inline style, so it already wins over
+    // this CSS variable whenever the keyboard is open) — nothing here
+    // changes that behavior.
+    (function () {
+      function setAppHeight() {
+        var h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        document.documentElement.style.setProperty("--app-height", h + "px");
+      }
+      setAppHeight();
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", setAppHeight, { passive: true });
+      } else {
+        window.addEventListener("resize", setAppHeight, { passive: true });
+      }
+      window.addEventListener("orientationchange", function () { setTimeout(setAppHeight, 200); });
+    })();
+  </script>
+  <script>
     (function () {
       var isAndroid = /Android/i.test(navigator.userAgent);
       var dismissed = localStorage.getItem('desktopPromptDismissed');

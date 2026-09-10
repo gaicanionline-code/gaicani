@@ -23,6 +23,8 @@
   --fb-radius:     14px;
   --fb-safe-b:     env(safe-area-inset-bottom, 0px);
   --fb-safe-t:     env(safe-area-inset-top, 0px);
+  --fb-safe-l:     env(safe-area-inset-left, 0px);
+  --fb-safe-r:     env(safe-area-inset-right, 0px);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -30,11 +32,16 @@
 html, body {
   margin: 0; padding: 0;
   height: 100%;
+  height: 100dvh;
+  height: var(--app-height, 100dvh);
   background: var(--fb-bg);
   color: var(--fb-text);
   font-family: "Segoe UI", Arial, sans-serif;
   overscroll-behavior-y: contain;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
+button, a, [role="button"] { touch-action: manipulation; }
 
 /* ── Top bar (same shape as dashboard.html / friend-chat.html) ─────────── */
 .top-bar {
@@ -42,8 +49,10 @@ html, body {
   background: var(--fb-surface);
   border-bottom: 1px solid var(--fb-border);
   padding: 0 16px;
+  padding-left: max(16px, var(--fb-safe-l));
+  padding-right: max(16px, var(--fb-safe-r));
   padding-top: var(--fb-safe-t);
-  height: 52px;
+  min-height: 52px;
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
 }
 .top-bar-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -67,7 +76,7 @@ html, body {
 /* ── Loading ─────────────────────────────────────────────────────────────── */
 #fb-loading {
   display: flex; align-items: center; justify-content: center;
-  min-height: calc(100vh - 52px);
+  min-height: calc(100vh - 52px); min-height: calc(var(--app-height, 100dvh) - 52px);
 }
 .fb-spinner {
   width: 34px; height: 34px;
@@ -81,7 +90,7 @@ html, body {
 /* ── Guest gate (not logged in) ─────────────────────────────────────────── */
 #fb-guest-gate {
   display: none;
-  min-height: calc(100vh - 52px);
+  min-height: calc(100vh - 52px); min-height: calc(var(--app-height, 100dvh) - 52px);
   flex-direction: column; align-items: center; justify-content: center;
   gap: 16px; padding: 32px 24px;
   text-align: center;
@@ -110,8 +119,10 @@ html, body {
 #fb-app {
   display: none;
   flex-direction: column;
-  min-height: calc(100vh - 52px);
+  min-height: calc(100vh - 52px); min-height: calc(var(--app-height, 100dvh) - 52px);
   padding: 12px 12px calc(14px + var(--fb-safe-b));
+  padding-left: max(12px, var(--fb-safe-l));
+  padding-right: max(12px, var(--fb-safe-r));
   max-width: 460px;
   margin: 0 auto;
   gap: 10px;

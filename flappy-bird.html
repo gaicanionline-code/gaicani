@@ -10,6 +10,21 @@
   <link rel="stylesheet" href="/flappy-bird.css" />
 </head>
 <body>
+  <script>
+    (function () {
+      function setAppHeight() {
+        var h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        document.documentElement.style.setProperty("--app-height", h + "px");
+      }
+      setAppHeight();
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", setAppHeight, { passive: true });
+      } else {
+        window.addEventListener("resize", setAppHeight, { passive: true });
+      }
+      window.addEventListener("orientationchange", function () { setTimeout(setAppHeight, 200); });
+    })();
+  </script>
 
   <div class="top-bar">
     <div class="top-bar-left">

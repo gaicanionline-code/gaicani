@@ -2,7 +2,7 @@
 <html lang="ka">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>მომსახურების წესები – GAICANI</title>
   <meta name="theme-color" content="#2b2d31" />
   <style>
@@ -14,6 +14,9 @@
       background: #1e1f22;
       color: #dcddde;
       min-height: 100%;
+      -webkit-text-size-adjust: 100%;
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior: contain;
     }
 
     /* ── TOP BAR ── */
@@ -22,7 +25,10 @@
       background: #2b2d31;
       border-bottom: 1px solid #1a1b1e;
       padding: 0 24px;
-      height: 56px;
+      padding-left: max(24px, env(safe-area-inset-left));
+      padding-right: max(24px, env(safe-area-inset-right));
+      padding-top: env(safe-area-inset-top);
+      min-height: 56px;
       display: flex; align-items: center; gap: 16px;
     }
     .site-name {
@@ -42,6 +48,8 @@
       max-width: 720px;
       margin: 0 auto;
       padding: 40px 24px 80px;
+      padding-left: max(24px, env(safe-area-inset-left));
+      padding-right: max(24px, env(safe-area-inset-right));
     }
 
     h1 {
