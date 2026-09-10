@@ -6120,7 +6120,7 @@ function jokerRoomStateForViewer(room, viewerLc) {
     hostUsername: room.players.find(p => p.lc === room.hostLc)?.username || "",
     players: room.players.map(p => ({
       username: p.username, avatar: registeredUsers.get(p.lc)?.avatar || DEFAULT_AVATAR,
-      seat: p.seat, connected: p.connected,
+      seat: p.seat, connected: p.connected, isBot: !!p.isBot,
       handCount: started ? (room.hands[p.seat] ? room.hands[p.seat].length : 0) : 0,
     })),
     mySeat: viewerSeat,
@@ -6189,15 +6189,73 @@ function clearJokerHandEndTimer(room) {
   if (room.handEndTimeoutHandle) { clearTimeout(room.handEndTimeoutHandle); room.handEndTimeoutHandle = null; }
 }
 
-function jokerScheduleBidTimer(room) {
-  clearJokerActionTimer(room);
-  room.actionDeadline = Date.now() + JOKER_BID_TTL_MS;
-  room.actionTimeoutHandle = setTimeout(() => jokerAutoBid(room), JOKER_BID_TTL_MS);
+// ── Bot takeover for disconnected players ───────────────────────────────────
+// A player who disconnects mid-game is immediately flagged isBot so the game
+// doesn't grind to a halt waiting out the full human timer on every one of
+// their turns — the bot acts after a short, natural-feeling delay instead,
+// making a purely random (no strategy at all) legal choice each time, exactly
+// as "dumb" as asked for. If the real player reconnects, isBot clears and
+// they get their seat back immediately, timer and all.
+const JOKER_BOT_DELAY_MIN_MS = 900;
+const JOKER_BOT_DELAY_MAX_MS = 1900;
+
+function jokerCurrentTurnSeat(room) {
+  if (room.phase === "bidding") return room.bidOrder[room.bidTurnIdx];
+  if (room.phase === "playing") return room.turnSeat;
+  return null;
 }
-function jokerSchedulePlayTimer(room) {
+function jokerIsBotSeat(room, seat) {
+  const p = room.players.find(pp => pp.seat === seat);
+  return !!(p && p.isBot);
+}
+
+// Single dispatcher used everywhere a turn hands off — decides whether the
+// seat now up is bot-controlled (short random-action delay) or human
+// (the normal full-length timer), so every call site stays simple.
+function jokerScheduleTurn(room) {
+  const seat = jokerCurrentTurnSeat(room);
+  if (seat === null) return;
   clearJokerActionTimer(room);
-  room.actionDeadline = Date.now() + JOKER_PLAY_TTL_MS;
-  room.actionTimeoutHandle = setTimeout(() => jokerAutoPlay(room), JOKER_PLAY_TTL_MS);
+
+  if (jokerIsBotSeat(room, seat)) {
+    const delay = JOKER_BOT_DELAY_MIN_MS + Math.floor(Math.random() * (JOKER_BOT_DELAY_MAX_MS - JOKER_BOT_DELAY_MIN_MS));
+    room.actionDeadline = Date.now() + delay;
+    room.actionTimeoutHandle = setTimeout(() => jokerBotAct(room, seat), delay);
+    return;
+  }
+
+  if (room.phase === "bidding") {
+    room.actionDeadline = Date.now() + JOKER_BID_TTL_MS;
+    room.actionTimeoutHandle = setTimeout(() => jokerAutoBid(room), JOKER_BID_TTL_MS);
+  } else if (room.phase === "playing") {
+    room.actionDeadline = Date.now() + JOKER_PLAY_TTL_MS;
+    room.actionTimeoutHandle = setTimeout(() => jokerAutoPlay(room), JOKER_PLAY_TTL_MS);
+  }
+}
+
+// The "very dumb" bot: no strategy whatsoever, just a uniformly random pick
+// among whatever's currently legal — same shape as jokerAutoBid/jokerAutoPlay
+// below (used for slow-but-still-connected humans), just triggered much
+// sooner and used specifically for bot-controlled seats.
+function jokerBotAct(room, seat) {
+  if (room.result || room.status !== "playing") return;
+  if (jokerCurrentTurnSeat(room) !== seat) return; // stale timer, turn already moved on
+  if (!jokerIsBotSeat(room, seat)) return; // the real player reconnected in the meantime
+
+  if (room.phase === "bidding") {
+    const isLast = room.bidTurnIdx === 3;
+    const priorSum = jokerPriorBidsSum(room);
+    const legalBids = [];
+    for (let b = 0; b <= room.handSize; b++) if (jokerIsBidLegal(b, room.handSize, isLast, priorSum)) legalBids.push(b);
+    const bid = legalBids[Math.floor(Math.random() * legalBids.length)];
+    jokerApplyBid(room, seat, bid);
+  } else if (room.phase === "playing") {
+    const legal = jokerLegalCardsToPlay(room.hands[seat], room.currentTrick.length === 0 ? null : room.ledSuit, room.trumpSuit);
+    const card = legal[Math.floor(Math.random() * legal.length)];
+    const jokerChoice = jokerIsJokerCard(card) ? (Math.random() < 0.5 ? "high" : "low") : null;
+    const declaredSuit = (jokerIsJokerCard(card) && room.currentTrick.length === 0) ? JOKER_SUITS_LIST[Math.floor(Math.random() * 4)] : null;
+    jokerApplyPlay(room, seat, card, jokerChoice, declaredSuit);
+  }
 }
 
 function jokerPriorBidsSum(room) {
@@ -6235,10 +6293,10 @@ function jokerApplyBid(room, seat, bid) {
     room.turnSeat = room.trickLeader;
     room.currentTrick = [];
     room.ledSuit = null;
-    jokerSchedulePlayTimer(room);
+    jokerScheduleTurn(room);
   } else {
     room.turnSeat = room.bidOrder[room.bidTurnIdx];
-    jokerScheduleBidTimer(room);
+    jokerScheduleTurn(room);
   }
   broadcastJokerRoom(room);
 }
@@ -6254,7 +6312,7 @@ function jokerApplyPlay(room, seat, card, jokerChoice, declaredSuit) {
 
   if (room.currentTrick.length < 4) {
     room.turnSeat = (seat + 1) % 4;
-    jokerSchedulePlayTimer(room);
+    jokerScheduleTurn(room);
     broadcastJokerRoom(room);
     return;
   }
@@ -6272,7 +6330,7 @@ function jokerApplyPlay(room, seat, card, jokerChoice, declaredSuit) {
     jokerFinishHand(room);
   } else {
     room.turnSeat = room.trickLeader;
-    jokerSchedulePlayTimer(room);
+    jokerScheduleTurn(room);
     broadcastJokerRoom(room);
   }
 }
@@ -6347,7 +6405,7 @@ function jokerAdvanceAfterHandEnd(room) {
   room.trickLeader = null;
   room.phase = "bidding";
 
-  jokerScheduleBidTimer(room);
+  jokerScheduleTurn(room);
   broadcastJokerRoom(room);
 }
 
@@ -6398,9 +6456,13 @@ function cleanupJokerForSocket(socketId) {
 
   player.connected = false;
   if (room.players.every(p => !p.connected)) { cleanupJokerRoom(room.id); return; }
-  // No bot replacement — the existing bid/play timeout auto-acts for
-  // whoever's turn it is regardless of connection status, which keeps a
-  // disconnected player's game moving without needing separate bot logic.
+
+  // Bot takeover: immediately flag them as bot-controlled so the game
+  // doesn't just sit there waiting out the full human timer on every one
+  // of their turns. If it happens to already be their turn right now,
+  // replace whatever human timer was running with the short bot-delay one.
+  player.isBot = true;
+  if (jokerCurrentTurnSeat(room) === player.seat) jokerScheduleTurn(room);
   broadcastJokerRoom(room);
 }
 
@@ -8304,7 +8366,7 @@ io.on("connection", (socket) => {
         id: makeJokerRoomId(),
         hostLc,
         status: "lobby",
-        players: [{ lc: hostLc, username: hostUser.username, socketId: socket.id, connected: true, seat: null }],
+        players: [{ lc: hostLc, username: hostUser.username, socketId: socket.id, connected: true, seat: null, isBot: false }],
         pendingInvites: new Map(),
         dealerSeat: 0, handIndex: 0, handSize: 0, setIdx: 0,
         trumpSuit: null, trumpCard: null, hands: [[], [], [], []],
@@ -8386,11 +8448,19 @@ io.on("connection", (socket) => {
 
     const already = room.players.find(p => p.lc === lc);
     if (already) {
+      const wasBot = already.isBot;
       already.socketId = socket.id;
       already.connected = true;
+      already.isBot = false;
       jokerRoomBySocket.set(socket.id, room.id);
       socket.join(`jokerroom:${room.id}`);
       socket.emit("joker:room", jokerRoomStateForViewer(room, lc));
+      // If a bot was mid-"turn" for this exact seat when they reconnected,
+      // hand control back immediately with a fresh normal-length timer
+      // instead of leaving the short bot-delay timer running.
+      if (wasBot && room.status === "playing" && jokerCurrentTurnSeat(room) === already.seat) {
+        jokerScheduleTurn(room);
+      }
       broadcastJokerRoom(room);
       broadcastPublicJokerRooms();
       return;
@@ -8402,7 +8472,7 @@ io.on("connection", (socket) => {
     if (invite) clearTimeout(invite.timeoutHandle);
     room.pendingInvites.delete(lc);
 
-    room.players.push({ lc, username: user.username, socketId: socket.id, connected: true, seat: null });
+    room.players.push({ lc, username: user.username, socketId: socket.id, connected: true, seat: null, isBot: false });
     jokerRoomBySocket.set(socket.id, room.id);
     socket.join(`jokerroom:${room.id}`);
 
@@ -8454,7 +8524,7 @@ io.on("connection", (socket) => {
     room.trickLeader = null;
     room.phase = "bidding";
 
-    jokerScheduleBidTimer(room);
+    jokerScheduleTurn(room);
     broadcastJokerRoom(room);
     broadcastPublicJokerRooms();
   });

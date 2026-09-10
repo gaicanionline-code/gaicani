@@ -129,6 +129,8 @@
     .jk-opp.acting .jk-opp-avatar { border-color: var(--gold); animation: jkTurnPulse 1.3s ease-in-out infinite; }
     .jk-opp.disconnected .jk-opp-avatar { filter: grayscale(0.7) opacity(0.6); }
     .jk-dealer-chip { position: absolute; top: -4px; right: -4px; width: 17px; height: 17px; border-radius: 50%; background: #fff; color: #1a1a1a; font-size: 0.55em; font-weight: 900; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,0.5); }
+    .jk-bot-chip { position: absolute; top: -4px; left: -4px; width: 19px; height: 19px; border-radius: 50%; background: var(--warn); color: #1a1a1a; font-size: 0.7em; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,0.5); }
+    .jk-bot-label { font-size: 0.56em; color: var(--warn); font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; }
     .jk-opp-name { font-size: 0.66em; font-weight: 700; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.8); max-width: 74px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .jk-opp-stats { font-size: 0.6em; color: var(--gold); text-shadow: 0 1px 3px rgba(0,0,0,0.8); display: flex; gap: 4px; }
     .jk-opp-cardcount { position: absolute; bottom: -3px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; padding: 0 5px; font-size: 0.56em; font-weight: 800; color: #fff; }
@@ -694,6 +696,9 @@
     if (room.dealerSeat === player.seat) {
       const d = document.createElement("div"); d.className = "jk-dealer-chip"; d.textContent = "D"; avatarWrap.appendChild(d);
     }
+    if (player.isBot) {
+      const bo = document.createElement("div"); bo.className = "jk-bot-chip"; bo.textContent = "🤖"; avatarWrap.appendChild(bo);
+    }
     const cc = document.createElement("div");
     cc.className = "jk-opp-cardcount";
     cc.textContent = player.handCount;
@@ -704,6 +709,13 @@
     name.className = "jk-opp-name";
     name.textContent = player.username;
     el.appendChild(name);
+
+    if (player.isBot) {
+      const botLabel = document.createElement("div");
+      botLabel.className = "jk-bot-label";
+      botLabel.textContent = "ბოტი მოთამაშეობს";
+      el.appendChild(botLabel);
+    }
 
     const stats = document.createElement("div");
     stats.className = "jk-opp-stats";
