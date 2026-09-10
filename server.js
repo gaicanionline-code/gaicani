@@ -4008,6 +4008,11 @@ setInterval(() => {
   for (const [key, expiry] of jokerDeclineCooldown) if (now >= expiry) jokerDeclineCooldown.delete(key);
 }, 60 * 60 * 1000);
 
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, expiry] of imposterDeclineCooldown) if (now >= expiry) imposterDeclineCooldown.delete(key);
+}, 60 * 60 * 1000);
+
 // ── REST endpoints ────────────────────────────────────────────────────────────
 const authLimiter = rateLimit({ windowMs: 15 * 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
 
@@ -6399,6 +6404,262 @@ function cleanupJokerForSocket(socketId) {
   broadcastJokerRoom(room);
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// Imposter ("იმპოსტორი") — social-deduction word game. Everyone gets the
+// same secret word except one imposter, who gets a related-but-different
+// word — and nobody, not even the imposter, is told who's who. Three rounds
+// of one-word clues (revealed together each round, never one-at-a-time, so
+// nobody anchors on an earlier answer), then a vote. If the group catches
+// the imposter, the imposter gets one shot at guessing the real word to
+// steal the win anyway — the classic "Word Wolf" twist.
+// ══════════════════════════════════════════════════════════════════════════
+
+const IMPOSTER_MIN_PLAYERS = 3;
+const IMPOSTER_MAX_PLAYERS = 8;
+const IMPOSTER_CLUE_ROUNDS = 3;
+const IMPOSTER_CLUE_TTL_MS = parseInt(process.env.IMPOSTER_CLUE_TTL_MS, 10) || 30_000;
+const IMPOSTER_VOTE_TTL_MS = parseInt(process.env.IMPOSTER_VOTE_TTL_MS, 10) || 30_000;
+const IMPOSTER_GUESS_TTL_MS = parseInt(process.env.IMPOSTER_GUESS_TTL_MS, 10) || 20_000;
+const IMPOSTER_INVITE_TTL_MS = 60_000;
+const IMPOSTER_DECLINE_COOLDOWN_MS = 5 * 60_000;
+
+const IMPOSTER_WORD_PAIRS = [
+  ["ძაღლი", "კატა"], ["ზღვა", "ტბა"], ["ყავა", "ჩაი"], ["მზე", "მთვარე"],
+  ["მატარებელი", "ავტობუსი"], ["პიცა", "ბურგერი"], ["ზამთარი", "ზაფხული"],
+  ["მთა", "ბორცვი"], ["სკოლა", "უნივერსიტეტი"], ["წიგნი", "ჟურნალი"],
+  ["ლომი", "ვეფხვი"], ["ფეხბურთი", "კალათბურთი"], ["მანქანა", "მოტოციკლი"],
+  ["ბანანი", "ვაშლი"], ["ცეცხლი", "კვამლი"], ["საათი", "კალენდარი"],
+  ["მდინარე", "ნაკადული"], ["ყინული", "თოვლი"], ["მსახიობი", "მომღერალი"],
+  ["ტელეფონი", "კომპიუტერი"], ["ქარიშხალი", "წვიმა"], ["კუნძული", "ნახევარკუნძული"],
+  ["ვარსკვლავი", "პლანეტა"], ["ბუზი", "ფუტკარი"], ["მდელო", "ტყე"],
+  ["ხიდი", "გვირაბი"], ["დღესასწაული", "წვეულება"], ["მასწავლებელი", "ექიმი"],
+  ["სასტუმრო", "სახლი"], ["სუნთქვა", "ხველა"], ["საცურაო აუზი", "ტბა"],
+  ["გემი", "ნავი"], ["დედოფალი", "პრინცესა"], ["ვულკანი", "მთა"],
+  ["ველოსიპედი", "სკუტერი"], ["ბაღი", "პარკი"], ["სუპერმარკეტი", "ბაზარი"],
+];
+
+function imposterNormalizeWord(w) {
+  return String(w || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+const imposterRooms = new Map();
+const imposterRoomBySocket = new Map();
+const imposterDeclineCooldown = new Map();
+
+function makeImposterRoomId() {
+  return "im_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+function imposterRoomStateForViewer(room, viewerLc) {
+  const started = room.status !== "lobby";
+  const isImposter = started && viewerLc === room.imposterLc;
+  const myWord = started ? (isImposter ? room.imposterWord : room.majorityWord) : null;
+
+  return {
+    roomId: room.id,
+    status: room.status,
+    hostUsername: room.players.find(p => p.lc === room.hostLc)?.username || "",
+    players: room.players.map(p => ({
+      username: p.username, avatar: registeredUsers.get(p.lc)?.avatar || DEFAULT_AVATAR, connected: p.connected,
+      hasAnsweredThisRound: started && room.phase === "clue" ? !!room.currentAnswers[p.lc] : null,
+      hasVoted: started && room.phase === "voting" ? !!room.votes[p.lc] : null,
+    })),
+    phase: started ? room.phase : null,
+    roundIndex: started ? room.roundIndex : 0,
+    totalRounds: IMPOSTER_CLUE_ROUNDS,
+    myWord,
+    roundsHistory: room.roundsHistory || [],
+    myVote: room.votes ? (room.votes[viewerLc] || null) : null,
+    isImposterPromptedToGuess: room.phase === "imposterGuess" && viewerLc === room.imposterLc,
+    actionDeadline: room.actionDeadline || null,
+    result: room.result || null,
+  };
+}
+
+function broadcastImposterRoom(room) {
+  for (const p of room.players) {
+    const s = io.sockets.sockets.get(p.socketId);
+    if (s) s.emit("imposter:room", imposterRoomStateForViewer(room, p.lc));
+  }
+}
+
+function findActiveImposterRoomForUser(lc) {
+  for (const room of imposterRooms.values()) {
+    if (room.status === "ended") continue;
+    if (room.players.some(p => p.lc === lc)) return room;
+  }
+  return null;
+}
+
+function getPublicImposterRooms() {
+  const rows = [];
+  for (const room of imposterRooms.values()) {
+    if (room.status === "ended") continue;
+    if (room.players.length >= IMPOSTER_MAX_PLAYERS) continue;
+    rows.push({
+      roomId: room.id,
+      hostUsername: room.players.find(p => p.lc === room.hostLc)?.username || "",
+      status: room.status,
+      playerCount: room.players.filter(p => p.connected).length,
+      maxPlayers: IMPOSTER_MAX_PLAYERS,
+    });
+  }
+  return rows;
+}
+function broadcastPublicImposterRooms() {
+  io.emit("imposter:publicRooms", getPublicImposterRooms());
+}
+
+function clearImposterTimer(room) {
+  if (room.actionTimeoutHandle) { clearTimeout(room.actionTimeoutHandle); room.actionTimeoutHandle = null; }
+}
+function imposterScheduleClueTimer(room) {
+  clearImposterTimer(room);
+  room.actionDeadline = Date.now() + IMPOSTER_CLUE_TTL_MS;
+  room.actionTimeoutHandle = setTimeout(() => imposterAutoSubmitRemaining(room), IMPOSTER_CLUE_TTL_MS);
+}
+function imposterScheduleVoteTimer(room) {
+  clearImposterTimer(room);
+  room.actionDeadline = Date.now() + IMPOSTER_VOTE_TTL_MS;
+  room.actionTimeoutHandle = setTimeout(() => imposterTallyVotes(room), IMPOSTER_VOTE_TTL_MS);
+}
+function imposterScheduleGuessTimer(room) {
+  clearImposterTimer(room);
+  room.actionDeadline = Date.now() + IMPOSTER_GUESS_TTL_MS;
+  room.actionTimeoutHandle = setTimeout(() => imposterFinishGame(room, { imposterCaught: true, imposterGuessedRight: false }), IMPOSTER_GUESS_TTL_MS);
+}
+
+function imposterStartGame(room) {
+  const [wordA, wordB] = IMPOSTER_WORD_PAIRS[Math.floor(Math.random() * IMPOSTER_WORD_PAIRS.length)];
+  const swap = Math.random() < 0.5;
+  room.majorityWord = swap ? wordB : wordA;
+  room.imposterWord = swap ? wordA : wordB;
+  room.imposterLc = room.players[Math.floor(Math.random() * room.players.length)].lc;
+
+  room.status = "playing";
+  room.phase = "clue";
+  room.roundIndex = 0;
+  room.roundsHistory = [];
+  room.currentAnswers = {};
+  room.votes = {};
+  room.lastVoteTally = null;
+  room.votedOutLc = null;
+  room.result = null;
+
+  imposterScheduleClueTimer(room);
+  broadcastImposterRoom(room);
+  broadcastPublicImposterRooms();
+}
+
+function imposterFinishClueRound(room) {
+  clearImposterTimer(room);
+  const revealed = room.players.map(p => ({ username: p.username, word: room.currentAnswers[p.lc] || "(არ უპასუხა)" }));
+  room.roundsHistory.push({ round: room.roundIndex, answers: revealed });
+  room.currentAnswers = {};
+
+  if (room.roundIndex >= IMPOSTER_CLUE_ROUNDS - 1) {
+    room.phase = "voting";
+    room.votes = {};
+    imposterScheduleVoteTimer(room);
+  } else {
+    room.roundIndex += 1;
+    imposterScheduleClueTimer(room);
+  }
+  broadcastImposterRoom(room);
+}
+
+function imposterAutoSubmitRemaining(room) {
+  if (room.phase !== "clue") return;
+  for (const p of room.players) if (!room.currentAnswers[p.lc]) room.currentAnswers[p.lc] = "-";
+  imposterFinishClueRound(room);
+}
+
+function imposterTallyVotes(room) {
+  if (room.phase !== "voting") return;
+  clearImposterTimer(room);
+  const tally = {};
+  for (const votedFor of Object.values(room.votes)) tally[votedFor] = (tally[votedFor] || 0) + 1;
+  let maxVotes = 0, topCandidates = [];
+  for (const [lc, count] of Object.entries(tally)) {
+    if (count > maxVotes) { maxVotes = count; topCandidates = [lc]; }
+    else if (count === maxVotes) topCandidates.push(lc);
+  }
+  const votedOutLc = (maxVotes > 0 && topCandidates.length === 1) ? topCandidates[0] : null;
+  room.lastVoteTally = tally;
+  room.votedOutLc = votedOutLc;
+
+  const imposterCaught = votedOutLc === room.imposterLc;
+  if (imposterCaught) {
+    room.phase = "imposterGuess";
+    imposterScheduleGuessTimer(room);
+    broadcastImposterRoom(room);
+  } else {
+    imposterFinishGame(room, { imposterCaught: false, imposterGuessedRight: null });
+  }
+}
+
+function imposterFinishGame(room, { imposterCaught, imposterGuessedRight }) {
+  clearImposterTimer(room);
+  room.status = "ended";
+  room.actionDeadline = null;
+  const imposterWins = !imposterCaught || imposterGuessedRight;
+
+  const tallyByUsername = {};
+  for (const [lc, count] of Object.entries(room.lastVoteTally || {})) {
+    const p = room.players.find(pp => pp.lc === lc);
+    if (p) tallyByUsername[p.username] = count;
+  }
+
+  room.result = {
+    imposterUsername: room.players.find(p => p.lc === room.imposterLc)?.username || "",
+    majorityWord: room.majorityWord,
+    imposterWord: room.imposterWord,
+    votedOutUsername: room.votedOutLc ? (room.players.find(p => p.lc === room.votedOutLc)?.username || null) : null,
+    imposterCaught, imposterGuessedRight,
+    winner: imposterWins ? "imposter" : "group",
+    voteTally: tallyByUsername,
+  };
+
+  broadcastImposterRoom(room);
+  broadcastPublicImposterRooms();
+}
+
+function cleanupImposterRoom(roomId) {
+  const room = imposterRooms.get(roomId);
+  if (!room) return;
+  clearImposterTimer(room);
+  for (const [, invite] of room.pendingInvites || []) clearTimeout(invite.timeoutHandle);
+  for (const p of room.players) imposterRoomBySocket.delete(p.socketId);
+  imposterRooms.delete(roomId);
+  broadcastPublicImposterRooms();
+}
+
+function cleanupImposterForSocket(socketId) {
+  const roomId = imposterRoomBySocket.get(socketId);
+  imposterRoomBySocket.delete(socketId);
+  if (!roomId) return;
+  const room = imposterRooms.get(roomId);
+  if (!room) return;
+
+  const player = room.players.find(p => p.socketId === socketId);
+  if (!player) return;
+
+  if (room.status === "lobby") {
+    room.players = room.players.filter(p => p.socketId !== socketId);
+    if (room.players.length === 0) { cleanupImposterRoom(room.id); return; }
+    if (player.lc === room.hostLc) room.hostLc = room.players[0].lc;
+    broadcastImposterRoom(room);
+    broadcastPublicImposterRooms();
+    return;
+  }
+
+  player.connected = false;
+  if (room.players.every(p => !p.connected)) { cleanupImposterRoom(room.id); return; }
+  // No forfeit on disconnect — the clue/vote/guess timers already auto-act
+  // for whoever hasn't responded, which keeps the game moving on its own.
+  broadcastImposterRoom(room);
+}
+
 function startNextDrawRound(room) {
   const nextDrawer = room.players.find(p => p.connected && !p.hasDrawn);
   if (!nextDrawer) { endDrawGame(room); return; }
@@ -8271,6 +8532,191 @@ io.on("connection", (socket) => {
   socket.on("joker:leave", () => cleanupJokerForSocket(socket.id));
 
   // ══════════════════════════════════════════════════════════════════════
+  // Imposter ("იმპოსტორი") — social-deduction word game, 3-8 players.
+  // Same invite/lobby shape as the other games, but flexible player count
+  // (like Draw & Guess) instead of a fixed 2 or 4.
+  // ══════════════════════════════════════════════════════════════════════
+
+  socket.on("imposter:invite", ({ toUsernames }) => {
+    if (!socket._regUser) return;
+    const hostLc = socket._regUser.usernameLower;
+    const hostUser = registeredUsers.get(hostLc);
+    if (!hostUser) return;
+
+    let room = findActiveImposterRoomForUser(hostLc);
+    if (room && !(room.hostLc === hostLc && room.status === "lobby")) {
+      socket.emit("imposter:error", { message: "თქვენ უკვე ხართ სხვა თამაშში — ჯერ დატოვეთ ან დაასრულეთ ის, სანამ ახალს შექმნით." });
+      return;
+    }
+
+    if (room) {
+      const hostPlayer = room.players.find(p => p.lc === hostLc);
+      if (hostPlayer) { hostPlayer.socketId = socket.id; hostPlayer.connected = true; }
+      imposterRoomBySocket.set(socket.id, room.id);
+    } else {
+      room = {
+        id: makeImposterRoomId(),
+        hostLc,
+        status: "lobby",
+        players: [{ lc: hostLc, username: hostUser.username, socketId: socket.id, connected: true }],
+        pendingInvites: new Map(),
+        majorityWord: null, imposterWord: null, imposterLc: null,
+        phase: null, roundIndex: 0, roundsHistory: [], currentAnswers: {}, votes: {},
+        lastVoteTally: null, votedOutLc: null, actionDeadline: null, result: null,
+      };
+      imposterRooms.set(room.id, room);
+      imposterRoomBySocket.set(socket.id, room.id);
+    }
+
+    const list = Array.isArray(toUsernames) ? toUsernames.filter(u => typeof u === "string").slice(0, IMPOSTER_MAX_PLAYERS - 1) : [];
+    const invited = [];
+    const cooldown = [];
+    const now = Date.now();
+    for (const uname of list) {
+      const lc = uname.toLowerCase();
+      if (lc === hostLc) continue;
+      if (room.players.some(p => p.lc === lc)) continue;
+      if (room.pendingInvites.has(lc)) continue;
+      if (!onlineRegSockets.get(lc)?.size) continue;
+
+      const targetUser = registeredUsers.get(lc);
+      if (!targetUser) continue;
+
+      const cdKey = `${hostLc}|${lc}`;
+      const cdExpiry = imposterDeclineCooldown.get(cdKey);
+      if (cdExpiry) {
+        if (cdExpiry > now) { cooldown.push(targetUser.username); continue; }
+        imposterDeclineCooldown.delete(cdKey);
+      }
+
+      const timeoutHandle = setTimeout(() => room.pendingInvites.delete(lc), IMPOSTER_INVITE_TTL_MS);
+      room.pendingInvites.set(lc, { timeoutHandle });
+      io.to(`user:${lc}`).emit("imposter:invited", { roomId: room.id, fromUsername: hostUser.username });
+      invited.push(targetUser.username);
+    }
+
+    socket.join(`imposterroom:${room.id}`);
+    socket.emit("imposter:room", imposterRoomStateForViewer(room, hostLc));
+    socket.emit("imposter:inviteSent", { invited, cooldown });
+    broadcastPublicImposterRooms();
+  });
+
+  socket.on("imposter:listPublicRooms", () => {
+    socket.emit("imposter:publicRooms", getPublicImposterRooms());
+  });
+
+  socket.on("imposter:declineInvite", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const room = imposterRooms.get(roomId);
+    if (!room) return;
+    const lc = socket._regUser.usernameLower;
+    const invite = room.pendingInvites.get(lc);
+    if (!invite) return;
+    clearTimeout(invite.timeoutHandle);
+    room.pendingInvites.delete(lc);
+    imposterDeclineCooldown.set(`${room.hostLc}|${lc}`, Date.now() + IMPOSTER_DECLINE_COOLDOWN_MS);
+    const host = room.players.find(p => p.lc === room.hostLc);
+    if (host) io.sockets.sockets.get(host.socketId)?.emit("imposter:inviteDeclined", { username: socket._regUser.username });
+  });
+
+  socket.on("imposter:join", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const lc = socket._regUser.usernameLower;
+    const user = registeredUsers.get(lc);
+    if (!user) return;
+
+    const existingRoomId = imposterRoomBySocket.get(socket.id);
+    if (existingRoomId && existingRoomId !== roomId) cleanupImposterForSocket(socket.id);
+
+    const room = imposterRooms.get(roomId);
+    if (!room) { socket.emit("imposter:error", { message: "თამაში ვეღარ მოიძებნა — შეიძლება უკვე დასრულდა." }); return; }
+    if (room.status === "ended") { socket.emit("imposter:error", { message: "ეს თამაში უკვე დასრულდა." }); return; }
+
+    const already = room.players.find(p => p.lc === lc);
+    if (already) {
+      already.socketId = socket.id;
+      already.connected = true;
+      imposterRoomBySocket.set(socket.id, room.id);
+      socket.join(`imposterroom:${room.id}`);
+      socket.emit("imposter:room", imposterRoomStateForViewer(room, lc));
+      broadcastImposterRoom(room);
+      broadcastPublicImposterRooms();
+      return;
+    }
+
+    if (room.players.length >= IMPOSTER_MAX_PLAYERS) { socket.emit("imposter:error", { message: "მაგიდა სავსეა." }); return; }
+
+    const invite = room.pendingInvites.get(lc);
+    if (invite) clearTimeout(invite.timeoutHandle);
+    room.pendingInvites.delete(lc);
+
+    room.players.push({ lc, username: user.username, socketId: socket.id, connected: true });
+    imposterRoomBySocket.set(socket.id, room.id);
+    socket.join(`imposterroom:${room.id}`);
+
+    socket.emit("imposter:room", imposterRoomStateForViewer(room, lc));
+    broadcastImposterRoom(room);
+    broadcastPublicImposterRooms();
+  });
+
+  socket.on("imposter:start", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const room = imposterRooms.get(roomId);
+    if (!room || room.hostLc !== socket._regUser.usernameLower) return;
+    if (room.status !== "lobby") return;
+    if (room.players.length < IMPOSTER_MIN_PLAYERS) {
+      socket.emit("imposter:error", { message: `დასაწყებად საჭიროა მინიმუმ ${IMPOSTER_MIN_PLAYERS} მოთამაშე.` });
+      return;
+    }
+    imposterStartGame(room);
+  });
+
+  socket.on("imposter:submitClue", ({ roomId, word }) => {
+    if (!socket._regUser) return;
+    const room = imposterRooms.get(roomId);
+    if (!room || room.status !== "playing" || room.phase !== "clue") return;
+    const lc = socket._regUser.usernameLower;
+    if (!room.players.some(p => p.lc === lc)) return;
+    if (room.currentAnswers[lc]) return; // already answered this round
+
+    const clean = String(word || "").trim().slice(0, 40).replace(/<[^>]*>/g, "");
+    if (!clean) { socket.emit("imposter:error", { message: "პასუხი ცარიელია." }); return; }
+
+    room.currentAnswers[lc] = clean;
+    if (room.players.every(p => room.currentAnswers[p.lc])) imposterFinishClueRound(room);
+    else broadcastImposterRoom(room);
+  });
+
+  socket.on("imposter:submitVote", ({ roomId, votedForUsername }) => {
+    if (!socket._regUser) return;
+    const room = imposterRooms.get(roomId);
+    if (!room || room.status !== "playing" || room.phase !== "voting") return;
+    const lc = socket._regUser.usernameLower;
+    if (!room.players.some(p => p.lc === lc)) return;
+    if (room.votes[lc]) return; // already voted
+
+    const target = room.players.find(p => p.username === votedForUsername);
+    if (!target || target.lc === lc) { socket.emit("imposter:error", { message: "არასწორი ხმა." }); return; }
+
+    room.votes[lc] = target.lc;
+    if (room.players.every(p => room.votes[p.lc])) imposterTallyVotes(room);
+    else broadcastImposterRoom(room);
+  });
+
+  socket.on("imposter:submitGuess", ({ roomId, guess }) => {
+    if (!socket._regUser) return;
+    const room = imposterRooms.get(roomId);
+    if (!room || room.status !== "playing" || room.phase !== "imposterGuess") return;
+    const lc = socket._regUser.usernameLower;
+    if (lc !== room.imposterLc) return;
+
+    const correct = imposterNormalizeWord(guess) === imposterNormalizeWord(room.majorityWord);
+    imposterFinishGame(room, { imposterCaught: true, imposterGuessedRight: correct });
+  });
+
+  socket.on("imposter:leave", () => cleanupImposterForSocket(socket.id));
+
+  // ══════════════════════════════════════════════════════════════════════
   // Rooms ("ოთახები") — Discord-style topic rooms, registered users only.
   // Opening a room in the client auto-joins it (rooms:join): no separate
   // approval step, matches "no approval required to join a room". Reading
@@ -8630,6 +9076,7 @@ io.on("connection", (socket) => {
     cleanupChessForSocket(socket.id);
     cleanupCheckersForSocket(socket.id);
     cleanupJokerForSocket(socket.id);
+    cleanupImposterForSocket(socket.id);
     for (const [sid, s] of flappySessions) if (s.socketId === socket.id) flappySessions.delete(sid);
   });
 });

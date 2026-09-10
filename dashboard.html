@@ -183,6 +183,12 @@
       cursor: pointer; flex-shrink: 0; transition: opacity 0.15s;
     }
     .jk-room-join-btn:hover { opacity: 0.88; }
+    .im-room-join-btn {
+      background: linear-gradient(135deg,#8b5cf6,#5b21b6); color: #fff; border: none;
+      border-radius: 8px; padding: 8px 14px; font-size: 0.82em; font-weight: 700;
+      cursor: pointer; flex-shrink: 0; transition: opacity 0.15s;
+    }
+    .im-room-join-btn:hover { opacity: 0.88; }
 
     /* ── Friend List ── */
     .friends-list {
@@ -550,6 +556,13 @@
       <div id="jkRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>
 
+    <!-- Imposter -->
+    <a href="/imposter.html" class="btn-start-chat" style="background:linear-gradient(135deg,#8b5cf6,#5b21b6);margin-top:14px;">🕵️ იმპოსტორი</a>
+    <div id="imRoomsSection" style="display:none;margin:8px 0 14px;">
+      <div class="dg-rooms-label" style="margin-bottom:8px;">თამაშები — შემოუერთდი</div>
+      <div id="imRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
+
     <!-- Active Draw & Guess rooms — join one already in progress -->
     <div id="dgRoomsSection" style="display:none;margin:8px 0 14px;">
       <div class="dg-rooms-label" style="margin-bottom:8px;">ოთახები — შემოუერთდი</div>
@@ -804,6 +817,7 @@
         socket.emit("chess:listPublicRooms");
         socket.emit("checkers:listPublicRooms");
         socket.emit("joker:listPublicRooms");
+        socket.emit("imposter:listPublicRooms");
       });
 
       socket.on("auth:invalid", () => {
@@ -897,6 +911,7 @@
       socket.on("chess:publicRooms", (rooms) => renderCsRooms(rooms || []));
       socket.on("checkers:publicRooms", (rooms) => renderDmRooms(rooms || []));
       socket.on("joker:publicRooms", (rooms) => renderJkRooms(rooms || []));
+      socket.on("imposter:publicRooms", (rooms) => renderImRooms(rooms || []));
 
       // ── Invited to a Draw & Guess room by a friend ─────────────────────────
       socket.on("drawGuess:invited", ({ roomId, fromUsername }) => {
@@ -980,6 +995,23 @@
         bar.querySelector(".dg-invite-decline").onclick = () => {
           bar.classList.remove("show");
           socket.emit("joker:declineInvite", { roomId });
+        };
+      });
+
+      // ── Invited to an Imposter game by a friend ────────────────────────────
+      socket.on("imposter:invited", ({ roomId, fromUsername }) => {
+        const bar = document.getElementById("dgInviteBar");
+        bar.innerHTML = `
+          <span>🕵️ <strong>${esc(fromUsername)}</strong>-მა მოგიწვია იმპოსტორზე</span>
+          <button class="dg-invite-accept">✅</button>
+          <button class="dg-invite-decline">❌</button>`;
+        bar.classList.add("show");
+        bar.querySelector(".dg-invite-accept").onclick = () => {
+          window.location.href = "/imposter.html?room=" + encodeURIComponent(roomId);
+        };
+        bar.querySelector(".dg-invite-decline").onclick = () => {
+          bar.classList.remove("show");
+          socket.emit("imposter:declineInvite", { roomId });
         };
       });
     }
@@ -1234,6 +1266,31 @@
       list.querySelectorAll(".dg-room-row").forEach(row => {
         row.querySelector(".jk-room-join-btn").addEventListener("click", () => {
           window.location.href = "/joker.html?room=" + encodeURIComponent(row.dataset.room);
+        });
+      });
+    }
+
+    function renderImRooms(rooms) {
+      const section = document.getElementById("imRoomsSection");
+      const list    = document.getElementById("imRoomsList");
+      if (!section || !list) return;
+
+      if (!rooms.length) { section.style.display = "none"; return; }
+      section.style.display = "block";
+
+      list.innerHTML = rooms.map(r => `
+        <div class="dg-room-row" data-room="${esc(r.roomId)}">
+          <div class="dg-room-info">
+            <div class="dg-room-host">🕵️ ${esc(r.hostUsername)}-ის თამაში</div>
+            <div class="dg-room-meta">${r.playerCount}/${r.maxPlayers} მოთამაშე</div>
+          </div>
+          <span class="dg-room-badge ${r.status}">${r.status === "playing" ? "მიმდინარეობს" : "ლობი"}</span>
+          <button class="im-room-join-btn">შემოერთება</button>
+        </div>`).join("");
+
+      list.querySelectorAll(".dg-room-row").forEach(row => {
+        row.querySelector(".im-room-join-btn").addEventListener("click", () => {
+          window.location.href = "/imposter.html?room=" + encodeURIComponent(row.dataset.room);
         });
       });
     }

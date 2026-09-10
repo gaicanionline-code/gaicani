@@ -1495,6 +1495,23 @@
       };
     });
 
+    /* Invited to an Imposter game while chatting */
+    socket.on("imposter:invited", ({ roomId, fromUsername }) => {
+      const bar = $("dgInviteBar");
+      bar.innerHTML = `
+        <span>🕵️ <strong>${esc(fromUsername)}</strong>-მა მოგიწვია იმპოსტორზე</span>
+        <button class="dg-invite-accept">✅</button>
+        <button class="dg-invite-decline">❌</button>`;
+      bar.classList.add("show");
+      bar.querySelector(".dg-invite-accept").onclick = () => {
+        window.location.href = "/imposter.html?room=" + encodeURIComponent(roomId);
+      };
+      bar.querySelector(".dg-invite-decline").onclick = () => {
+        bar.classList.remove("show");
+        socket.emit("imposter:declineInvite", { roomId });
+      };
+    });
+
     socket.on("auth:error", () => {
       elMessages.style.display = "none";
       elInputBar.style.display = "none";
