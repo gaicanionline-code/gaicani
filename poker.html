@@ -112,7 +112,10 @@
     .pk-lobby-hint { text-align: center; color: var(--muted); font-size: 0.8em; padding: 6px 0; }
 
     /* ── Table screen ────────────────────────────────────────────── */
-    .pk-table-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; padding: 10px 10px 6px; gap: 8px; background: radial-gradient(ellipse at 50% 0%, #241014 0%, #17181d 60%); }
+    /* Bottom padding leaves room for the fixed action bar below — the exact
+       value is measured at runtime (JS sets --action-bar-h) since its height
+       varies slightly with content; this is just a safe fallback. */
+    .pk-table-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; padding: 10px 10px calc(var(--action-bar-h, 150px)); gap: 8px; background: radial-gradient(ellipse at 50% 0%, #241014 0%, #17181d 60%); }
 
     /* ── Oval felt table ─────────────────────────────────────────── */
     .pk-table-oval {
@@ -249,9 +252,17 @@
 
     .pk-empty-hand { color: var(--muted); font-size: 0.85em; text-align: center; padding: 30px 20px; }
 
-    /* ── Action bar — fixed in place always; only the buttons' enabled
-       state changes with whose turn it is, so nothing pops in/out ──── */
-    .pk-action-bar { padding: 8px 10px calc(8px + var(--safe-bottom)); background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0; display: flex; flex-direction: column; gap: 7px; min-height: 78px; justify-content: center; }
+    /* ── Action bar — truly fixed to the viewport on both desktop and
+       mobile (not just "last in the flex column"), so it never scrolls,
+       shifts, or gets nudged by keyboard/viewport-chrome changes. Only the
+       buttons' enabled state changes with whose turn it is, so nothing
+       pops in/out. */
+    .pk-action-bar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 400;
+      padding: 8px 10px calc(8px + var(--safe-bottom)); background: var(--surface); border-top: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 7px; min-height: 78px; justify-content: center;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.35);
+    }
     .pk-timer-track { height: 3px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
     .pk-timer-fill { height: 100%; background: var(--gold); width: 100%; transition: width 1s linear; }
     .pk-waiting-label {
@@ -279,8 +290,8 @@
     .pk-action-btns button:active:not(:disabled) { transform: scale(0.94); }
     .pk-action-btns button:disabled { opacity: 0.35; box-shadow: none; filter: grayscale(0.4); cursor: default; }
 
-    .pk-leave-table-row { padding: 8px 14px; text-align: center; }
-    .pk-leave-table-row button { background: none; border: none; color: var(--muted); font-size: 0.8em; cursor: pointer; text-decoration: underline; }
+    .pk-leave-table-row { padding: 2px 14px 0; text-align: center; }
+    .pk-leave-table-row button { background: none; border: none; color: var(--muted); font-size: 0.76em; cursor: pointer; text-decoration: underline; }
 
     /* ── Hand result overlay ─────────────────────────────────────── */
     .pk-result-overlay {
@@ -405,7 +416,6 @@
         <div class="pk-me-bet" id="myBetChip" style="display:none"></div>
       </div>
     </div>
-    <div class="pk-leave-table-row"><button id="tableLeaveBtn">მაგიდის დატოვება</button></div>
 
     <div id="actionBar" class="pk-action-bar">
       <div class="pk-timer-track"><div class="pk-timer-fill" id="timerFill"></div></div>
@@ -420,6 +430,7 @@
         <button id="raiseBtn" class="pk-btn-raise">⬆ რეიზი</button>
         <button id="allinBtn" class="pk-btn-allin">🔥 ოლ-ინი</button>
       </div>
+      <div class="pk-leave-table-row"><button id="tableLeaveBtn">მაგიდის დატოვება</button></div>
     </div>
   </div>
 
@@ -1005,6 +1016,22 @@
   });
 
   /* ── Boot ────────────────────────────────────────────────────── */
+  // Keeps the game area's bottom padding exactly matched to the fixed
+  // action bar's real rendered height, so nothing on the felt ever gets
+  // hidden behind it — reacts to content changes (waiting-state text vs
+  // buttons, raise slider showing/hiding) and viewport changes alike.
+  (function watchActionBarHeight() {
+    const bar = $("actionBar");
+    if (!bar || !window.ResizeObserver) return;
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const h = Math.ceil(entry.contentRect.height + 14); // small breathing room
+        document.documentElement.style.setProperty("--action-bar-h", h + "px");
+      }
+    });
+    ro.observe(bar);
+  })();
+
   function init() {
     if (!token || !username) return;
     socket = io();
