@@ -914,6 +914,7 @@
     const toCall = room.currentBet - me.currentBet;
 
     $("foldBtn").disabled = false;
+    $("checkCallBtn").disabled = false;
     if (toCall <= 0) { $("checkCallBtn").textContent = "✓ ჩექი"; $("checkCallBtn").dataset.action = "check"; }
     else { $("checkCallBtn").textContent = `☎ კოლი (${Math.min(toCall, me.stack)})`; $("checkCallBtn").dataset.action = "call"; }
 
