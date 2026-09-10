@@ -252,11 +252,11 @@
 
     .pk-empty-hand { color: var(--muted); font-size: 0.85em; text-align: center; padding: 30px 20px; }
 
-    /* ── Action bar — truly fixed to the viewport on both desktop and
-       mobile (not just "last in the flex column"), so it never scrolls,
-       shifts, or gets nudged by keyboard/viewport-chrome changes. Only the
-       buttons' enabled state changes with whose turn it is, so nothing
-       pops in/out. */
+    /* ── Action bar — fixed to the viewport, and the fold/check/raise/
+       all-in buttons stay visible and in place at ALL times (never hidden
+       or swapped out). Whose turn it is only changes whether they're
+       clickable (disabled + greyed vs enabled), so the bar's shape never
+       changes and nothing pops in or out. */
     .pk-action-bar {
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 400;
       padding: 8px 10px calc(8px + var(--safe-bottom)); background: var(--surface); border-top: 1px solid var(--border);
@@ -266,12 +266,11 @@
     .pk-timer-track { height: 3px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
     .pk-timer-fill { height: 100%; background: var(--gold); width: 100%; transition: width 1s linear; }
     .pk-waiting-label {
-      display: none; text-align: center; color: var(--muted); font-size: 0.85em; font-weight: 600;
-      padding: 10px 0; animation: pkWaitPulse 1.6s ease-in-out infinite;
+      display: none; text-align: center; color: var(--muted); font-size: 0.7em; font-weight: 600;
+      animation: pkWaitPulse 1.6s ease-in-out infinite;
     }
     .pk-action-bar.waiting .pk-waiting-label { display: block; }
-    .pk-action-bar.waiting .pk-action-btns,
-    .pk-action-bar.waiting .pk-raise-row { display: none; }
+    .pk-action-bar.waiting .pk-raise-row { display: none; } /* no live decision to size a raise for right now */
     @keyframes pkWaitPulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
     .pk-raise-row { display: flex; align-items: center; gap: 8px; }
     .pk-raise-row input[type=range] { flex: 1; accent-color: var(--accent); }
@@ -897,9 +896,16 @@
     clearTimerInterval();
 
     if (!myTurn) {
+      // Buttons stay visible and in place — just disabled — so the bar
+      // never changes shape or pops anything in/out between turns.
       bar.classList.add("waiting");
       $("waitingLabel").textContent = mySeatIndex === -1 ? "მაგიდის თვალყურის დევნება..." : "მოწინააღმდეგის სვლაა...";
       $("timerFill").style.transition = "none"; $("timerFill").style.width = "0%";
+      $("checkCallBtn").textContent = "✓ ჩექი";
+      $("foldBtn").disabled = true;
+      $("checkCallBtn").disabled = true;
+      $("raiseBtn").disabled = true;
+      $("allinBtn").disabled = true;
       return;
     }
     bar.classList.remove("waiting");
