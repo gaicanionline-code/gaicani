@@ -8246,6 +8246,28 @@ io.on("connection", (socket) => {
     jokerApplyPlay(room, player.seat, card, choice, suit);
   });
 
+  socket.on("joker:chat", ({ roomId, text }) => {
+    if (!socket._regUser) return;
+    const room = jokerRooms.get(roomId);
+    if (!room) return;
+    const lc = socket._regUser.usernameLower;
+    const player = room.players.find(p => p.lc === lc);
+    if (!player) return;
+
+    const clean = String(text || "").slice(0, 200).replace(/<[^>]*>/g, "").trim();
+    if (!clean) return;
+    if (mediaRateLimited(socket, "jokerChat", 8, 10_000)) {
+      socket.emit("joker:error", { message: "ძალიან ხშირად წერ — ცოტა დაელოდე." });
+      return;
+    }
+
+    const msg = { seat: player.seat, username: player.username, text: clean, ts: Date.now() };
+    for (const p of room.players) {
+      const s = io.sockets.sockets.get(p.socketId);
+      if (s) s.emit("joker:chatMessage", msg);
+    }
+  });
+
   socket.on("joker:leave", () => cleanupJokerForSocket(socket.id));
 
   // ══════════════════════════════════════════════════════════════════════

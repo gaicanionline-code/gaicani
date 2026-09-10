@@ -256,6 +256,71 @@
     }
     #jkToast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+    /* ── Chat: header button, floating speech bubbles, slide-up panel ──── */
+    .jk-chat-unread-dot {
+      display: none; position: absolute; top: 3px; right: 3px; width: 9px; height: 9px;
+      border-radius: 50%; background: var(--danger); border: 2px solid var(--surface);
+    }
+    .jk-chat-unread-dot.show { display: block; }
+
+    .jk-bubble-layer { position: absolute; inset: 0; pointer-events: none; z-index: 20; }
+    .jk-speech-bubble {
+      position: absolute; max-width: 130px; background: #fff; color: #1a1a1a;
+      border-radius: 12px; padding: 6px 10px; font-size: 0.72em; font-weight: 600; line-height: 1.3;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.35); text-align: center;
+      opacity: 0; animation: jkBubbleInOut 3.6s ease forwards;
+    }
+    .jk-speech-bubble::after {
+      content: ""; position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%);
+      border-width: 6px 6px 0; border-style: solid; border-color: #fff transparent transparent;
+    }
+    @keyframes jkBubbleInOut {
+      0%   { opacity: 0; transform: translate(-50%, 6px) scale(0.8); }
+      10%  { opacity: 1; transform: translate(-50%, 0) scale(1); }
+      85%  { opacity: 1; transform: translate(-50%, 0) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -8px) scale(0.95); }
+    }
+
+    .jk-chat-backdrop {
+      position: fixed; inset: 0; z-index: 560; background: rgba(0,0,0,0.4);
+      opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+    }
+    .jk-chat-backdrop.show { opacity: 1; pointer-events: auto; }
+    .jk-chat-panel {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 561;
+      background: var(--surface); border-radius: 16px 16px 0 0; border-top: 1px solid var(--border);
+      max-width: 460px; margin: 0 auto; height: 52vh; max-height: 460px;
+      display: flex; flex-direction: column;
+      transform: translateY(105%); transition: transform 0.25s cubic-bezier(0.32,0.72,0,1);
+    }
+    .jk-chat-panel.show { transform: translateY(0); }
+    .jk-chat-panel-header {
+      display: flex; align-items: center; justify-content: space-between; padding: 12px 16px;
+      font-weight: 700; border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .jk-chat-panel-header button { background: rgba(255,255,255,0.08); border: none; color: var(--muted); width: 28px; height: 28px; border-radius: 50%; cursor: pointer; }
+    .jk-chat-messages { flex: 1; overflow-y: auto; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+    .jk-chat-msg { max-width: 78%; padding: 7px 11px; border-radius: 12px; font-size: 0.85em; line-height: 1.4; }
+    .jk-chat-msg.other { align-self: flex-start; background: var(--surface-2); border-bottom-left-radius: 4px; }
+    .jk-chat-msg.mine { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+    .jk-chat-msg .jk-chat-author { font-size: 0.76em; font-weight: 700; color: var(--accent-lt); margin-bottom: 2px; }
+    .jk-chat-msg.mine .jk-chat-author { display: none; }
+    .jk-chat-input-row { display: flex; gap: 8px; padding: 10px 14px calc(10px + var(--safe-bottom)); border-top: 1px solid var(--border); flex-shrink: 0; }
+    #chatInput { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; color: var(--text); font-size: 16px; padding: 9px 14px; }
+    #chatInput:focus { outline: none; border-color: rgba(88,101,242,0.5); }
+    #chatSendBtn { flex-shrink: 0; width: 38px; height: 38px; border-radius: 50%; border: none; background: var(--accent); color: #fff; font-size: 1em; cursor: pointer; }
+
+    /* ── Score count-up flash ────────────────────────────────────── */
+    @keyframes jkScoreFlash { 0%, 100% { transform: scale(1); } 40% { transform: scale(1.22); color: #fff; } }
+    .jk-score-flash { display: inline-block; animation: jkScoreFlash 0.5s ease; }
+
+    /* ── Trump reveal ────────────────────────────────────────────── */
+    @keyframes jkTrumpReveal { from { transform: rotateY(90deg) scale(0.7); opacity: 0; } to { transform: rotateY(0) scale(1); opacity: 1; } }
+    .jk-trump-reveal { animation: jkTrumpReveal 0.5s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+    /* ── Flying trick-collection token (JS-positioned) ──────────────── */
+    .jk-flying-card { position: fixed; z-index: 700; pointer-events: none; transition: transform 0.5s cubic-bezier(0.4,0,0.2,1), opacity 0.5s ease 0.15s; }
+
     @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
   </style>
 </head>
@@ -314,6 +379,9 @@
         <div class="jk-set-label" id="setLabel">სეტი 1 — ზრდადი</div>
       </div>
       <div class="jk-trump-chip" id="trumpChip">—</div>
+      <button id="chatToggleBtn" class="jk-icon-btn" title="ჩატი" style="width:32px;height:32px;position:relative;">
+        💬<span id="chatUnreadDot" class="jk-chat-unread-dot"></span>
+      </button>
     </div>
 
     <div class="jk-table" id="table">
@@ -325,6 +393,7 @@
           <div class="jk-hand-label" id="handSizeLabel"></div>
         </div>
       </div>
+      <div class="jk-bubble-layer" id="bubbleLayer"></div>
     </div>
 
     <div class="jk-me-bar" id="meBar">
@@ -391,6 +460,20 @@
     <div class="jk-overlay-title">🏆 თამაში დასრულდა!</div>
     <div class="jk-podium" id="podium"></div>
     <div class="jk-overlay-actions"><button id="gameEndBackBtn">სიაში დაბრუნება</button></div>
+  </div>
+</div>
+
+<!-- Chat panel — slides up from the bottom, stays docked while open -->
+<div id="chatBackdrop" class="jk-chat-backdrop"></div>
+<div id="chatPanel" class="jk-chat-panel">
+  <div class="jk-chat-panel-header">
+    <div>ჩატი</div>
+    <button id="chatCloseBtn">✕</button>
+  </div>
+  <div id="chatMessages" class="jk-chat-messages"></div>
+  <div class="jk-chat-input-row">
+    <input type="text" id="chatInput" maxlength="200" placeholder="დაწერე რამე..." />
+    <button id="chatSendBtn">➤</button>
   </div>
 </div>
 
@@ -630,12 +713,32 @@
     const bid = room.bids[player.seat];
     const tricks = room.tricksWon[player.seat];
     const total = room.totals[player.seat];
-    stats.innerHTML = `<span>${bid === null || bid === undefined ? "—" : bid}/${tricks}</span><span>· ${total}</span>`;
+    stats.innerHTML = `<span>${bid === null || bid === undefined ? "—" : bid}/${tricks}</span><span>· <span class="jk-total-num" data-seat="${player.seat}">${total}</span></span>`;
     el.appendChild(stats);
+
+    if (prevSnap && prevSnap.totals && prevSnap.totals[player.seat] !== total) {
+      flashScoreEl(stats.querySelector(".jk-total-num"));
+    }
   }
 
   function renderTrick(room, mySeat) {
     const area = $("trickArea");
+
+    // A trick was just won (4 cards were on the table, now the new trick is
+    // empty) — sweep the previous cards toward the winner's avatar before
+    // clearing, instead of just having them vanish.
+    const trickJustResolved = prevSnap && prevSnap.trickSeats && prevSnap.trickSeats.length === 4 && (room.currentTrick || []).length === 0;
+    if (trickJustResolved) {
+      const winnerSeat = room.trickLeader;
+      const winnerAvatar = avatarElFor(mySeat, winnerSeat);
+      area.querySelectorAll(".jk-trick-slot .jk-card").forEach(cardNode => {
+        const clone = cardNode.cloneNode(true);
+        clone.style.width = cardNode.offsetWidth + "px";
+        clone.style.height = cardNode.offsetHeight + "px";
+        flyToken(cardNode, winnerAvatar, clone, 500);
+      });
+    }
+
     area.querySelectorAll(".jk-trick-slot").forEach(n => n.remove());
     (room.currentTrick || []).forEach((play, i) => {
       const rel = relativePosition(mySeat, play.seat);
@@ -658,6 +761,7 @@
 
   function renderTrumpChip(room) {
     const chip = $("trumpChip");
+    const isNewHand = prevSnap && prevSnap.handIndex !== room.handIndex;
     if (room.trumpSuit) {
       chip.className = "jk-trump-chip";
       chip.innerHTML = `<span style="color:${isRedSuit(room.trumpSuit) ? "#e0483a" : "#fff"}">${SUIT_GLYPH[room.trumpSuit]}</span>`;
@@ -665,6 +769,7 @@
       chip.className = "jk-trump-chip no-trump";
       chip.textContent = "უკოზირო";
     }
+    if (isNewHand) { chip.classList.remove("jk-trump-reveal"); void chip.offsetWidth; chip.classList.add("jk-trump-reveal"); }
   }
 
   function myLegalCards(room, mySeat) {
@@ -818,7 +923,8 @@
       $("meAvatar").src = "/" + (me.avatar || "avatar1.png");
       $("meName").textContent = me.username;
       const bid = room.bids[mySeat];
-      $("meStats").textContent = `ბიდი: ${bid === null || bid === undefined ? "—" : bid} · აღებული: ${room.tricksWon[mySeat]} · ქულა: ${room.totals[mySeat]}`;
+      $("meStats").innerHTML = `ბიდი: ${bid === null || bid === undefined ? "—" : bid} · აღებული: ${room.tricksWon[mySeat]} · ქულა: <span class="jk-total-num" id="meTotalNum">${room.totals[mySeat]}</span>`;
+      if (prevSnap && prevSnap.totals && prevSnap.totals[mySeat] !== room.totals[mySeat]) flashScoreEl($("meTotalNum"));
       $("meBar").classList.toggle("acting", room.phase === "playing" && room.turnSeat === mySeat);
     }
 
@@ -846,10 +952,48 @@
     if (room.finalResult) { showGameEndOverlay(room); $("handEndOverlay").classList.remove("show"); }
     else $("gameEndOverlay").classList.remove("show");
 
-    prevSnap = { myHand: (room.myHand || []).slice(), trickSeats: (room.currentTrick || []).map(t => t.seat) };
+    prevSnap = { myHand: (room.myHand || []).slice(), trickSeats: (room.currentTrick || []).map(t => t.seat), totals: room.totals.slice(), handIndex: room.handIndex };
   }
 
   /* ── Navigation ──────────────────────────────────────────────── */
+  function flyToken(fromEl, toEl, contentEl, duration) {
+    if (!fromEl || !toEl) return;
+    const fromRect = fromEl.getBoundingClientRect();
+    const toRect = toEl.getBoundingClientRect();
+    const startX = fromRect.left + fromRect.width / 2, startY = fromRect.top + fromRect.height / 2;
+    const endX = toRect.left + toRect.width / 2, endY = toRect.top + toRect.height / 2;
+
+    const wrap = document.createElement("div");
+    wrap.className = "jk-flying-card";
+    wrap.style.left = startX + "px";
+    wrap.style.top = startY + "px";
+    wrap.style.transform = "translate(-50%, -50%) scale(1)";
+    wrap.appendChild(contentEl);
+    document.body.appendChild(wrap);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        wrap.style.transform = `translate(calc(-50% + ${endX - startX}px), calc(-50% + ${endY - startY}px)) scale(0.4)`;
+        wrap.style.opacity = "0.1";
+      });
+    });
+    setTimeout(() => wrap.remove(), (duration || 550) + 80);
+  }
+
+  function avatarElFor(mySeat, seat) {
+    if (seat === mySeat) return $("meAvatar");
+    const rel = relativePosition(mySeat, seat);
+    const id = { left: "oppLeft", top: "oppTop", right: "oppRight" }[rel];
+    return id ? $(id).querySelector(".jk-opp-avatar") : null;
+  }
+
+  function flashScoreEl(el) {
+    if (!el) return;
+    el.classList.remove("jk-score-flash");
+    void el.offsetWidth;
+    el.classList.add("jk-score-flash");
+  }
+
   function backToSetup() {
     currentRoomId = null;
     latestRoom = null;
@@ -859,6 +1003,8 @@
     $("gameEndOverlay").classList.remove("show");
     $("bidModal").classList.remove("show");
     $("jokerModal").classList.remove("show");
+    $("chatMessages").innerHTML = "";
+    closeChat();
     history.replaceState(null, "", "/joker.html");
     showScreen("setup");
     socket.emit("joker:listPublicRooms");
@@ -868,6 +1014,80 @@
   $("startGameBtn").addEventListener("click", () => { if (currentRoomId) socket.emit("joker:start", { roomId: currentRoomId }); });
   $("gameBackBtn").addEventListener("click", () => { socket.emit("joker:leave"); backToSetup(); });
   $("gameEndBackBtn").addEventListener("click", () => { socket.emit("joker:leave"); backToSetup(); });
+
+  /* ── Chat: panel open/close, sending, unread badge, speech bubbles ──── */
+  let chatOpen = false;
+  let chatHasUnread = false;
+
+  function openChat() {
+    chatOpen = true;
+    $("chatPanel").classList.add("show");
+    $("chatBackdrop").classList.add("show");
+    chatHasUnread = false;
+    $("chatUnreadDot").classList.remove("show");
+    $("chatMessages").scrollTop = $("chatMessages").scrollHeight;
+    setTimeout(() => $("chatInput").focus(), 150);
+  }
+  function closeChat() {
+    chatOpen = false;
+    $("chatPanel").classList.remove("show");
+    $("chatBackdrop").classList.remove("show");
+  }
+  $("chatToggleBtn").addEventListener("click", () => { chatOpen ? closeChat() : openChat(); });
+  $("chatCloseBtn").addEventListener("click", closeChat);
+  $("chatBackdrop").addEventListener("click", closeChat);
+
+  function appendChatMessage(msg) {
+    const isMine = msg.username.toLowerCase() === myUsernameLower;
+    const row = document.createElement("div");
+    row.className = "jk-chat-msg " + (isMine ? "mine" : "other");
+    const author = document.createElement("div");
+    author.className = "jk-chat-author";
+    author.textContent = msg.username;
+    const body = document.createElement("div");
+    body.textContent = msg.text;
+    row.appendChild(author); row.appendChild(body);
+    $("chatMessages").appendChild(row);
+    $("chatMessages").scrollTop = $("chatMessages").scrollHeight;
+
+    if (!chatOpen && !isMine) {
+      chatHasUnread = true;
+      $("chatUnreadDot").classList.add("show");
+    }
+  }
+
+  function spawnSpeechBubble(msg) {
+    if (!latestRoom || latestRoom.mySeat === null || latestRoom.mySeat === undefined || msg.seat === null || msg.seat === undefined) return;
+    if (!screens.game.classList.contains("visible")) return;
+    const layer = $("bubbleLayer");
+    const mySeat = latestRoom.mySeat;
+    const isMine = msg.seat === mySeat;
+    const anchorEl = isMine ? $("meBar") : avatarElFor(mySeat, msg.seat);
+    if (!anchorEl) return;
+    const tableRect = $("table").getBoundingClientRect();
+    const anchorRect = anchorEl.getBoundingClientRect();
+
+    const bubble = document.createElement("div");
+    bubble.className = "jk-speech-bubble";
+    bubble.textContent = msg.text;
+    // Position relative to the table area, above the sender's avatar.
+    const left = (anchorRect.left + anchorRect.width / 2) - tableRect.left;
+    const top = isMine ? tableRect.height - 40 : (anchorRect.top - tableRect.top) + anchorRect.height + 10;
+    bubble.style.left = left + "px";
+    bubble.style.top = top + "px";
+    bubble.style.transform = "translate(-50%, 0)";
+    layer.appendChild(bubble);
+    setTimeout(() => bubble.remove(), 3700);
+  }
+
+  function sendChat() {
+    const val = $("chatInput").value.trim();
+    if (!val || !currentRoomId) return;
+    socket.emit("joker:chat", { roomId: currentRoomId, text: val });
+    $("chatInput").value = "";
+  }
+  $("chatSendBtn").addEventListener("click", sendChat);
+  $("chatInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendChat(); });
 
   /* ── Boot ────────────────────────────────────────────────────── */
   function init() {
@@ -920,6 +1140,11 @@
     });
 
     socket.on("joker:error", ({ message }) => showToast(message));
+
+    socket.on("joker:chatMessage", (msg) => {
+      appendChatMessage(msg);
+      spawnSpeechBubble(msg);
+    });
   }
 
   init();
