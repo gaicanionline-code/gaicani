@@ -157,6 +157,20 @@
       cursor: pointer; flex-shrink: 0; transition: opacity 0.15s;
     }
     .dg-room-join-btn:hover { opacity: 0.88; }
+    /* Poker / Chess active-game rows reuse the same row/info/host/meta/badge
+       layout above — only the join button gets each game's own accent. */
+    .pk-room-join-btn {
+      background: linear-gradient(135deg,#2d6a4f,#1b4332); color: #fff; border: none;
+      border-radius: 8px; padding: 8px 14px; font-size: 0.82em; font-weight: 700;
+      cursor: pointer; flex-shrink: 0; transition: opacity 0.15s;
+    }
+    .pk-room-join-btn:hover { opacity: 0.88; }
+    .cs-room-join-btn {
+      background: linear-gradient(135deg,#3a3a3a,#1a1a1a); color: #fff; border: none;
+      border-radius: 8px; padding: 8px 14px; font-size: 0.82em; font-weight: 700;
+      cursor: pointer; flex-shrink: 0; transition: opacity 0.15s;
+    }
+    .cs-room-join-btn:hover { opacity: 0.88; }
 
     /* ── Friend List ── */
     .friends-list {
@@ -497,10 +511,18 @@
     <!-- Poker -->
     <a href="/poker.html" class="btn-start-chat" style="background:linear-gradient(135deg,#2d6a4f,#1b4332);">🃏 პოკერი</a>
     <div style="text-align:center;font-size:0.78em;color:#72767d;margin:-6px 0 8px;">1000 მონეტა დასაწყისში — ყოველდღიური აღდგენა თუ სულ დაასრულებ</div>
+    <div id="pkRoomsSection" style="display:none;margin:0 0 14px;">
+      <div class="dg-rooms-label" style="margin-bottom:8px;">მაგიდები — შემოუერთდი</div>
+      <div id="pkRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
 
     <!-- Chess -->
     <a href="/chess.html" class="btn-start-chat" style="background:linear-gradient(135deg,#3a3a3a,#1a1a1a);">♟️ ჭადრაკი</a>
     <div style="text-align:center;font-size:0.78em;color:#72767d;margin:-6px 0 8px;">1-ის წინააღმდეგ 1 — მოიწვიე მეგობარი</div>
+    <div id="csRoomsSection" style="display:none;margin:0 0 14px;">
+      <div class="dg-rooms-label" style="margin-bottom:8px;">თამაშები — შემოუერთდი</div>
+      <div id="csRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
 
     <!-- Active Draw & Guess rooms — join one already in progress -->
     <div id="dgRoomsSection" style="display:none;margin:0 0 14px;">
@@ -752,6 +774,8 @@
         fetchUnreadFriends();
         socket.emit("users:listOnline");
         socket.emit("drawGuess:listPublicRooms");
+        socket.emit("poker:listPublicRooms");
+        socket.emit("chess:listPublicRooms");
       });
 
       socket.on("auth:invalid", () => {
@@ -839,6 +863,10 @@
 
       // ── Draw & Guess — active rooms browser (under the game button) ────────
       socket.on("drawGuess:publicRooms", (rooms) => renderDgRooms(rooms || []));
+
+      // ── Poker / Chess — same active-tables browser under each game button ──
+      socket.on("poker:publicRooms", (rooms) => renderPkRooms(rooms || []));
+      socket.on("chess:publicRooms", (rooms) => renderCsRooms(rooms || []));
 
       // ── Invited to a Draw & Guess room by a friend ─────────────────────────
       socket.on("drawGuess:invited", ({ roomId, fromUsername }) => {
@@ -1038,6 +1066,60 @@
       list.querySelectorAll(".dg-room-row").forEach(row => {
         row.querySelector(".dg-room-join-btn").addEventListener("click", () => {
           window.location.href = "/draw-guess.html?room=" + encodeURIComponent(row.dataset.room);
+        });
+      });
+    }
+
+    // Same idea as renderDgRooms, one for each game — kept as separate small
+    // functions (rather than one generic one) since the label text and the
+    // in-progress detail ("რაუნდი" for draw&guess, nothing extra for
+    // poker/chess) differ per game.
+    function renderPkRooms(rooms) {
+      const section = document.getElementById("pkRoomsSection");
+      const list    = document.getElementById("pkRoomsList");
+      if (!section || !list) return;
+
+      if (!rooms.length) { section.style.display = "none"; return; }
+      section.style.display = "block";
+
+      list.innerHTML = rooms.map(r => `
+        <div class="dg-room-row" data-room="${esc(r.roomId)}">
+          <div class="dg-room-info">
+            <div class="dg-room-host">🃏 ${esc(r.hostUsername)}-ის მაგიდა</div>
+            <div class="dg-room-meta">${r.playerCount}/${r.maxPlayers} მოთამაშე</div>
+          </div>
+          <span class="dg-room-badge ${r.status}">${r.status === "playing" ? "მიმდინარეობს" : "ლობი"}</span>
+          <button class="pk-room-join-btn">შემოერთება</button>
+        </div>`).join("");
+
+      list.querySelectorAll(".dg-room-row").forEach(row => {
+        row.querySelector(".pk-room-join-btn").addEventListener("click", () => {
+          window.location.href = "/poker.html?room=" + encodeURIComponent(row.dataset.room);
+        });
+      });
+    }
+
+    function renderCsRooms(rooms) {
+      const section = document.getElementById("csRoomsSection");
+      const list    = document.getElementById("csRoomsList");
+      if (!section || !list) return;
+
+      if (!rooms.length) { section.style.display = "none"; return; }
+      section.style.display = "block";
+
+      list.innerHTML = rooms.map(r => `
+        <div class="dg-room-row" data-room="${esc(r.roomId)}">
+          <div class="dg-room-info">
+            <div class="dg-room-host">♟️ ${esc(r.hostUsername)}-ის თამაში</div>
+            <div class="dg-room-meta">${r.playerCount}/${r.maxPlayers} მოთამაშე</div>
+          </div>
+          <span class="dg-room-badge ${r.status}">${r.status === "playing" ? "მიმდინარეობს" : "ლობი"}</span>
+          <button class="cs-room-join-btn">შემოერთება</button>
+        </div>`).join("");
+
+      list.querySelectorAll(".dg-room-row").forEach(row => {
+        row.querySelector(".cs-room-join-btn").addEventListener("click", () => {
+          window.location.href = "/chess.html?room=" + encodeURIComponent(row.dataset.room);
         });
       });
     }
