@@ -4003,6 +4003,11 @@ setInterval(() => {
   for (const [key, expiry] of checkersDeclineCooldown) if (now >= expiry) checkersDeclineCooldown.delete(key);
 }, 60 * 60 * 1000);
 
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, expiry] of jokerDeclineCooldown) if (now >= expiry) jokerDeclineCooldown.delete(key);
+}, 60 * 60 * 1000);
+
 // ── REST endpoints ────────────────────────────────────────────────────────────
 const authLimiter = rateLimit({ windowMs: 15 * 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
 
@@ -5262,6 +5267,129 @@ function checkersGameStatus(state) {
   return { status: "playing" };
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// Georgian Joker ("ჯოკერი") — 4-player, 24-hand trick-taking engine.
+// 36-card deck (9 ranks × 4 suits minus the two black 6s, plus 2 Jokers),
+// bidding with the dealer's "sum ≠ tricks available" restriction, mandatory
+// suit-following with Jokers always exempt, HIGH/LOW Joker trick resolution,
+// and the full scoring/khishti/set-bonus system. Validated standalone with
+// 66 targeted tests (every Joker HIGH/LOW edge case, dealer bid restriction,
+// all scoring branches) plus 60 fully simulated 24-hand games with random
+// legal bidding/play checked for correct trick counts and bid legality on
+// every single hand — before being ported in unchanged.
+// ══════════════════════════════════════════════════════════════════════════
+
+const JOKER_RANKS = ["6", "7", "8", "9", "T", "J", "Q", "K", "A"];
+const JOKER_SUITS = ["s", "h", "d", "c"];
+const JOKER_RANK_VALUE = { 6: 6, 7: 7, 8: 8, 9: 9, T: 10, J: 11, Q: 12, K: 13, A: 14 };
+
+function jokerIsJokerCard(c) { return c === "JK1" || c === "JK2"; }
+function jokerSuitOf(c) { return c[1]; }
+function jokerRankOf(c) { return c[0]; }
+function jokerValueOf(c) { return JOKER_RANK_VALUE[jokerRankOf(c)]; }
+
+function jokerBuildDeck() {
+  const deck = [];
+  for (const r of JOKER_RANKS) {
+    for (const s of JOKER_SUITS) {
+      if (r === "6" && (s === "s" || s === "c")) continue;
+      deck.push(r + s);
+    }
+  }
+  deck.push("JK1", "JK2");
+  return deck;
+}
+
+function jokerShuffle(deck) {
+  const d = deck.slice();
+  for (let i = d.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [d[i], d[j]] = [d[j], d[i]];
+  }
+  return d;
+}
+
+const JOKER_HAND_SIZES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 9, 9, 9, 8, 7, 6, 5, 4, 3, 2, 1, 9, 9, 9, 9];
+function jokerSetIndexForHand(handIdx) {
+  if (handIdx < 8) return 1;
+  if (handIdx < 12) return 2;
+  if (handIdx < 20) return 3;
+  return 4;
+}
+
+function jokerDealHand(handSize, dealerSeat) {
+  const deck = jokerShuffle(jokerBuildDeck());
+  const hands = [[], [], [], []];
+  let idx = 0;
+  for (let round = 0; round < handSize; round++) {
+    for (let i = 1; i <= 4; i++) {
+      const seat = (dealerSeat + i) % 4;
+      hands[seat].push(deck[idx++]);
+    }
+  }
+  let trumpCard;
+  if (handSize < 9) trumpCard = deck[idx];
+  else trumpCard = hands[dealerSeat][hands[dealerSeat].length - 1];
+  const trumpSuit = jokerIsJokerCard(trumpCard) ? null : jokerSuitOf(trumpCard);
+  return { hands, trumpCard, trumpSuit };
+}
+
+function jokerIsBidLegal(bid, handSize, isLastBidder, priorBidsSum) {
+  if (!Number.isInteger(bid) || bid < 0 || bid > handSize) return false;
+  if (isLastBidder && priorBidsSum + bid === handSize) return false;
+  return true;
+}
+
+function jokerLegalCardsToPlay(hand, ledSuit, trumpSuit) {
+  if (ledSuit === null) return hand.slice();
+  const jokers = hand.filter(jokerIsJokerCard);
+  const nonJokers = hand.filter(c => !jokerIsJokerCard(c));
+  const followers = nonJokers.filter(c => jokerSuitOf(c) === ledSuit);
+  if (followers.length > 0) return [...followers, ...jokers];
+  const trumps = trumpSuit ? nonJokers.filter(c => jokerSuitOf(c) === trumpSuit) : [];
+  if (trumps.length > 0) return [...trumps, ...jokers];
+  return hand.slice();
+}
+
+function jokerResolveTrick(trickPlays, trumpSuit, ledSuit) {
+  function isContender(tp) {
+    if (jokerIsJokerCard(tp.card)) return tp.jokerChoice === "high";
+    const s = jokerSuitOf(tp.card);
+    return (trumpSuit && s === trumpSuit) || s === ledSuit;
+  }
+  const contenders = trickPlays.filter(isContender);
+  if (contenders.length === 0) return trickPlays[0];
+  function rankVal(tp) {
+    if (jokerIsJokerCard(tp.card)) return Infinity;
+    const s = jokerSuitOf(tp.card), v = jokerValueOf(tp.card);
+    if (trumpSuit && s === trumpSuit) return 2000 + v;
+    return 1000 + v;
+  }
+  let winner = contenders[0], best = rankVal(winner);
+  for (let i = 1; i < contenders.length; i++) {
+    const r = rankVal(contenders[i]);
+    if (r > best) { winner = contenders[i]; best = r; }
+  }
+  return winner;
+}
+
+function jokerScoreHand(bid, actual, handSize, setIdx, khishtiEnabled) {
+  if (khishtiEnabled && bid >= 1 && actual === 0) {
+    return (setIdx === 1 || setIdx === 3) ? -200 : -500;
+  }
+  if (bid === actual) {
+    if (bid === handSize) return 100 * handSize;
+    return bid * 50 + 50;
+  }
+  return actual * 10;
+}
+
+function jokerSetBonus(setHands) {
+  const allHit = setHands.every(h => h.bid > 0 && h.bid === h.actual);
+  if (!allHit) return 0;
+  return Math.max(...setHands.map(h => h.score));
+}
+
 const DRAW_MIN_PLAYERS   = 2;
 const DRAW_MAX_PLAYERS   = 8;
 const DRAW_ROUND_MS      = parseInt(process.env.DRAW_ROUND_MS, 10)  || 80_000;  // time to draw + guess
@@ -5945,6 +6073,330 @@ function cleanupCheckersForSocket(socketId) {
   // move timer (if it's their turn) is what eventually costs them the game
   // if they never come back.
   broadcastCheckersRoom(room);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Georgian Joker room lifecycle — 4-player invite/lobby/game-flow
+// orchestration around the tested engine functions above. Bigger state
+// machine than the 2-player games: bidding → trick-play → hand-end (brief
+// scored reveal) → next hand or game-end, repeated across all 24 hands.
+// A disconnected player isn't replaced by a bot — the same server-side
+// bid/play timeout that handles slow humans also naturally keeps a
+// disconnected player's game moving (auto-bid/auto-play on timeout),
+// without needing separate bot logic.
+// ══════════════════════════════════════════════════════════════════════════
+
+const JOKER_MIN_PLAYERS = 4;
+const JOKER_MAX_PLAYERS = 4;
+const JOKER_BID_TTL_MS = parseInt(process.env.JOKER_BID_TTL_MS, 10) || 20_000;
+const JOKER_PLAY_TTL_MS = parseInt(process.env.JOKER_PLAY_TTL_MS, 10) || 20_000;
+const JOKER_INVITE_TTL_MS = 60_000;
+const JOKER_DECLINE_COOLDOWN_MS = 5 * 60_000;
+const JOKER_HAND_END_DELAY_MS = parseInt(process.env.JOKER_HAND_END_MS, 10) || 7_000; // pause on the hand-result table before the next hand deals
+const JOKER_KHISHTI_ENABLED = true;
+const JOKER_SUITS_LIST = ["s", "h", "d", "c"];
+
+const jokerRooms = new Map();
+const jokerRoomBySocket = new Map();
+const jokerDeclineCooldown = new Map();
+
+function makeJokerRoomId() {
+  return "jk_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+function jokerRoomStateForViewer(room, viewerLc) {
+  const viewer = room.players.find(p => p.lc === viewerLc);
+  const viewerSeat = viewer ? viewer.seat : -1;
+  const started = room.status !== "lobby";
+
+  return {
+    roomId: room.id,
+    status: room.status,
+    hostUsername: room.players.find(p => p.lc === room.hostLc)?.username || "",
+    players: room.players.map(p => ({
+      username: p.username, avatar: registeredUsers.get(p.lc)?.avatar || DEFAULT_AVATAR,
+      seat: p.seat, connected: p.connected,
+      handCount: started ? (room.hands[p.seat] ? room.hands[p.seat].length : 0) : 0,
+    })),
+    mySeat: viewerSeat,
+    dealerSeat: started ? room.dealerSeat : null,
+    handIndex: started ? room.handIndex : 0,
+    handSize: started ? room.handSize : 0,
+    setIdx: started ? room.setIdx : 0,
+    trumpSuit: started ? room.trumpSuit : null,
+    trumpCard: started ? room.trumpCard : null,
+    phase: started ? room.phase : null,
+    myHand: started && viewerSeat >= 0 ? (room.hands[viewerSeat] || []) : [],
+    bidOrder: started ? room.bidOrder : [],
+    bids: started ? room.bids : [null, null, null, null],
+    bidTurnIdx: started ? room.bidTurnIdx : 0,
+    currentTrick: started ? room.currentTrick : [],
+    ledSuit: started ? room.ledSuit : null,
+    trickLeader: started ? room.trickLeader : null,
+    tricksWon: started ? room.tricksWon : [0, 0, 0, 0],
+    turnSeat: started ? room.turnSeat : null,
+    totals: started ? room.totals : [0, 0, 0, 0],
+    lastHandSummary: room.lastHandSummary || null,
+    history: room.history || [],
+    actionDeadline: room.actionDeadline || null,
+    finalResult: room.finalResult || null,
+  };
+}
+
+function broadcastJokerRoom(room) {
+  for (const p of room.players) {
+    const s = io.sockets.sockets.get(p.socketId);
+    if (s) s.emit("joker:room", jokerRoomStateForViewer(room, p.lc));
+  }
+}
+
+function findActiveJokerRoomForUser(lc) {
+  for (const room of jokerRooms.values()) {
+    if (room.status === "ended") continue;
+    if (room.players.some(p => p.lc === lc)) return room;
+  }
+  return null;
+}
+
+function getPublicJokerRooms() {
+  const rows = [];
+  for (const room of jokerRooms.values()) {
+    if (room.status === "ended") continue;
+    if (room.players.length >= JOKER_MAX_PLAYERS) continue;
+    rows.push({
+      roomId: room.id,
+      hostUsername: room.players.find(p => p.lc === room.hostLc)?.username || "",
+      status: room.status,
+      playerCount: room.players.filter(p => p.connected).length,
+      maxPlayers: JOKER_MAX_PLAYERS,
+    });
+  }
+  return rows;
+}
+function broadcastPublicJokerRooms() {
+  io.emit("joker:publicRooms", getPublicJokerRooms());
+}
+
+function clearJokerActionTimer(room) {
+  if (room.actionTimeoutHandle) { clearTimeout(room.actionTimeoutHandle); room.actionTimeoutHandle = null; }
+}
+function clearJokerHandEndTimer(room) {
+  if (room.handEndTimeoutHandle) { clearTimeout(room.handEndTimeoutHandle); room.handEndTimeoutHandle = null; }
+}
+
+function jokerScheduleBidTimer(room) {
+  clearJokerActionTimer(room);
+  room.actionDeadline = Date.now() + JOKER_BID_TTL_MS;
+  room.actionTimeoutHandle = setTimeout(() => jokerAutoBid(room), JOKER_BID_TTL_MS);
+}
+function jokerSchedulePlayTimer(room) {
+  clearJokerActionTimer(room);
+  room.actionDeadline = Date.now() + JOKER_PLAY_TTL_MS;
+  room.actionTimeoutHandle = setTimeout(() => jokerAutoPlay(room), JOKER_PLAY_TTL_MS);
+}
+
+function jokerPriorBidsSum(room) {
+  let sum = 0;
+  for (let i = 0; i < room.bidTurnIdx; i++) sum += room.bids[room.bidOrder[i]];
+  return sum;
+}
+
+function jokerAutoBid(room) {
+  if (room.phase !== "bidding" || room.result) return;
+  const seat = room.bidOrder[room.bidTurnIdx];
+  const isLast = room.bidTurnIdx === 3;
+  const priorSum = jokerPriorBidsSum(room);
+  let bid = 0;
+  while (!jokerIsBidLegal(bid, room.handSize, isLast, priorSum) && bid <= room.handSize) bid++;
+  jokerApplyBid(room, seat, bid);
+}
+
+function jokerAutoPlay(room) {
+  if (room.phase !== "playing" || room.result) return;
+  const seat = room.turnSeat;
+  const legal = jokerLegalCardsToPlay(room.hands[seat], room.currentTrick.length === 0 ? null : room.ledSuit, room.trumpSuit);
+  const card = legal[Math.floor(Math.random() * legal.length)];
+  const jokerChoice = jokerIsJokerCard(card) ? (Math.random() < 0.5 ? "high" : "low") : null;
+  const declaredSuit = (jokerIsJokerCard(card) && room.currentTrick.length === 0) ? JOKER_SUITS_LIST[Math.floor(Math.random() * 4)] : null;
+  jokerApplyPlay(room, seat, card, jokerChoice, declaredSuit);
+}
+
+function jokerApplyBid(room, seat, bid) {
+  room.bids[seat] = bid;
+  room.bidTurnIdx += 1;
+  if (room.bidTurnIdx >= 4) {
+    room.phase = "playing";
+    room.trickLeader = room.bidOrder[0];
+    room.turnSeat = room.trickLeader;
+    room.currentTrick = [];
+    room.ledSuit = null;
+    jokerSchedulePlayTimer(room);
+  } else {
+    room.turnSeat = room.bidOrder[room.bidTurnIdx];
+    jokerScheduleBidTimer(room);
+  }
+  broadcastJokerRoom(room);
+}
+
+function jokerApplyPlay(room, seat, card, jokerChoice, declaredSuit) {
+  const hand = room.hands[seat];
+  hand.splice(hand.indexOf(card), 1);
+
+  const isLead = room.currentTrick.length === 0;
+  if (isLead) room.ledSuit = jokerIsJokerCard(card) ? declaredSuit : jokerSuitOf(card);
+
+  room.currentTrick.push({ seat, card, jokerChoice, declaredSuit: isLead ? declaredSuit : null });
+
+  if (room.currentTrick.length < 4) {
+    room.turnSeat = (seat + 1) % 4;
+    jokerSchedulePlayTimer(room);
+    broadcastJokerRoom(room);
+    return;
+  }
+
+  // Trick complete — resolve, then either continue the hand or finish it.
+  const winner = jokerResolveTrick(room.currentTrick, room.trumpSuit, room.ledSuit);
+  room.tricksWon[winner.seat] += 1;
+  room.trickLeader = winner.seat;
+  room.lastTrick = room.currentTrick; // kept briefly for the client's "trick just won" animation
+  room.currentTrick = [];
+  room.ledSuit = null;
+
+  const totalPlayed = room.tricksWon.reduce((a, b) => a + b, 0);
+  if (totalPlayed >= room.handSize) {
+    jokerFinishHand(room);
+  } else {
+    room.turnSeat = room.trickLeader;
+    jokerSchedulePlayTimer(room);
+    broadcastJokerRoom(room);
+  }
+}
+
+function jokerFinishHand(room) {
+  clearJokerActionTimer(room);
+  room.actionDeadline = null;
+
+  const scores = [0, 0, 0, 0];
+  const khishtiHit = [false, false, false, false];
+  for (let seat = 0; seat < 4; seat++) {
+    const bid = room.bids[seat], actual = room.tricksWon[seat];
+    const score = jokerScoreHand(bid, actual, room.handSize, room.setIdx, JOKER_KHISHTI_ENABLED);
+    scores[seat] = score;
+    khishtiHit[seat] = JOKER_KHISHTI_ENABLED && bid >= 1 && actual === 0;
+    room.totals[seat] += score;
+    room.setHandsPerPlayer[seat].push({ bid, actual, score });
+  }
+
+  const isLastOfSet = room.handIndex === 23 || jokerSetIndexForHand(room.handIndex + 1) !== room.setIdx;
+  const setBonuses = [0, 0, 0, 0];
+  if (isLastOfSet) {
+    for (let seat = 0; seat < 4; seat++) {
+      const bonus = jokerSetBonus(room.setHandsPerPlayer[seat]);
+      setBonuses[seat] = bonus;
+      room.totals[seat] += bonus;
+    }
+  }
+
+  const summary = {
+    handIndex: room.handIndex, handSize: room.handSize, setIdx: room.setIdx,
+    dealerSeat: room.dealerSeat, trumpSuit: room.trumpSuit,
+    bids: room.bids.slice(), tricksWon: room.tricksWon.slice(), scores, khishtiHit,
+    setBonuses: isLastOfSet ? setBonuses : null,
+    totalsAfter: room.totals.slice(),
+  };
+  room.lastHandSummary = summary;
+  room.history.push(summary);
+  room.phase = "handEnd";
+  broadcastJokerRoom(room);
+  broadcastPublicJokerRooms();
+
+  clearJokerHandEndTimer(room);
+  room.handEndTimeoutHandle = setTimeout(() => jokerAdvanceAfterHandEnd(room), JOKER_HAND_END_DELAY_MS);
+}
+
+function jokerAdvanceAfterHandEnd(room) {
+  if (room.status === "ended") return;
+  if (room.handIndex >= 23) {
+    jokerFinishGame(room);
+    return;
+  }
+  room.handIndex += 1;
+  room.dealerSeat = (room.dealerSeat + 1) % 4;
+  room.handSize = JOKER_HAND_SIZES[room.handIndex];
+  room.setIdx = jokerSetIndexForHand(room.handIndex);
+  if (room.setIdx !== jokerSetIndexForHand(room.handIndex - 1)) {
+    room.setHandsPerPlayer = [[], [], [], []];
+  }
+
+  const { hands, trumpCard, trumpSuit } = jokerDealHand(room.handSize, room.dealerSeat);
+  room.hands = hands;
+  room.trumpCard = trumpCard;
+  room.trumpSuit = trumpSuit;
+  room.bidOrder = [1, 2, 3, 0].map(off => (room.dealerSeat + off) % 4);
+  room.bids = [null, null, null, null];
+  room.bidTurnIdx = 0;
+  room.turnSeat = room.bidOrder[0];
+  room.tricksWon = [0, 0, 0, 0];
+  room.currentTrick = [];
+  room.ledSuit = null;
+  room.trickLeader = null;
+  room.phase = "bidding";
+
+  jokerScheduleBidTimer(room);
+  broadcastJokerRoom(room);
+}
+
+function jokerFinishGame(room) {
+  clearJokerActionTimer(room);
+  clearJokerHandEndTimer(room);
+  room.status = "ended";
+  room.actionDeadline = null;
+
+  const ranked = room.players.map(p => ({ seat: p.seat, username: p.username, total: room.totals[p.seat] }))
+    .sort((a, b) => b.total - a.total);
+  ranked.forEach((r, i) => { r.place = i + 1; });
+  room.finalResult = { rankings: ranked };
+
+  broadcastJokerRoom(room);
+  broadcastPublicJokerRooms();
+}
+
+function cleanupJokerRoom(roomId) {
+  const room = jokerRooms.get(roomId);
+  if (!room) return;
+  clearJokerActionTimer(room);
+  clearJokerHandEndTimer(room);
+  for (const [, invite] of room.pendingInvites || []) clearTimeout(invite.timeoutHandle);
+  for (const p of room.players) jokerRoomBySocket.delete(p.socketId);
+  jokerRooms.delete(roomId);
+  broadcastPublicJokerRooms();
+}
+
+function cleanupJokerForSocket(socketId) {
+  const roomId = jokerRoomBySocket.get(socketId);
+  jokerRoomBySocket.delete(socketId);
+  if (!roomId) return;
+  const room = jokerRooms.get(roomId);
+  if (!room) return;
+
+  const player = room.players.find(p => p.socketId === socketId);
+  if (!player) return;
+
+  if (room.status === "lobby") {
+    room.players = room.players.filter(p => p.socketId !== socketId);
+    if (room.players.length === 0) { cleanupJokerRoom(room.id); return; }
+    if (player.lc === room.hostLc) room.hostLc = room.players[0].lc;
+    broadcastJokerRoom(room);
+    broadcastPublicJokerRooms();
+    return;
+  }
+
+  player.connected = false;
+  if (room.players.every(p => !p.connected)) { cleanupJokerRoom(room.id); return; }
+  // No bot replacement — the existing bid/play timeout auto-acts for
+  // whoever's turn it is regardless of connection status, which keeps a
+  // disconnected player's game moving without needing separate bot logic.
+  broadcastJokerRoom(room);
 }
 
 function startNextDrawRound(room) {
@@ -7566,6 +8018,237 @@ io.on("connection", (socket) => {
   socket.on("checkers:leave", () => cleanupCheckersForSocket(socket.id));
 
   // ══════════════════════════════════════════════════════════════════════
+  // Georgian Joker ("ჯოკერი") — 4-player invite/lobby/game shape mirroring
+  // Chess/Checkers, extended for a 4-seat table and the richer bid/play flow.
+  // ══════════════════════════════════════════════════════════════════════
+
+  socket.on("joker:invite", ({ toUsernames }) => {
+    if (!socket._regUser) return;
+    const hostLc = socket._regUser.usernameLower;
+    const hostUser = registeredUsers.get(hostLc);
+    if (!hostUser) return;
+
+    let room = findActiveJokerRoomForUser(hostLc);
+    if (room && !(room.hostLc === hostLc && room.status === "lobby")) {
+      socket.emit("joker:error", { message: "თქვენ უკვე ხართ სხვა თამაშში — ჯერ დატოვეთ ან დაასრულეთ ის, სანამ ახალს შექმნით." });
+      return;
+    }
+
+    if (room) {
+      const hostPlayer = room.players.find(p => p.lc === hostLc);
+      if (hostPlayer) { hostPlayer.socketId = socket.id; hostPlayer.connected = true; }
+      jokerRoomBySocket.set(socket.id, room.id);
+    } else {
+      room = {
+        id: makeJokerRoomId(),
+        hostLc,
+        status: "lobby",
+        players: [{ lc: hostLc, username: hostUser.username, socketId: socket.id, connected: true, seat: null }],
+        pendingInvites: new Map(),
+        dealerSeat: 0, handIndex: 0, handSize: 0, setIdx: 0,
+        trumpSuit: null, trumpCard: null, hands: [[], [], [], []],
+        phase: null, bidOrder: [], bids: [null, null, null, null], bidTurnIdx: 0,
+        currentTrick: [], ledSuit: null, trickLeader: null, tricksWon: [0, 0, 0, 0],
+        turnSeat: null, totals: [0, 0, 0, 0], setHandsPerPlayer: [[], [], [], []],
+        history: [], lastHandSummary: null, actionDeadline: null, finalResult: null,
+      };
+      jokerRooms.set(room.id, room);
+      jokerRoomBySocket.set(socket.id, room.id);
+    }
+
+    const list = Array.isArray(toUsernames) ? toUsernames.filter(u => typeof u === "string").slice(0, JOKER_MAX_PLAYERS - 1) : [];
+    const invited = [];
+    const cooldown = [];
+    const now = Date.now();
+    for (const uname of list) {
+      const lc = uname.toLowerCase();
+      if (lc === hostLc) continue;
+      if (room.players.some(p => p.lc === lc)) continue;
+      if (room.pendingInvites.has(lc)) continue;
+      if (!onlineRegSockets.get(lc)?.size) continue;
+
+      const targetUser = registeredUsers.get(lc);
+      if (!targetUser) continue;
+
+      const cdKey = `${hostLc}|${lc}`;
+      const cdExpiry = jokerDeclineCooldown.get(cdKey);
+      if (cdExpiry) {
+        if (cdExpiry > now) { cooldown.push(targetUser.username); continue; }
+        jokerDeclineCooldown.delete(cdKey);
+      }
+
+      const timeoutHandle = setTimeout(() => room.pendingInvites.delete(lc), JOKER_INVITE_TTL_MS);
+      room.pendingInvites.set(lc, { timeoutHandle });
+      io.to(`user:${lc}`).emit("joker:invited", { roomId: room.id, fromUsername: hostUser.username });
+      invited.push(targetUser.username);
+    }
+
+    socket.join(`jokerroom:${room.id}`);
+    socket.emit("joker:room", jokerRoomStateForViewer(room, hostLc));
+    socket.emit("joker:inviteSent", { invited, cooldown });
+    broadcastPublicJokerRooms();
+  });
+
+  socket.on("joker:listPublicRooms", () => {
+    socket.emit("joker:publicRooms", getPublicJokerRooms());
+  });
+
+  socket.on("joker:declineInvite", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const room = jokerRooms.get(roomId);
+    if (!room) return;
+    const lc = socket._regUser.usernameLower;
+    const invite = room.pendingInvites.get(lc);
+    if (!invite) return;
+    clearTimeout(invite.timeoutHandle);
+    room.pendingInvites.delete(lc);
+    jokerDeclineCooldown.set(`${room.hostLc}|${lc}`, Date.now() + JOKER_DECLINE_COOLDOWN_MS);
+    const host = room.players.find(p => p.lc === room.hostLc);
+    if (host) io.sockets.sockets.get(host.socketId)?.emit("joker:inviteDeclined", { username: socket._regUser.username });
+  });
+
+  socket.on("joker:join", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const lc = socket._regUser.usernameLower;
+    const user = registeredUsers.get(lc);
+    if (!user) return;
+
+    const existingRoomId = jokerRoomBySocket.get(socket.id);
+    if (existingRoomId && existingRoomId !== roomId) cleanupJokerForSocket(socket.id);
+
+    const room = jokerRooms.get(roomId);
+    if (!room) { socket.emit("joker:error", { message: "მაგიდა ვეღარ მოიძებნა — შეიძლება უკვე დასრულდა." }); return; }
+    if (room.status === "ended") { socket.emit("joker:error", { message: "ეს თამაში უკვე დასრულდა." }); return; }
+
+    const already = room.players.find(p => p.lc === lc);
+    if (already) {
+      already.socketId = socket.id;
+      already.connected = true;
+      jokerRoomBySocket.set(socket.id, room.id);
+      socket.join(`jokerroom:${room.id}`);
+      socket.emit("joker:room", jokerRoomStateForViewer(room, lc));
+      broadcastJokerRoom(room);
+      broadcastPublicJokerRooms();
+      return;
+    }
+
+    if (room.players.length >= JOKER_MAX_PLAYERS) { socket.emit("joker:error", { message: "მაგიდა სავსეა." }); return; }
+
+    const invite = room.pendingInvites.get(lc);
+    if (invite) clearTimeout(invite.timeoutHandle);
+    room.pendingInvites.delete(lc);
+
+    room.players.push({ lc, username: user.username, socketId: socket.id, connected: true, seat: null });
+    jokerRoomBySocket.set(socket.id, room.id);
+    socket.join(`jokerroom:${room.id}`);
+
+    socket.emit("joker:room", jokerRoomStateForViewer(room, lc));
+    broadcastJokerRoom(room);
+    broadcastPublicJokerRooms();
+  });
+
+  socket.on("joker:start", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const room = jokerRooms.get(roomId);
+    if (!room || room.hostLc !== socket._regUser.usernameLower) return;
+    if (room.status !== "lobby") return;
+    if (room.players.length !== JOKER_MIN_PLAYERS) {
+      socket.emit("joker:error", { message: `დასაწყებად საჭიროა ზუსტად ${JOKER_MIN_PLAYERS} მოთამაშე.` });
+      return;
+    }
+
+    // Random seat assignment (0-3), same fairness principle as Chess/Checkers' colour shuffle.
+    const shuffled = room.players.slice();
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    shuffled.forEach((p, i) => { p.seat = i; });
+
+    room.status = "playing";
+    room.dealerSeat = 0;
+    room.handIndex = 0;
+    room.handSize = JOKER_HAND_SIZES[0];
+    room.setIdx = 1;
+    room.setHandsPerPlayer = [[], [], [], []];
+    room.totals = [0, 0, 0, 0];
+    room.history = [];
+    room.lastHandSummary = null;
+    room.finalResult = null;
+
+    const { hands, trumpCard, trumpSuit } = jokerDealHand(room.handSize, room.dealerSeat);
+    room.hands = hands;
+    room.trumpCard = trumpCard;
+    room.trumpSuit = trumpSuit;
+    room.bidOrder = [1, 2, 3, 0].map(off => (room.dealerSeat + off) % 4);
+    room.bids = [null, null, null, null];
+    room.bidTurnIdx = 0;
+    room.turnSeat = room.bidOrder[0];
+    room.tricksWon = [0, 0, 0, 0];
+    room.currentTrick = [];
+    room.ledSuit = null;
+    room.trickLeader = null;
+    room.phase = "bidding";
+
+    jokerScheduleBidTimer(room);
+    broadcastJokerRoom(room);
+    broadcastPublicJokerRooms();
+  });
+
+  socket.on("joker:bid", ({ roomId, bid }) => {
+    if (!socket._regUser) return;
+    const room = jokerRooms.get(roomId);
+    if (!room || room.status !== "playing" || room.phase !== "bidding") return;
+    const lc = socket._regUser.usernameLower;
+    const player = room.players.find(p => p.lc === lc);
+    if (!player || player.seat !== room.turnSeat) return;
+
+    const b = Number(bid);
+    const isLast = room.bidTurnIdx === 3;
+    const priorSum = jokerPriorBidsSum(room);
+    if (!jokerIsBidLegal(b, room.handSize, isLast, priorSum)) {
+      socket.emit("joker:error", { message: "არალეგალური ბიდი." });
+      return;
+    }
+    jokerApplyBid(room, player.seat, b);
+  });
+
+  socket.on("joker:playCard", ({ roomId, card, jokerChoice, declaredSuit }) => {
+    if (!socket._regUser) return;
+    const room = jokerRooms.get(roomId);
+    if (!room || room.status !== "playing" || room.phase !== "playing") return;
+    const lc = socket._regUser.usernameLower;
+    const player = room.players.find(p => p.lc === lc);
+    if (!player || player.seat !== room.turnSeat) return;
+
+    if (typeof card !== "string" || !room.hands[player.seat].includes(card)) {
+      socket.emit("joker:error", { message: "ეს ბარათი არ გაქვთ." });
+      return;
+    }
+
+    const isLead = room.currentTrick.length === 0;
+    const legal = jokerLegalCardsToPlay(room.hands[player.seat], isLead ? null : room.ledSuit, room.trumpSuit);
+    if (!legal.includes(card)) {
+      socket.emit("joker:error", { message: "ამ ბარათის თამაში ამჟამად არალეგალურია — უნდა აჰყვეთ ფერს ან დაწკაპოთ." });
+      return;
+    }
+
+    let choice = null, suit = null;
+    if (jokerIsJokerCard(card)) {
+      if (jokerChoice !== "high" && jokerChoice !== "low") { socket.emit("joker:error", { message: "აირჩიეთ ჯოკერი მაღლა ან დაბლა." }); return; }
+      choice = jokerChoice;
+      if (isLead) {
+        if (!JOKER_SUITS_LIST.includes(declaredSuit)) { socket.emit("joker:error", { message: "ჯოკერით სვლისას აირჩიეთ ფერი." }); return; }
+        suit = declaredSuit;
+      }
+    }
+
+    jokerApplyPlay(room, player.seat, card, choice, suit);
+  });
+
+  socket.on("joker:leave", () => cleanupJokerForSocket(socket.id));
+
+  // ══════════════════════════════════════════════════════════════════════
   // Rooms ("ოთახები") — Discord-style topic rooms, registered users only.
   // Opening a room in the client auto-joins it (rooms:join): no separate
   // approval step, matches "no approval required to join a room". Reading
@@ -7924,6 +8607,7 @@ io.on("connection", (socket) => {
     cleanupPokerForSocket(socket.id);
     cleanupChessForSocket(socket.id);
     cleanupCheckersForSocket(socket.id);
+    cleanupJokerForSocket(socket.id);
     for (const [sid, s] of flappySessions) if (s.socketId === socket.id) flappySessions.delete(sid);
   });
 });

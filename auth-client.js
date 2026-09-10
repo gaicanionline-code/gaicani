@@ -374,6 +374,25 @@
       };
     });
 
+    // ── Invited to a Joker table — same fixed overlay bar, same
+    // everywhere-you-are behavior as the other games' invites above.
+    s.on("joker:invited", ({ roomId, fromUsername }) => {
+      const bar = document.getElementById("dgInviteBar");
+      if (!bar) return;
+      bar.innerHTML =
+        `<span>🃏 <strong>${esc(fromUsername)}</strong>-მა მოგიწვია ჯოკერზე</span>` +
+        `<button class="dg-invite-accept">✅</button>` +
+        `<button class="dg-invite-decline">❌</button>`;
+      bar.classList.add("show");
+      bar.querySelector(".dg-invite-accept").onclick = () => {
+        window.location.href = "/joker.html?room=" + encodeURIComponent(roomId);
+      };
+      bar.querySelector(".dg-invite-decline").onclick = () => {
+        bar.classList.remove("show");
+        s.emit("joker:declineInvite", { roomId });
+      };
+    });
+
     // ── Request accepted (by the other person) ────────────────────────
     s.on("friend:acceptedByOther", ({ byUsername, friends }) => {
       if (authUser && friends) authUser.friends = friends;
