@@ -342,7 +342,7 @@
     </header>
     <div class="jk-setup-body">
       <button id="createGameBtn" class="jk-new-game-btn" disabled>➕ ახალი მაგიდის შექმნა</button>
-      <div class="jk-hint">აირჩიე 1-დან 3-მდე მეგობარი — მაგიდა 4 მოთამაშისთვისაა</div>
+      <div class="jk-hint">მოიწვიე რამდენიც გინდა — ვინც პირველი შემოუერთდება, ის ითამაშებს (მაგიდაზე 4 ადგილია)</div>
       <div>
         <div class="jk-section-label">მოწვევა — ონლაინ მეგობრები</div>
         <div id="onlineFriendsList"></div>
@@ -584,12 +584,8 @@
       row.appendChild(avatar); row.appendChild(name); row.appendChild(check);
       row.addEventListener("click", () => {
         const lc = u.username.toLowerCase();
-        if (selectedInvitees.has(lc)) {
-          selectedInvitees.delete(lc);
-        } else {
-          if (selectedInvitees.size >= 3) { showToast("მაქსიმუმ 3 მეგობრის მოწვევაა შესაძლებელი (4 მოთამაშე სულ)"); return; }
-          selectedInvitees.add(lc);
-        }
+        if (selectedInvitees.has(lc)) selectedInvitees.delete(lc);
+        else selectedInvitees.add(lc);
         row.classList.toggle("selected");
         $("createGameBtn").disabled = selectedInvitees.size === 0;
       });

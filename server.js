@@ -8317,7 +8317,10 @@ io.on("connection", (socket) => {
       jokerRoomBySocket.set(socket.id, room.id);
     }
 
-    const list = Array.isArray(toUsernames) ? toUsernames.filter(u => typeof u === "string").slice(0, JOKER_MAX_PLAYERS - 1) : [];
+    // No longer capped to "table size minus one" — the host can invite as
+    // many friends as they like; whoever joins first fills the 4 seats
+    // (joker:join above already rejects anyone once the table is full).
+    const list = Array.isArray(toUsernames) ? toUsernames.filter(u => typeof u === "string").slice(0, 20) : [];
     const invited = [];
     const cooldown = [];
     const now = Date.now();
