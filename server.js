@@ -4561,6 +4561,7 @@ const POKER_INVITE_TTL_MS  = 60_000;
 const POKER_ROOM_TTL_MS    = 30_000; // grace period after a table empties before it's dropped
 const POKER_DECLINE_COOLDOWN_MS = 5 * 60_000;
 const POKER_NEXT_HAND_DELAY_MS  = 6_000; // pause between hands so players can see the result
+const POKER_SHOWDOWN_REVEAL_MS  = parseInt(process.env.POKER_SHOWDOWN_REVEAL_MS, 10) || 2_200; // pause showing both hands face-up before announcing the winner
 
 const pokerRooms          = new Map(); // roomId   → room
 const pokerRoomBySocket   = new Map(); // socketId → roomId
@@ -4822,7 +4823,7 @@ function pokerProgressHand(room) {
       return { waiting: true };
     }
 
-    if (room.stage === "river") return pokerResolveShowdown(room);
+    if (room.stage === "river") { room.stage = "showdown"; return pokerResolveShowdown(room); }
 
     const live = pokerLivePlayers(room);
     pokerDealNextStreet(room);
@@ -5724,11 +5725,27 @@ function pokerAfterAction(room) {
 
 function pokerFinishHand(room, result) {
   // This IS each player's persistent balance, not a separate table buy-in —
-  // sync it back the moment the hand resolves.
+  // sync it back the moment the hand resolves, regardless of reveal timing.
   for (const p of room.players) {
     const user = registeredUsers.get(p.lc);
     if (user) { user.pokerCoins = p.stack; saveAuthUsers(); }
   }
+
+  // At a real showdown, broadcast the card reveal FIRST — room.stage is
+  // still "showdown" here so every non-folded hand is visible to everyone
+  // — and pause before announcing the winner, so players actually get to
+  // see and compare both hands before finding out who won, instead of the
+  // winner overlay popping up before the cards have even rendered.
+  // Uncontested wins (everyone else folded) have nothing to compare, so
+  // there's no reveal pause needed there.
+  broadcastPokerRoom(room);
+  const delay = result.uncontested ? 0 : POKER_SHOWDOWN_REVEAL_MS;
+  if (room.showdownRevealTimeoutHandle) clearTimeout(room.showdownRevealTimeoutHandle);
+  room.showdownRevealTimeoutHandle = setTimeout(() => pokerAnnounceHandResult(room, result), delay);
+}
+
+function pokerAnnounceHandResult(room, result) {
+  room.showdownRevealTimeoutHandle = null;
 
   for (const p of room.players) {
     const s = io.sockets.sockets.get(p.socketId);
@@ -5815,6 +5832,7 @@ function cleanupPokerRoom(roomId) {
   if (!room) return;
   clearPokerActionTimer(room);
   if (room.nextHandTimeoutHandle) clearTimeout(room.nextHandTimeoutHandle);
+  if (room.showdownRevealTimeoutHandle) clearTimeout(room.showdownRevealTimeoutHandle);
   for (const [lc, invite] of room.pendingInvites || []) clearTimeout(invite.timeoutHandle);
   for (const p of room.players) pokerRoomBySocket.delete(p.socketId);
   pokerRooms.delete(roomId);

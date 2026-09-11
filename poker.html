@@ -169,6 +169,8 @@
     .pk-opp-seat.acting .pk-opp-avatar { border-color: var(--gold); animation: pkTurnPulse 1.3s ease-in-out infinite; }
     .pk-opp-cardback-row { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); display: flex; gap: 1px; }
     .pk-opp-cardback-row .pk-card { width: 14px; height: 20px; border-radius: 3px; }
+    .pk-opp-cardback-row.revealed { top: -16px; gap: 2px; z-index: 8; }
+    .pk-opp-cardback-row.revealed .pk-card { width: 26px; height: 36px; border-radius: 5px; font-size: 0.62em; box-shadow: 0 2px 8px rgba(0,0,0,0.5); }
     .pk-opp-name {
       font-size: 0.68em; font-weight: 700; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.8);
       max-width: 68px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -873,10 +875,18 @@
 
       if (p.hasCards && !p.folded) {
         const cardRow = document.createElement("div");
-        cardRow.className = "pk-opp-cardback-row";
-        cardRow.appendChild(cardBackEl());
-        cardRow.appendChild(cardBackEl());
-        if (!prev || !prev.hasCards) cardRow.classList.add("pk-pop-in");
+        const wasRevealed = prev && prev.holeCardsRevealed;
+        const isRevealed = p.holeCards && p.holeCards.length === 2;
+        cardRow.className = "pk-opp-cardback-row" + (isRevealed ? " revealed" : "");
+        if (isRevealed) {
+          const c1 = cardEl(p.holeCards[0]); const c2 = cardEl(p.holeCards[1]);
+          if (!wasRevealed) { c1.classList.add("pk-flip-reveal"); c2.classList.add("pk-flip-reveal"); c2.style.animationDelay = "80ms"; }
+          cardRow.appendChild(c1); cardRow.appendChild(c2);
+        } else {
+          cardRow.appendChild(cardBackEl());
+          cardRow.appendChild(cardBackEl());
+          if (!prev || !prev.hasCards) cardRow.classList.add("pk-pop-in");
+        }
         avatarWrap.appendChild(cardRow);
       }
       if (p.seatIndex === room.dealerSeatIndex) {
@@ -917,7 +927,7 @@
       if (prev && p.currentBet > prev.currentBet) flyToken(avatarImg, potEl, "🔵" + (p.currentBet - prev.currentBet), "pk-flying-chip", 500);
       if (prev && p.stack !== prev.stack) flashStackEl(stack);
 
-      newSnapPlayers[lc] = { stack: p.stack, currentBet: p.currentBet, folded: p.folded, hasCards: p.hasCards };
+      newSnapPlayers[lc] = { stack: p.stack, currentBet: p.currentBet, folded: p.folded, hasCards: p.hasCards, holeCardsRevealed: !!(p.holeCards && p.holeCards.length === 2) };
     });
 
     // "Me" panel — always at the bottom, with my own cards shown larger.
