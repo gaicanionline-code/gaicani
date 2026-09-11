@@ -664,6 +664,14 @@
     .fc-theme-sheet-handle { width: 36px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.18); margin: 10px auto 14px; }
     .fc-theme-sheet-title { font-weight: 700; font-size: 1em; margin-bottom: 4px; }
     .fc-theme-sheet-sub { font-size: 0.78em; color: var(--muted); margin-bottom: 16px; }
+    .fc-quick-reaction-row { display: flex; gap: 10px; }
+    .fc-quick-reaction-btn {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      font-size: 1.6em; padding: 10px 0; border-radius: 14px; cursor: pointer;
+      background: var(--surface-2); border: 2px solid transparent; transition: transform 0.12s, border-color 0.15s;
+    }
+    .fc-quick-reaction-btn:active { transform: scale(0.92); }
+    .fc-quick-reaction-btn.selected { border-color: var(--accent-lt); background: rgba(88,101,242,0.15); }
     .fc-theme-grid {
       display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
     }
@@ -777,8 +785,13 @@
   <div id="fcThemeBackdrop" class="fc-theme-backdrop"></div>
   <div id="fcThemeSheet" class="fc-theme-sheet">
     <div class="fc-theme-sheet-handle"></div>
-    <div class="fc-theme-sheet-title">ჩატის ფონი</div>
-    <div class="fc-theme-sheet-sub">აირჩიე ფონი ამ საუბრისთვის — მხოლოდ შენთვის ჩანს</div>
+
+    <div class="fc-theme-sheet-title">სწრაფი რეაქცია</div>
+    <div class="fc-theme-sheet-sub">რომელი ემოჯი გაიგზავნოს ორჯერ შეხებაზე — მხოლოდ შენთვის</div>
+    <div class="fc-quick-reaction-row" id="fcQuickReactionRow"></div>
+
+    <div class="fc-theme-sheet-title" style="margin-top:18px;">ჩატის ფონი</div>
+    <div class="fc-theme-sheet-sub">აირჩიე ფონი ამ საუბრისთვის — ორივესთვის იცვლება</div>
     <div class="fc-theme-grid" id="fcThemeGrid"></div>
   </div>
 
@@ -972,9 +985,12 @@
     .catch(() => {});
 
   /* ── Chat background (wallpaper) picker ─────────────────────────
-     A per-device, per-conversation preference — stored in localStorage,
-     not synced to the other person or across devices, same as how most
-     messaging apps treat "my view of this chat looks like this". */
+     Shared between both people in the conversation — when either person
+     picks a background, the other sees it change too, the same way a
+     shared chat theme works elsewhere. Synced through the server (see
+     friendChat:setTheme / friendChat:themeChanged) and persisted on the
+     conversation itself, so re-opening the chat later still shows
+     whatever was last chosen. */
   const FC_THEMES = [
     { id: "default", label: "სტანდარტული", css: "radial-gradient(circle at 50% 0%, #22232c 0%, #17181d 55%)" },
     { id: "midnight", label: "შუაღამე", css: "linear-gradient(160deg, #1b1035 0%, #0d0e1a 70%)" },
@@ -986,35 +1002,27 @@
     { id: "amber", label: "ქარვისფერი", css: "linear-gradient(160deg, #3a2408 0%, #4a3013 45%, #1a1006 100%)" },
     { id: "aurora", label: "ავრორა", css: "linear-gradient(150deg, #0d2b2a 0%, #1a2f4a 40%, #2a1a4a 75%, #120a20 100%)" },
   ];
-  function fcThemeStorageKey() {
-    return `gaicani_chat_theme:${myUsername.toLowerCase()}:${friendName.toLowerCase()}`;
-  }
-  function fcLoadTheme() {
-    try { return localStorage.getItem(fcThemeStorageKey()) || "default"; } catch (_) { return "default"; }
-  }
+  let currentThemeId = "default";
   function fcApplyTheme(themeId) {
+    currentThemeId = themeId;
     const theme = FC_THEMES.find(t => t.id === themeId) || FC_THEMES[0];
     elMessages.classList.add("fc-bg-transition");
     elMessages.style.background = theme.css;
   }
-  function fcSaveTheme(themeId) {
-    try { localStorage.setItem(fcThemeStorageKey(), themeId); } catch (_) { /* private-mode storage may reject writes — theme just won't persist */ }
-  }
   function fcRenderThemeGrid() {
-    const current = fcLoadTheme();
     const grid = $("fcThemeGrid");
     grid.innerHTML = "";
     FC_THEMES.forEach(theme => {
       const swatch = document.createElement("div");
-      swatch.className = "fc-theme-swatch" + (theme.id === current ? " selected" : "");
+      swatch.className = "fc-theme-swatch" + (theme.id === currentThemeId ? " selected" : "");
       swatch.style.background = theme.css;
       const label = document.createElement("div");
       label.className = "fc-theme-swatch-label";
       label.textContent = theme.label;
       swatch.appendChild(label);
       swatch.addEventListener("click", () => {
-        fcApplyTheme(theme.id);
-        fcSaveTheme(theme.id);
+        fcApplyTheme(theme.id); // apply immediately — no need to wait on the round-trip
+        if (socket?.connected) socket.emit("friendChat:setTheme", { toUsername: friendName, themeId: theme.id });
         grid.querySelectorAll(".fc-theme-swatch").forEach(s => s.classList.remove("selected"));
         swatch.classList.add("selected");
         setTimeout(closeFCThemeSheet, 220);
@@ -1022,8 +1030,24 @@
       grid.appendChild(swatch);
     });
   }
+  function fcRenderQuickReactionRow() {
+    const row = $("fcQuickReactionRow");
+    row.innerHTML = "";
+    QUICK_REACTION_OPTIONS.forEach(emoji => {
+      const btn = document.createElement("div");
+      btn.className = "fc-quick-reaction-btn" + (emoji === quickReactionEmoji ? " selected" : "");
+      btn.textContent = emoji;
+      btn.addEventListener("click", () => {
+        setQuickReactionEmoji(emoji);
+        row.querySelectorAll(".fc-quick-reaction-btn").forEach(b => b.classList.remove("selected"));
+        btn.classList.add("selected");
+      });
+      row.appendChild(btn);
+    });
+  }
   function openFCThemeSheet() {
     fcRenderThemeGrid();
+    fcRenderQuickReactionRow();
     $("fcThemeSheet").classList.add("show");
     $("fcThemeBackdrop").classList.add("show");
   }
@@ -1033,7 +1057,7 @@
   }
   $("fcThemeBtn").addEventListener("click", openFCThemeSheet);
   $("fcThemeBackdrop").addEventListener("click", closeFCThemeSheet);
-  fcApplyTheme(fcLoadTheme());
+  fcApplyTheme("default"); // shown immediately on load, before the history fetch (which carries the real, synced value) resolves
 
   /* ── Message state ───────────────────────────────────────────── */
   let messages   = [];   // { id, from, text, ts, replyTo, reactions }
@@ -1346,16 +1370,34 @@
     if (area) displayFCReaction(messageId, emoji, true, area);
   }
 
-  /* Instagram-style double-tap-to-heart. Reuses the same reaction pipeline
-     as the picker button — this is just a faster gesture for the single
-     most common reaction, with a big heart-burst animation for feedback. */
+  /* Which emoji your own double-tap gesture sends — a personal preference,
+     not shared with the other person (only the background is shared). */
+  const QUICK_REACTION_OPTIONS = ["❤️", "😂", "😢"];
+  function quickReactionStorageKey() { return "gaicani_quick_reaction_emoji"; }
+  function loadQuickReactionEmoji() {
+    try {
+      const saved = localStorage.getItem(quickReactionStorageKey());
+      return QUICK_REACTION_OPTIONS.includes(saved) ? saved : "❤️";
+    } catch (_) { return "❤️"; }
+  }
+  let quickReactionEmoji = loadQuickReactionEmoji();
+  function setQuickReactionEmoji(emoji) {
+    if (!QUICK_REACTION_OPTIONS.includes(emoji)) return;
+    quickReactionEmoji = emoji;
+    try { localStorage.setItem(quickReactionStorageKey(), emoji); } catch (_) { /* private-mode storage may reject writes — just won't persist across sessions */ }
+  }
+
+  /* Instagram-style double-tap-to-react. Reuses the same reaction pipeline
+     as the picker button — this is just a faster gesture for whichever
+     emoji the person has picked as their quick reaction (❤️ by default),
+     with a burst animation for feedback. */
   function attachFCDoubleTapHeart(bubbleEl, messageId) {
     let lastTapAt = 0;
     function trigger(e) {
       const now = Date.now();
       if (now - lastTapAt < 350) {
-        reactToFCMessage(messageId, "❤️");
-        spawnFCHeartBurst(bubbleEl);
+        reactToFCMessage(messageId, quickReactionEmoji);
+        spawnFCHeartBurst(bubbleEl, quickReactionEmoji);
         lastTapAt = 0; // avoid a rapid triple-tap re-triggering immediately
       } else {
         lastTapAt = now;
@@ -1363,10 +1405,10 @@
     }
     bubbleEl.addEventListener("click", trigger);
   }
-  function spawnFCHeartBurst(bubbleEl) {
+  function spawnFCHeartBurst(bubbleEl, emoji) {
     const heart = document.createElement("div");
     heart.className = "fc-heart-burst";
-    heart.textContent = "❤️";
+    heart.textContent = emoji || quickReactionEmoji;
     bubbleEl.appendChild(heart);
     setTimeout(() => heart.remove(), 720);
   }
@@ -1479,6 +1521,7 @@
         reactions: m.reactions || null,
         expiresAt: m.expiresAt || null
       }));
+      fcApplyTheme(d.theme || "default"); // the shared, synced background this conversation has (or the default if nobody's set one yet)
     } catch (_) {
       messages = [];
     }
@@ -1567,6 +1610,13 @@
       const m = messages.find(mm => mm.id === messageId);
       if (m) { m.reactions = m.reactions || {}; m.reactions[fromUsername.toLowerCase()] = emoji; }
       displayFCReaction(messageId, emoji, false);
+    });
+
+    /* Either person changed the shared chat background — apply it here too,
+       whether it was the other person or an echo of our own change from
+       another open tab/device. */
+    socket.on("friendChat:themeChanged", ({ themeId }) => {
+      fcApplyTheme(themeId);
     });
 
     /* Friend has seen one of our messages */
@@ -1695,6 +1745,23 @@
       bar.querySelector(".dg-invite-decline").onclick = () => {
         bar.classList.remove("show");
         socket.emit("imposter:declineInvite", { roomId });
+      };
+    });
+
+    /* Invited to a Blackjack table while chatting */
+    socket.on("blackjack:invited", ({ roomId, fromUsername }) => {
+      const bar = $("dgInviteBar");
+      bar.innerHTML = `
+        <span>🂡 <strong>${esc(fromUsername)}</strong>-მა მოგიწვია ბლექჯეკზე</span>
+        <button class="dg-invite-accept">✅</button>
+        <button class="dg-invite-decline">❌</button>`;
+      bar.classList.add("show");
+      bar.querySelector(".dg-invite-accept").onclick = () => {
+        window.location.href = "/blackjack.html?room=" + encodeURIComponent(roomId);
+      };
+      bar.querySelector(".dg-invite-decline").onclick = () => {
+        bar.classList.remove("show");
+        socket.emit("blackjack:declineInvite", { roomId });
       };
     });
 

@@ -514,6 +514,13 @@ function getOrCreateDay(key) {
   return stats.days.get(key);
 }
 
+function getUniqueOnlineIPCount() {
+  if (!io) return 0;
+  const ips = new Set();
+  for (const s of io.sockets.sockets.values()) ips.add(s.clientIP || "unknown");
+  return ips.size;
+}
+
 function recordConnect(ip) {
   const day = getOrCreateDay(todayKey());
   const hour = tbilisiNow().getUTCHours(); // 0-23, Tbilisi local hour
@@ -528,8 +535,10 @@ function recordConnect(ip) {
 
   stats.allTimeIPs.add(ip);
 
+  // "Online" here means unique people (by IP), not raw socket connections —
+  // someone with 3 tabs open is 1 person online, not 3.
+  const current = getUniqueOnlineIPCount();
   // Per-day peak
-  const current = io ? io.sockets.sockets.size : 0;
   if (current > day.peakOnline) {
     day.peakOnline    = current;
     day.peakOnlineAt  = new Date().toISOString();
@@ -736,6 +745,9 @@ const VALID_TAGS = new Set([
   "tech","art","food","travel","memes",
 ]);
 const VALID_EMOJIS = new Set(["❤️","😂","😢"]);
+// Must match the FC_THEMES ids in friend-chat.html exactly — this is the
+// server-side whitelist for the shared (both-see-it) chat background.
+const FC_VALID_THEMES = new Set(["default", "midnight", "sunset", "ocean", "rose", "forest", "charcoal", "amber", "aurora"]);
 const BANNED_WORDS = new Set([
   // common spam/commercial phrases (lower-case, partial match)
  
@@ -3020,7 +3032,7 @@ app.get(ROUTE.statsApi, (req, res) => {
   }
 
   res.json({
-    currentOnline:    io.sockets.sockets.size,
+    currentOnline:    getUniqueOnlineIPCount(),
     peakOnline:       stats.peakOnline,
     peakOnlineAt:     stats.peakOnlineAt,
     allTimeUniqueIPs: stats.allTimeIPs.size,
@@ -3403,7 +3415,11 @@ ${queue.length ? `<h2>Pending queue (${queue.length})</h2>
 // ── Predefined profile avatars (PNG files served from the site root, e.g. /avatar1.png) ──
 const AVAILABLE_AVATARS = [
   "avatar1.png", "avatar2.png", "avatar3.png", "avatar4.png",
-  "avatar5.png", "avatar6.png", "avatar7.png", "avatar8.png"
+  "avatar5.png", "avatar6.png", "avatar7.png", "avatar8.png",
+  "avatar9.jpg", "avatar10.jpg", "avatar11.jpg", "avatar12.jpg",
+  "avatar13.jpg", "avatar14.jpg", "avatar15.jpg", "avatar16.jpg",
+  "avatar17.jpg", "avatar18.jpg", "avatar19.jpg", "avatar20.jpg",
+  "avatar21.jpg",
 ];
 const DEFAULT_AVATAR = AVAILABLE_AVATARS[0];
 
@@ -3475,6 +3491,48 @@ function getFlappyTop3() {
 }
 function broadcastFlappyLeaderboard() {
   io.emit("flappy:leaderboardUpdate", getFlappyTop3());
+}
+
+// ── Chess / Checkers "all-time top 3 by wins" leaderboards — same shape as
+// the Flappy Bird one above (id/username/score), just counting wins instead
+// of high score. Draws and stalemates don't count toward anyone's total —
+// only a clear win (checkmate, resignation, or opponent timeout).
+function getChessTop3() {
+  const rows = [];
+  for (const [lc, u] of registeredUsers) {
+    if (u.chessWins) rows.push({ id: lc, username: u.username, score: u.chessWins });
+  }
+  rows.sort((a, b) => b.score - a.score);
+  return rows.slice(0, 3);
+}
+function broadcastChessLeaderboard() {
+  io.emit("chess:leaderboardUpdate", getChessTop3());
+}
+function recordChessWin(winnerLc) {
+  const user = registeredUsers.get(winnerLc);
+  if (!user) return;
+  user.chessWins = (user.chessWins || 0) + 1;
+  saveAuthUsers();
+  broadcastChessLeaderboard();
+}
+
+function getCheckersTop3() {
+  const rows = [];
+  for (const [lc, u] of registeredUsers) {
+    if (u.checkersWins) rows.push({ id: lc, username: u.username, score: u.checkersWins });
+  }
+  rows.sort((a, b) => b.score - a.score);
+  return rows.slice(0, 3);
+}
+function broadcastCheckersLeaderboard() {
+  io.emit("checkers:leaderboardUpdate", getCheckersTop3());
+}
+function recordCheckersWin(winnerLc) {
+  const user = registeredUsers.get(winnerLc);
+  if (!user) return;
+  user.checkersWins = (user.checkersWins || 0) + 1;
+  saveAuthUsers();
+  broadcastCheckersLeaderboard();
 }
 
 // Returns { username, avatar } for every registered user who currently has at
@@ -4013,6 +4071,11 @@ setInterval(() => {
   for (const [key, expiry] of imposterDeclineCooldown) if (now >= expiry) imposterDeclineCooldown.delete(key);
 }, 60 * 60 * 1000);
 
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, expiry] of bjDeclineCooldown) if (now >= expiry) bjDeclineCooldown.delete(key);
+}, 60 * 60 * 1000);
+
 // ── REST endpoints ────────────────────────────────────────────────────────────
 const authLimiter = rateLimit({ windowMs: 15 * 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
 
@@ -4061,6 +4124,14 @@ app.post("/api/auth/register", authLimiter, express.json({ limit: "5kb" }), asyn
 // GET /api/flappy/leaderboard — public, no auth: anyone can see the top 3.
 app.get("/api/flappy/leaderboard", (req, res) => {
   res.json({ top3: getFlappyTop3() });
+});
+
+// GET /api/chess/leaderboard, /api/checkers/leaderboard — same idea, public.
+app.get("/api/chess/leaderboard", (req, res) => {
+  res.json({ top3: getChessTop3() });
+});
+app.get("/api/checkers/leaderboard", (req, res) => {
+  res.json({ top3: getCheckersTop3() });
 });
 
 // GET /api/auth/avatars — list the predefined avatar options
@@ -4416,7 +4487,7 @@ app.get("/api/priv/history", (req, res) => {
   const roomId = privRoomId(myLc, friendLc);
   const room   = privateRooms.get(roomId);
 
-  if (!room) return res.json({ messages: [] });
+  if (!room) return res.json({ messages: [], theme: null });
 
   // Opening the chat / fetching history marks it as read up to now
   room.lastRead = room.lastRead || {};
@@ -4433,7 +4504,7 @@ app.get("/api/priv/history", (req, res) => {
     expiresAt: room.expiresAt ? new Date(room.expiresAt).toISOString() : null
   }));
 
-  res.json({ messages: msgs });
+  res.json({ messages: msgs, theme: room.theme || null });
 });
 
 // GET /api/priv/unread — which friends have unread messages waiting
@@ -6026,6 +6097,10 @@ function chessFinishGame(room, result) {
   room.result = result;
   room.moveDeadline = null;
   room.status = "ended"; // frees both players up to start/join another game immediately
+  if (result.winner) {
+    const winnerPlayer = room.players.find(p => p.color === result.winner);
+    if (winnerPlayer) recordChessWin(winnerPlayer.lc);
+  }
   broadcastChessRoom(room);
   broadcastPublicChessRooms();
 }
@@ -6166,6 +6241,10 @@ function checkersFinishGame(room, result) {
   room.result = result;
   room.moveDeadline = null;
   room.status = "ended";
+  if (result.winner) {
+    const winnerPlayer = room.players.find(p => p.color === result.winner);
+    if (winnerPlayer) recordCheckersWin(winnerPlayer.lc);
+  }
   broadcastCheckersRoom(room);
   broadcastPublicCheckersRooms();
 }
@@ -6866,6 +6945,428 @@ function cleanupImposterForSocket(socketId) {
   broadcastImposterRoom(room);
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// Blackjack ("ბლექჯეკი" / 21) — up to 5 players share a table, each playing
+// their own hand against a shared dealer (the house), not against each
+// other. A fresh single 52-card deck is shuffled every round. Dealer stands
+// on all 17s (soft or hard) — the simpler, common casual rule. Supports
+// hit / stand / double down / split (one split per hand, no re-splitting).
+// Blackjack pays 3:2, a regular win pays 1:1, a push returns the bet.
+// ══════════════════════════════════════════════════════════════════════════
+
+const BJ_RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K"];
+const BJ_SUITS = ["s", "h", "d", "c"];
+const BJ_MIN_PLAYERS = 1;
+const BJ_MAX_PLAYERS = 5;
+const BJ_STARTING_COINS = 1000;
+const BJ_COIN_REGEN_MS = 24 * 60 * 60 * 1000;
+const BJ_MIN_BET = 10;
+const BJ_MAX_BET = 500;
+const BJ_BET_TTL_MS = parseInt(process.env.BJ_BET_TTL_MS, 10) || 30_000;
+const BJ_ACTION_TTL_MS = parseInt(process.env.BJ_ACTION_TTL_MS, 10) || 25_000;
+const BJ_ROUND_END_MS = parseInt(process.env.BJ_ROUND_END_MS, 10) || 6_000;
+const BJ_INVITE_TTL_MS = 60_000;
+const BJ_DECLINE_COOLDOWN_MS = 5 * 60_000;
+
+function bjMakeShuffledDeck() {
+  const deck = [];
+  for (const r of BJ_RANKS) for (const s of BJ_SUITS) deck.push(r + s);
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deck;
+}
+
+// { total, soft } — soft means at least one Ace is still counted as 11.
+function bjHandValue(cards) {
+  let total = 0, aces = 0;
+  for (const c of cards) {
+    const r = c[0];
+    if (r === "A") { total += 11; aces++; }
+    else if (r === "T" || r === "J" || r === "Q" || r === "K") total += 10;
+    else total += parseInt(r, 10);
+  }
+  while (total > 21 && aces > 0) { total -= 10; aces--; }
+  return { total, soft: aces > 0 };
+}
+function bjIsBlackjack(cards) { return cards.length === 2 && bjHandValue(cards).total === 21; }
+function bjIsBust(cards) { return bjHandValue(cards).total > 21; }
+
+function bjNewHand(bet) {
+  return { cards: [], bet, status: "playing", doubled: false, fromSplit: false, result: null, payout: 0 };
+}
+
+function bjEnsureCoins(user) {
+  if (user.bjCoins === undefined || user.bjCoins === null) user.bjCoins = BJ_STARTING_COINS;
+  if (user.bjLastCoinGrant === undefined) user.bjLastCoinGrant = Date.now();
+  if (user.bjCoins <= 0 && Date.now() - user.bjLastCoinGrant >= BJ_COIN_REGEN_MS) {
+    user.bjCoins = BJ_STARTING_COINS;
+    user.bjLastCoinGrant = Date.now();
+  }
+  return user.bjCoins;
+}
+
+// Dealer draws from room.deck until standing on all 17s or busting.
+// Mutates room.deck and room.dealerCards in place.
+function bjPlayDealer(room) {
+  while (bjHandValue(room.dealerCards).total < 17) {
+    room.dealerCards.push(room.deck.pop());
+  }
+}
+
+// Settles one hand against the dealer's final cards. Returns { result, payout }
+// where payout is the amount returned to the player's stack (0 if they lose
+// everything, bet*2 for an even-money win, bet+bet*1.5 for a blackjack, bet
+// for a push).
+function bjSettleHand(hand, dealerCards, dealerBlackjack) {
+  const playerBJ = hand.cards.length === 2 && !hand.fromSplit && bjIsBlackjack(hand.cards);
+  if (bjIsBust(hand.cards)) return { result: "bust", payout: 0 };
+  if (playerBJ && dealerBlackjack) return { result: "push", payout: hand.bet };
+  if (playerBJ) return { result: "blackjack", payout: Math.round(hand.bet * 2.5) };
+  if (dealerBlackjack) return { result: "lose", payout: 0 };
+  const dealerBusted = bjIsBust(dealerCards);
+  const dealerTotal = bjHandValue(dealerCards).total;
+  const playerTotal = bjHandValue(hand.cards).total;
+  if (dealerBusted || playerTotal > dealerTotal) return { result: "win", payout: hand.bet * 2 };
+  if (playerTotal === dealerTotal) return { result: "push", payout: hand.bet };
+  return { result: "lose", payout: 0 };
+}
+
+// The seat/hand-index pair whose turn it is right now, or null if nobody
+// still has a hand in progress (time to move to dealer play).
+function bjFindNextTurn(room, fromSeat, fromHandIdx) {
+  const n = room.players.length;
+  let seat = fromSeat, handIdx = fromHandIdx;
+  for (let step = 0; step < n * 2; step++) {
+    const player = room.players[seat];
+    if (player && player.hands) {
+      for (let h = (seat === fromSeat && step === 0 ? handIdx : 0); h < player.hands.length; h++) {
+        if (player.hands[h].status === "playing") return { seat, handIdx: h };
+      }
+    }
+    seat = (seat + 1) % n;
+    handIdx = 0;
+    if (seat === fromSeat && step > 0) break;
+  }
+  return null;
+}
+
+// ── Room lifecycle ───────────────────────────────────────────────────────
+const bjRooms = new Map();
+const bjRoomBySocket = new Map();
+const bjDeclineCooldown = new Map();
+
+function makeBjRoomId() {
+  return "bj_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+function bjRoomStateForViewer(room) {
+  const started = room.status !== "lobby";
+  return {
+    roomId: room.id,
+    status: room.status,
+    hostUsername: room.players.find(p => p.lc === room.hostLc)?.username || "",
+    players: room.players.map(p => ({
+      username: p.username, avatar: registeredUsers.get(p.lc)?.avatar || DEFAULT_AVATAR,
+      seat: p.seat, connected: p.connected, stack: p.stack,
+      bet: p.bet || null, hasBet: !!p.bet,
+      hands: (p.hands || []).map(h => ({ cards: h.cards, bet: h.bet, status: h.status, doubled: h.doubled, result: h.result, payout: h.payout })),
+    })),
+    dealerCards: started ? (room.dealerHoleRevealed ? room.dealerCards : room.dealerCards.slice(0, 1)) : [],
+    dealerHoleRevealed: !!room.dealerHoleRevealed,
+    phase: started ? room.phase : null,
+    turnSeat: room.turnSeat !== undefined ? room.turnSeat : null,
+    turnHandIdx: room.turnHandIdx || 0,
+    actionDeadline: room.actionDeadline || null,
+  };
+}
+
+function broadcastBjRoom(room) {
+  const payload = bjRoomStateForViewer(room);
+  for (const p of room.players) {
+    const s = io.sockets.sockets.get(p.socketId);
+    if (s) s.emit("blackjack:room", payload);
+  }
+}
+
+function findActiveBjRoomForUser(lc) {
+  for (const room of bjRooms.values()) {
+    if (room.status === "ended") continue;
+    if (room.players.some(p => p.lc === lc)) return room;
+  }
+  return null;
+}
+
+function getPublicBjRooms() {
+  const rows = [];
+  for (const room of bjRooms.values()) {
+    if (room.status === "ended") continue;
+    if (room.players.length >= BJ_MAX_PLAYERS) continue;
+    rows.push({
+      roomId: room.id,
+      hostUsername: room.players.find(p => p.lc === room.hostLc)?.username || "",
+      status: room.status,
+      playerCount: room.players.filter(p => p.connected).length,
+      maxPlayers: BJ_MAX_PLAYERS,
+    });
+  }
+  return rows;
+}
+function broadcastPublicBjRooms() { io.emit("blackjack:publicRooms", getPublicBjRooms()); }
+
+function clearBjActionTimer(room) {
+  if (room.actionTimeoutHandle) { clearTimeout(room.actionTimeoutHandle); room.actionTimeoutHandle = null; }
+}
+function clearBjRoundTimer(room) {
+  if (room.roundTimeoutHandle) { clearTimeout(room.roundTimeoutHandle); room.roundTimeoutHandle = null; }
+}
+
+// ── Betting phase ────────────────────────────────────────────────────────
+function bjStartBettingPhase(room) {
+  room.phase = "betting";
+  room.dealerCards = [];
+  room.dealerHoleRevealed = false;
+  room.turnSeat = null;
+  room.turnHandIdx = 0;
+  for (const p of room.players) { p.bet = null; p.hands = []; }
+
+  clearBjActionTimer(room);
+  room.actionDeadline = Date.now() + BJ_BET_TTL_MS;
+  room.actionTimeoutHandle = setTimeout(() => bjAutoBetRemaining(room), BJ_BET_TTL_MS);
+  broadcastBjRoom(room);
+}
+
+function bjAutoBetRemaining(room) {
+  for (const p of room.players) {
+    if (p.connected && !p.bet && p.stack >= BJ_MIN_BET) p.bet = BJ_MIN_BET;
+  }
+  bjMaybeDealRound(room);
+}
+
+// Deals the round once every connected player with enough coins has bet (or
+// the bet timer expired and auto-bet filled in the rest). Players who
+// couldn't cover even the minimum bet just sit this round out.
+function bjMaybeDealRound(room) {
+  const needBet = room.players.filter(p => p.connected && p.stack >= BJ_MIN_BET);
+  const allBet = needBet.every(p => p.bet);
+  if (!allBet && Date.now() < (room.actionDeadline || 0)) return; // still waiting, timer hasn't fired yet
+  clearBjActionTimer(room);
+
+  const bettors = room.players.filter(p => p.bet);
+  if (bettors.length === 0) {
+    // Nobody could bet (everyone's broke) — just wait for the timer to
+    // cycle again rather than dealing an empty round forever.
+    bjStartBettingPhase(room);
+    return;
+  }
+
+  room.deck = bjMakeShuffledDeck();
+  room.dealerCards = [room.deck.pop(), room.deck.pop()];
+  for (const p of room.players) {
+    if (!p.bet) { p.hands = []; continue; }
+    p.stack -= p.bet;
+    p.hands = [bjNewHand(p.bet)];
+    p.hands[0].cards = [room.deck.pop(), room.deck.pop()];
+    if (bjIsBlackjack(p.hands[0].cards)) p.hands[0].status = "blackjack";
+  }
+
+  room.phase = "playing";
+  const first = bjFindNextTurn(room, 0, 0);
+  if (!first) { bjStartDealerPhase(room); return; }
+  room.turnSeat = first.seat;
+  room.turnHandIdx = first.handIdx;
+  bjScheduleActionTimer(room);
+  broadcastBjRoom(room);
+}
+
+// ── Player action phase ──────────────────────────────────────────────────
+function bjScheduleActionTimer(room) {
+  clearBjActionTimer(room);
+  room.actionDeadline = Date.now() + BJ_ACTION_TTL_MS;
+  room.actionTimeoutHandle = setTimeout(() => bjAutoStand(room), BJ_ACTION_TTL_MS);
+}
+
+function bjCurrentHand(room) {
+  if (room.turnSeat === null || room.turnSeat === undefined) return null;
+  const player = room.players[room.turnSeat];
+  if (!player || !player.hands) return null;
+  return player.hands[room.turnHandIdx] || null;
+}
+
+function bjAdvanceAfterHandDone(room) {
+  const next = bjFindNextTurn(room, room.turnSeat, room.turnHandIdx);
+  if (!next) { bjStartDealerPhase(room); return; }
+  room.turnSeat = next.seat;
+  room.turnHandIdx = next.handIdx;
+  bjScheduleActionTimer(room);
+  broadcastBjRoom(room);
+}
+
+function bjAutoStand(room) {
+  const hand = bjCurrentHand(room);
+  if (hand && hand.status === "playing") hand.status = "stood";
+  bjAdvanceAfterHandDone(room);
+}
+
+function bjApplyHit(room) {
+  const hand = bjCurrentHand(room);
+  if (!hand) return;
+  hand.cards.push(room.deck.pop());
+  if (bjIsBust(hand.cards)) { hand.status = "bust"; bjAdvanceAfterHandDone(room); }
+  else { bjScheduleActionTimer(room); broadcastBjRoom(room); }
+}
+
+function bjApplyStand(room) {
+  const hand = bjCurrentHand(room);
+  if (!hand) return;
+  hand.status = "stood";
+  bjAdvanceAfterHandDone(room);
+}
+
+function bjApplyDouble(room) {
+  const hand = bjCurrentHand(room);
+  const player = room.players[room.turnSeat];
+  if (!hand || hand.cards.length !== 2 || player.stack < hand.bet) return;
+  player.stack -= hand.bet;
+  hand.bet *= 2;
+  hand.doubled = true;
+  hand.cards.push(room.deck.pop());
+  hand.status = bjIsBust(hand.cards) ? "bust" : "stood"; // double down always ends the hand after one card
+  bjAdvanceAfterHandDone(room);
+}
+
+function bjApplySplit(room) {
+  const hand = bjCurrentHand(room);
+  const player = room.players[room.turnSeat];
+  if (!hand || hand.cards.length !== 2 || hand.cards[0][0] !== hand.cards[1][0]) return;
+  if (player.hands.length >= 2) return; // one split per hand — no re-splitting
+  if (player.stack < hand.bet) return;
+
+  player.stack -= hand.bet;
+  const secondCard = hand.cards.pop();
+  const newHand = bjNewHand(hand.bet);
+  newHand.fromSplit = true;
+  newHand.cards = [secondCard, room.deck.pop()];
+  hand.fromSplit = true;
+  hand.cards.push(room.deck.pop());
+  player.hands.splice(room.turnHandIdx + 1, 0, newHand);
+
+  // A split ace pair conventionally gets exactly one card per hand, no
+  // further hitting — simplest, common casual-table rule.
+  if (hand.cards[0][0] === "A") {
+    hand.status = "stood";
+    newHand.status = "stood";
+    bjAdvanceAfterHandDone(room);
+  } else {
+    bjScheduleActionTimer(room);
+    broadcastBjRoom(room);
+  }
+}
+
+// ── Dealer phase (paced reveal, so players actually see it happen) ──────
+function bjStartDealerPhase(room) {
+  clearBjActionTimer(room);
+  room.phase = "dealerPlay";
+  room.turnSeat = null;
+  room.actionDeadline = null;
+
+  // If literally every hand is already bust, there's nothing left to
+  // decide — skip straight to settlement without a dealer reveal show.
+  const anyLive = room.players.some(p => (p.hands || []).some(h => h.status === "stood" || h.status === "blackjack"));
+  if (!anyLive) { room.dealerHoleRevealed = true; bjSettleRound(room); return; }
+
+  broadcastBjRoom(room); // shows phase:"dealerPlay" with the hole card still hidden, briefly
+  setTimeout(() => bjRevealAndDraw(room), 900);
+}
+
+function bjRevealAndDraw(room) {
+  if (!bjRooms.has(room.id)) return;
+  room.dealerHoleRevealed = true;
+  broadcastBjRoom(room);
+
+  const total = bjHandValue(room.dealerCards).total;
+  if (total >= 17) { setTimeout(() => bjSettleRound(room), 700); return; }
+  setTimeout(() => {
+    room.dealerCards.push(room.deck.pop());
+    broadcastBjRoom(room);
+    setTimeout(() => bjRevealAndDraw(room), 750);
+  }, 700);
+}
+
+function bjSettleRound(room) {
+  const dealerBJ = bjIsBlackjack(room.dealerCards);
+  for (const p of room.players) {
+    for (const h of p.hands || []) {
+      const { result, payout } = bjSettleHand(h, room.dealerCards, dealerBJ);
+      h.result = result;
+      h.payout = payout;
+      p.stack += payout;
+    }
+  }
+
+  // Sync every seated player's persistent balance now that the round is over.
+  for (const p of room.players) {
+    const user = registeredUsers.get(p.lc);
+    if (user) { user.bjCoins = p.stack; user.bjLastCoinGrant = user.bjLastCoinGrant || Date.now(); saveAuthUsers(); }
+  }
+
+  room.phase = "roundEnd";
+  broadcastBjRoom(room);
+  broadcastPublicBjRooms();
+
+  // Disconnected players leave the table now (the safe between-rounds
+  // boundary) — their coins are already synced above, so they lose
+  // nothing, they'd just need to rejoin. Mirrors the same pattern used
+  // for poker.
+  const leaving = room.players.filter(p => !p.connected);
+  for (const p of leaving) { bjRoomBySocket.delete(p.socketId); }
+  room.players = room.players.filter(p => p.connected);
+
+  if (room.players.length === 0) { cleanupBjRoom(room.id); return; }
+
+  clearBjRoundTimer(room);
+  room.roundTimeoutHandle = setTimeout(() => bjStartBettingPhase(room), BJ_ROUND_END_MS);
+}
+
+function cleanupBjRoom(roomId) {
+  const room = bjRooms.get(roomId);
+  if (!room) return;
+  clearBjActionTimer(room);
+  clearBjRoundTimer(room);
+  for (const [, invite] of room.pendingInvites || []) clearTimeout(invite.timeoutHandle);
+  for (const p of room.players) bjRoomBySocket.delete(p.socketId);
+  bjRooms.delete(roomId);
+  broadcastPublicBjRooms();
+}
+
+function cleanupBjForSocket(socketId) {
+  const roomId = bjRoomBySocket.get(socketId);
+  bjRoomBySocket.delete(socketId);
+  if (!roomId) return;
+  const room = bjRooms.get(roomId);
+  if (!room) return;
+
+  const player = room.players.find(p => p.socketId === socketId);
+  if (!player) return;
+
+  if (room.status === "lobby") {
+    room.players = room.players.filter(p => p.socketId !== socketId);
+    if (room.players.length === 0) { cleanupBjRoom(room.id); return; }
+    if (player.lc === room.hostLc) room.hostLc = room.players[0].lc;
+    broadcastBjRoom(room);
+    broadcastPublicBjRooms();
+    return;
+  }
+
+  player.connected = false;
+  if (room.players.every(p => !p.connected)) { cleanupBjRoom(room.id); return; }
+  // Mid-round, the bet/action timeouts already auto-act for whoever's turn
+  // it is — a disconnected player is removed at the next round boundary
+  // (see bjSettleRound), not ripped out mid-hand.
+  broadcastBjRoom(room);
+}
+
 function startNextDrawRound(room) {
   const nextDrawer = room.players.find(p => p.connected && !p.hasDrawn);
   if (!nextDrawer) { endDrawGame(room); return; }
@@ -7415,6 +7916,28 @@ io.on("connection", (socket) => {
   });
 
   // ── friendChat:react — react to a friend-chat message (mirrors "react") ──
+  // ── friendChat:setTheme — shared chat wallpaper, synced to both people ──
+  socket.on("friendChat:setTheme", ({ toUsername, themeId }) => {
+    if (!socket._regUser || !toUsername || !themeId) return;
+    if (!FC_VALID_THEMES.has(themeId)) return;
+    const toLc = String(toUsername).toLowerCase().trim();
+    const myUser = registeredUsers.get(socket._regUser.usernameLower);
+    if (!myUser || !(myUser.friends || []).includes(toLc)) return;
+
+    const roomId = privRoomId(socket._regUser.usernameLower, toLc);
+    let room = privateRooms.get(roomId);
+    if (!room) {
+      room = { messages: [], createdAt: Date.now(), expiresAt: Date.now() + PRIVATE_MSG_TTL };
+      privateRooms.set(roomId, room);
+    }
+    room.theme = themeId;
+    savePrivateMsgs();
+
+    const payload = { fromUsername: socket._regUser.username, themeId };
+    io.to(`user:${toLc}`).emit("friendChat:themeChanged", payload);
+    socket.emit("friendChat:themeChanged", payload); // echo back so every one of the setter's own open tabs/devices stays in sync too
+  });
+
   socket.on("friendChat:react", ({ toUsername, messageId, emoji }) => {
     if (!socket._regUser || !toUsername || !messageId || !emoji) return;
     if (!VALID_EMOJIS.has(emoji)) return;
@@ -9027,6 +9550,202 @@ io.on("connection", (socket) => {
   socket.on("imposter:leave", () => cleanupImposterForSocket(socket.id));
 
   // ══════════════════════════════════════════════════════════════════════
+  // Blackjack ("ბლექჯეკი") — up to 5 players, each vs. a shared dealer.
+  // ══════════════════════════════════════════════════════════════════════
+
+  socket.on("blackjack:invite", ({ toUsernames }) => {
+    if (!socket._regUser) return;
+    const hostLc = socket._regUser.usernameLower;
+    const hostUser = registeredUsers.get(hostLc);
+    if (!hostUser) return;
+
+    let room = findActiveBjRoomForUser(hostLc);
+    if (room && !(room.hostLc === hostLc && room.status === "lobby")) {
+      socket.emit("blackjack:error", { message: "თქვენ უკვე ხართ სხვა მაგიდაზე — ჯერ დატოვეთ ან დაასრულეთ ის, სანამ ახალს შექმნით." });
+      return;
+    }
+
+    if (room) {
+      const hostPlayer = room.players.find(p => p.lc === hostLc);
+      if (hostPlayer) { hostPlayer.socketId = socket.id; hostPlayer.connected = true; }
+      bjRoomBySocket.set(socket.id, room.id);
+    } else {
+      bjEnsureCoins(hostUser);
+      room = {
+        id: makeBjRoomId(),
+        hostLc,
+        status: "lobby",
+        players: [{ lc: hostLc, username: hostUser.username, socketId: socket.id, connected: true, seat: 0, stack: hostUser.bjCoins, bet: null, hands: [] }],
+        pendingInvites: new Map(),
+        deck: [], dealerCards: [], dealerHoleRevealed: false,
+        phase: null, turnSeat: null, turnHandIdx: 0, actionDeadline: null,
+      };
+      bjRooms.set(room.id, room);
+      bjRoomBySocket.set(socket.id, room.id);
+    }
+
+    const list = Array.isArray(toUsernames) ? toUsernames.filter(u => typeof u === "string").slice(0, 20) : [];
+    const invited = [];
+    const cooldown = [];
+    const now = Date.now();
+    for (const uname of list) {
+      const lc = uname.toLowerCase();
+      if (lc === hostLc) continue;
+      if (room.players.some(p => p.lc === lc)) continue;
+      if (room.pendingInvites.has(lc)) continue;
+      if (!onlineRegSockets.get(lc)?.size) continue;
+
+      const targetUser = registeredUsers.get(lc);
+      if (!targetUser) continue;
+
+      const cdKey = `${hostLc}|${lc}`;
+      const cdExpiry = bjDeclineCooldown.get(cdKey);
+      if (cdExpiry) {
+        if (cdExpiry > now) { cooldown.push(targetUser.username); continue; }
+        bjDeclineCooldown.delete(cdKey);
+      }
+
+      const timeoutHandle = setTimeout(() => room.pendingInvites.delete(lc), BJ_INVITE_TTL_MS);
+      room.pendingInvites.set(lc, { timeoutHandle });
+      io.to(`user:${lc}`).emit("blackjack:invited", { roomId: room.id, fromUsername: hostUser.username });
+      invited.push(targetUser.username);
+    }
+
+    socket.join(`bjroom:${room.id}`);
+    socket.emit("blackjack:room", bjRoomStateForViewer(room));
+    socket.emit("blackjack:inviteSent", { invited, cooldown });
+    broadcastPublicBjRooms();
+  });
+
+  socket.on("blackjack:listPublicRooms", () => {
+    socket.emit("blackjack:publicRooms", getPublicBjRooms());
+  });
+
+  socket.on("blackjack:declineInvite", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const room = bjRooms.get(roomId);
+    if (!room) return;
+    const lc = socket._regUser.usernameLower;
+    const invite = room.pendingInvites.get(lc);
+    if (!invite) return;
+    clearTimeout(invite.timeoutHandle);
+    room.pendingInvites.delete(lc);
+    bjDeclineCooldown.set(`${room.hostLc}|${lc}`, Date.now() + BJ_DECLINE_COOLDOWN_MS);
+    const host = room.players.find(p => p.lc === room.hostLc);
+    if (host) io.sockets.sockets.get(host.socketId)?.emit("blackjack:inviteDeclined", { username: socket._regUser.username });
+  });
+
+  socket.on("blackjack:join", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const lc = socket._regUser.usernameLower;
+    const user = registeredUsers.get(lc);
+    if (!user) return;
+
+    const existingRoomId = bjRoomBySocket.get(socket.id);
+    if (existingRoomId && existingRoomId !== roomId) cleanupBjForSocket(socket.id);
+
+    const room = bjRooms.get(roomId);
+    if (!room) { socket.emit("blackjack:error", { message: "მაგიდა ვეღარ მოიძებნა — შეიძლება უკვე დასრულდა." }); return; }
+    if (room.status === "ended") { socket.emit("blackjack:error", { message: "ეს თამაში უკვე დასრულდა." }); return; }
+
+    const already = room.players.find(p => p.lc === lc);
+    if (already) {
+      already.socketId = socket.id;
+      already.connected = true;
+      bjRoomBySocket.set(socket.id, room.id);
+      socket.join(`bjroom:${room.id}`);
+      socket.emit("blackjack:room", bjRoomStateForViewer(room));
+      broadcastBjRoom(room);
+      broadcastPublicBjRooms();
+      return;
+    }
+
+    if (room.players.length >= BJ_MAX_PLAYERS) { socket.emit("blackjack:error", { message: "მაგიდა სავსეა." }); return; }
+
+    const invite = room.pendingInvites.get(lc);
+    if (invite) clearTimeout(invite.timeoutHandle);
+    room.pendingInvites.delete(lc);
+
+    bjEnsureCoins(user);
+    const seat = room.players.length;
+    room.players.push({ lc, username: user.username, socketId: socket.id, connected: true, seat, stack: user.bjCoins, bet: null, hands: [] });
+    bjRoomBySocket.set(socket.id, room.id);
+    socket.join(`bjroom:${room.id}`);
+
+    socket.emit("blackjack:room", bjRoomStateForViewer(room));
+    broadcastBjRoom(room);
+    broadcastPublicBjRooms();
+  });
+
+  socket.on("blackjack:start", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const room = bjRooms.get(roomId);
+    if (!room || room.hostLc !== socket._regUser.usernameLower) return;
+    if (room.status !== "lobby") return;
+    if (room.players.length < BJ_MIN_PLAYERS) return;
+    room.status = "playing";
+    bjStartBettingPhase(room);
+    broadcastPublicBjRooms();
+  });
+
+  socket.on("blackjack:placeBet", ({ roomId, amount }) => {
+    if (!socket._regUser) return;
+    const room = bjRooms.get(roomId);
+    if (!room || room.status !== "playing" || room.phase !== "betting") return;
+    const lc = socket._regUser.usernameLower;
+    const player = room.players.find(p => p.lc === lc);
+    if (!player || player.bet) return;
+
+    const bet = Math.floor(Number(amount));
+    if (!Number.isFinite(bet) || bet < BJ_MIN_BET || bet > BJ_MAX_BET || bet > player.stack) {
+      socket.emit("blackjack:error", { message: `ფსონი უნდა იყოს ${BJ_MIN_BET}-დან ${BJ_MAX_BET}-მდე და არ აღემატებოდეს შენს ბალანსს.` });
+      return;
+    }
+    player.bet = bet;
+    broadcastBjRoom(room);
+    bjMaybeDealRound(room);
+  });
+
+  socket.on("blackjack:action", ({ roomId, action }) => {
+    if (!socket._regUser) return;
+    const room = bjRooms.get(roomId);
+    if (!room || room.status !== "playing" || room.phase !== "playing") return;
+    const lc = socket._regUser.usernameLower;
+    const player = room.players[room.turnSeat];
+    if (!player || player.lc !== lc) return;
+
+    if (action === "hit") bjApplyHit(room);
+    else if (action === "stand") bjApplyStand(room);
+    else if (action === "double") bjApplyDouble(room);
+    else if (action === "split") bjApplySplit(room);
+    else socket.emit("blackjack:error", { message: "უცნობი მოქმედება." });
+  });
+
+  socket.on("blackjack:chat", ({ roomId, text }) => {
+    if (!socket._regUser) return;
+    const room = bjRooms.get(roomId);
+    if (!room) return;
+    const lc = socket._regUser.usernameLower;
+    const player = room.players.find(p => p.lc === lc);
+    if (!player) return;
+
+    const clean = String(text || "").slice(0, 200).replace(/<[^>]*>/g, "").trim();
+    if (!clean) return;
+    if (mediaRateLimited(socket, "blackjackChat", 8, 10_000)) {
+      socket.emit("blackjack:error", { message: "ძალიან ხშირად წერ — ცოტა დაელოდე." });
+      return;
+    }
+
+    const msg = { username: player.username, text: clean, ts: Date.now() };
+    for (const p of room.players) {
+      const s = io.sockets.sockets.get(p.socketId);
+      if (s) s.emit("blackjack:chatMessage", msg);
+    }
+  });
+
+  socket.on("blackjack:leave", () => cleanupBjForSocket(socket.id));
+
+  // ══════════════════════════════════════════════════════════════════════
   // Rooms ("ოთახები") — Discord-style topic rooms, registered users only.
   // Opening a room in the client auto-joins it (rooms:join): no separate
   // approval step, matches "no approval required to join a room". Reading
@@ -9387,6 +10106,7 @@ io.on("connection", (socket) => {
     cleanupCheckersForSocket(socket.id);
     cleanupJokerForSocket(socket.id);
     cleanupImposterForSocket(socket.id);
+    cleanupBjForSocket(socket.id);
     for (const [sid, s] of flappySessions) if (s.socketId === socket.id) flappySessions.delete(sid);
   });
 });

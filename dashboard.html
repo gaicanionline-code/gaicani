@@ -199,6 +199,12 @@
       cursor: pointer; flex-shrink: 0; transition: opacity 0.15s;
     }
     .im-room-join-btn:hover { opacity: 0.88; }
+    .bj-room-join-btn {
+      background: linear-gradient(135deg,#1a4d3a,#0d2a1f); color: #fff; border: none;
+      border-radius: 8px; padding: 8px 14px; font-size: 0.82em; font-weight: 700;
+      cursor: pointer; flex-shrink: 0; transition: opacity 0.15s;
+    }
+    .bj-room-join-btn:hover { opacity: 0.88; }
 
     /* ── Friend List ── */
     .friends-list {
@@ -606,6 +612,13 @@
       <div id="imRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>
 
+    <!-- Blackjack -->
+    <a href="/blackjack.html" class="btn-start-chat" style="background:linear-gradient(135deg,#1a4d3a,#0d2a1f);margin-top:14px;">🂡 ბლექჯეკი</a>
+    <div id="bjRoomsSection" style="display:none;margin:8px 0 14px;">
+      <div class="dg-rooms-label" style="margin-bottom:8px;">მაგიდები — შემოუერთდი</div>
+      <div id="bjRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
+
     <!-- Active Draw & Guess rooms — join one already in progress -->
     <div id="dgRoomsSection" style="display:none;margin:8px 0 14px;">
       <div class="dg-rooms-label" style="margin-bottom:8px;">ოთახები — შემოუერთდი</div>
@@ -696,7 +709,11 @@
     /* ── Predefined profile avatars ──────────────────────────────── */
     const AVAILABLE_AVATARS = [
       "avatar1.png", "avatar2.png", "avatar3.png", "avatar4.png",
-      "avatar5.png", "avatar6.png", "avatar7.png", "avatar8.png"
+      "avatar5.png", "avatar6.png", "avatar7.png", "avatar8.png",
+      "avatar9.jpg", "avatar10.jpg", "avatar11.jpg", "avatar12.jpg",
+      "avatar13.jpg", "avatar14.jpg", "avatar15.jpg", "avatar16.jpg",
+      "avatar17.jpg", "avatar18.jpg", "avatar19.jpg", "avatar20.jpg",
+      "avatar21.jpg",
     ];
     const AVATAR_DIR = "/";
 
@@ -862,6 +879,7 @@
         socket.emit("checkers:listPublicRooms");
         socket.emit("joker:listPublicRooms");
         socket.emit("imposter:listPublicRooms");
+        socket.emit("blackjack:listPublicRooms");
       });
 
       socket.on("auth:invalid", () => {
@@ -956,6 +974,7 @@
       socket.on("checkers:publicRooms", (rooms) => renderDmRooms(rooms || []));
       socket.on("joker:publicRooms", (rooms) => renderJkRooms(rooms || []));
       socket.on("imposter:publicRooms", (rooms) => renderImRooms(rooms || []));
+      socket.on("blackjack:publicRooms", (rooms) => renderBjRooms(rooms || []));
 
       // ── Invited to a Draw & Guess room by a friend ─────────────────────────
       socket.on("drawGuess:invited", ({ roomId, fromUsername }) => {
@@ -1056,6 +1075,23 @@
         bar.querySelector(".dg-invite-decline").onclick = () => {
           bar.classList.remove("show");
           socket.emit("imposter:declineInvite", { roomId });
+        };
+      });
+
+      // ── Invited to a Blackjack table by a friend ───────────────────────────
+      socket.on("blackjack:invited", ({ roomId, fromUsername }) => {
+        const bar = document.getElementById("dgInviteBar");
+        bar.innerHTML = `
+          <span>🂡 <strong>${esc(fromUsername)}</strong>-მა მოგიწვია ბლექჯეკზე</span>
+          <button class="dg-invite-accept">✅</button>
+          <button class="dg-invite-decline">❌</button>`;
+        bar.classList.add("show");
+        bar.querySelector(".dg-invite-accept").onclick = () => {
+          window.location.href = "/blackjack.html?room=" + encodeURIComponent(roomId);
+        };
+        bar.querySelector(".dg-invite-decline").onclick = () => {
+          bar.classList.remove("show");
+          socket.emit("blackjack:declineInvite", { roomId });
         };
       });
     }
@@ -1362,6 +1398,31 @@
       list.querySelectorAll(".dg-room-row").forEach(row => {
         row.querySelector(".im-room-join-btn").addEventListener("click", () => {
           window.location.href = "/imposter.html?room=" + encodeURIComponent(row.dataset.room);
+        });
+      });
+    }
+
+    function renderBjRooms(rooms) {
+      const section = document.getElementById("bjRoomsSection");
+      const list    = document.getElementById("bjRoomsList");
+      if (!section || !list) return;
+
+      if (!rooms.length) { section.style.display = "none"; return; }
+      section.style.display = "block";
+
+      list.innerHTML = rooms.map(r => `
+        <div class="dg-room-row" data-room="${esc(r.roomId)}">
+          <div class="dg-room-info">
+            <div class="dg-room-host">🂡 ${esc(r.hostUsername)}-ის მაგიდა</div>
+            <div class="dg-room-meta">${r.playerCount}/${r.maxPlayers} მოთამაშე</div>
+          </div>
+          <span class="dg-room-badge ${r.status}">${r.status === "playing" ? "მიმდინარეობს" : "ლობი"}</span>
+          <button class="bj-room-join-btn">შემოერთება</button>
+        </div>`).join("");
+
+      list.querySelectorAll(".dg-room-row").forEach(row => {
+        row.querySelector(".bj-room-join-btn").addEventListener("click", () => {
+          window.location.href = "/blackjack.html?room=" + encodeURIComponent(row.dataset.room);
         });
       });
     }

@@ -33,7 +33,11 @@
   /* ── Predefined profile avatars ──────────────────────────────────── */
   const AVAILABLE_AVATARS = [
     "avatar1.png", "avatar2.png", "avatar3.png", "avatar4.png",
-    "avatar5.png", "avatar6.png", "avatar7.png", "avatar8.png"
+    "avatar5.png", "avatar6.png", "avatar7.png", "avatar8.png",
+    "avatar9.jpg", "avatar10.jpg", "avatar11.jpg", "avatar12.jpg",
+    "avatar13.jpg", "avatar14.jpg", "avatar15.jpg", "avatar16.jpg",
+    "avatar17.jpg", "avatar18.jpg", "avatar19.jpg", "avatar20.jpg",
+    "avatar21.jpg",
   ];
   const AVATAR_DIR = "/";
   let signupSelectedAvatar = AVAILABLE_AVATARS[0];
@@ -409,6 +413,25 @@
       bar.querySelector(".dg-invite-decline").onclick = () => {
         bar.classList.remove("show");
         s.emit("imposter:declineInvite", { roomId });
+      };
+    });
+
+    // ── Invited to a Blackjack table — same fixed overlay bar, same
+    // everywhere-you-are behavior as the other games' invites above.
+    s.on("blackjack:invited", ({ roomId, fromUsername }) => {
+      const bar = document.getElementById("dgInviteBar");
+      if (!bar) return;
+      bar.innerHTML =
+        `<span>🂡 <strong>${esc(fromUsername)}</strong>-მა მოგიწვია ბლექჯეკზე</span>` +
+        `<button class="dg-invite-accept">✅</button>` +
+        `<button class="dg-invite-decline">❌</button>`;
+      bar.classList.add("show");
+      bar.querySelector(".dg-invite-accept").onclick = () => {
+        window.location.href = "/blackjack.html?room=" + encodeURIComponent(roomId);
+      };
+      bar.querySelector(".dg-invite-decline").onclick = () => {
+        bar.classList.remove("show");
+        s.emit("blackjack:declineInvite", { roomId });
       };
     });
 
