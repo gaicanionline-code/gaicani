@@ -636,6 +636,82 @@
     .fc-question-card-text { font-size: 0.92em; color: var(--text); }
     .fc-question-card-ts { font-size: 0.62em; color: var(--muted); margin-top: 5px; }
 
+    /* ── Chat background (wallpaper) picker ─────────────────────────── */
+    .fc-theme-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 36px; height: 36px; border-radius: 50%;
+      background: rgba(255,255,255,0.06); border: none; color: var(--text);
+      font-size: 1.05em; cursor: pointer; flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .fc-theme-btn:hover { background: rgba(255,255,255,0.12); }
+
+    #fc-messages.fc-bg-transition { transition: background 0.35s ease; }
+
+    .fc-theme-backdrop {
+      position: fixed; inset: 0; z-index: 570; background: rgba(0,0,0,0.45);
+      opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+    }
+    .fc-theme-backdrop.show { opacity: 1; pointer-events: auto; }
+    .fc-theme-sheet {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 571;
+      background: var(--surface); border-radius: 18px 18px 0 0; border-top: 1px solid var(--border);
+      max-width: 460px; margin: 0 auto;
+      padding: 6px 18px calc(20px + var(--safe-bottom));
+      transform: translateY(105%); transition: transform 0.25s cubic-bezier(0.32,0.72,0,1);
+    }
+    .fc-theme-sheet.show { transform: translateY(0); }
+    .fc-theme-sheet-handle { width: 36px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.18); margin: 10px auto 14px; }
+    .fc-theme-sheet-title { font-weight: 700; font-size: 1em; margin-bottom: 4px; }
+    .fc-theme-sheet-sub { font-size: 0.78em; color: var(--muted); margin-bottom: 16px; }
+    .fc-theme-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+    }
+    .fc-theme-swatch {
+      aspect-ratio: 1; border-radius: 16px; cursor: pointer; position: relative;
+      border: 2px solid transparent; overflow: hidden;
+      display: flex; align-items: flex-end; justify-content: center;
+      transition: transform 0.12s, border-color 0.15s;
+    }
+    .fc-theme-swatch:active { transform: scale(0.94); }
+    .fc-theme-swatch.selected { border-color: var(--accent-lt); }
+    .fc-theme-swatch.selected::after {
+      content: "✓"; position: absolute; top: 6px; right: 6px;
+      width: 18px; height: 18px; border-radius: 50%; background: var(--accent-lt);
+      color: #17181d; font-size: 0.7em; font-weight: 900;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .fc-theme-swatch-label {
+      width: 100%; font-size: 0.66em; font-weight: 700; text-align: center;
+      color: rgba(255,255,255,0.92); background: rgba(0,0,0,0.28); padding: 4px 2px;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    }
+
+    /* ── Double-tap heart burst on a message ─────────────────────────── */
+    .fc-heart-burst {
+      position: absolute; left: 50%; top: 50%; font-size: 2.4em;
+      transform: translate(-50%, -50%) scale(0.3); opacity: 0;
+      pointer-events: none; z-index: 5;
+      animation: fcHeartBurst 0.7s cubic-bezier(0.2,0.9,0.3,1.3) forwards;
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,0.4));
+    }
+    @keyframes fcHeartBurst {
+      0%   { transform: translate(-50%, -50%) scale(0.2); opacity: 0; }
+      35%  { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+      60%  { transform: translate(-50%, -50%) scale(0.95); opacity: 1; }
+      100% { transform: translate(-50%, -60%) scale(0.9); opacity: 0; }
+    }
+
+    /* ── Quick-heart button in the input bar (shown when input is empty,
+       Instagram-style — swaps in for the send button) ── */
+    .fc-heart-send {
+      position: relative; flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%;
+      background: transparent; border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3em; align-self: flex-end; transition: transform 0.1s;
+    }
+    .fc-heart-send:active { transform: scale(0.85); }
+
     /* ── Responsive: small phones ── */
     @media (max-width: 480px) {
       .fc-expiry-badge { display: none; }
@@ -693,8 +769,18 @@
       </div>
       <div class="fc-sub" id="fcSub">პირადი ჩატი</div>
     </div>
+    <button class="fc-theme-btn" id="fcThemeBtn" title="ფონის შეცვლა">🎨</button>
     <div class="fc-expiry-badge">🕐 3 სთ ჩაშლა</div>
   </header>
+
+  <!-- Chat background picker -->
+  <div id="fcThemeBackdrop" class="fc-theme-backdrop"></div>
+  <div id="fcThemeSheet" class="fc-theme-sheet">
+    <div class="fc-theme-sheet-handle"></div>
+    <div class="fc-theme-sheet-title">ჩატის ფონი</div>
+    <div class="fc-theme-sheet-sub">აირჩიე ფონი ამ საუბრისთვის — მხოლოდ შენთვის ჩანს</div>
+    <div class="fc-theme-grid" id="fcThemeGrid"></div>
+  </div>
 
   <!-- AUTH REQUIRED -->
   <div id="fc-auth-screen">
@@ -737,7 +823,8 @@
     <button class="fc-extra-btn" id="fc-question-btn" title="შემთხვევითი კითხვა">?</button>
     <textarea id="fc-input" placeholder="შეტყობინება..." rows="1" maxlength="2000"></textarea>
     <span id="fc-char-count" class="fc-char-count"></span>
-    <button id="fc-send" title="გაგზავნა">➤</button>
+    <button class="fc-heart-send" id="fc-heart-send" title="გულის გაგზავნა">🤍</button>
+    <button id="fc-send" title="გაგზავნა" style="display:none">➤</button>
   </div>
 
   <!-- GIF PICKER -->
@@ -884,6 +971,70 @@
     })
     .catch(() => {});
 
+  /* ── Chat background (wallpaper) picker ─────────────────────────
+     A per-device, per-conversation preference — stored in localStorage,
+     not synced to the other person or across devices, same as how most
+     messaging apps treat "my view of this chat looks like this". */
+  const FC_THEMES = [
+    { id: "default", label: "სტანდარტული", css: "radial-gradient(circle at 50% 0%, #22232c 0%, #17181d 55%)" },
+    { id: "midnight", label: "შუაღამე", css: "linear-gradient(160deg, #1b1035 0%, #0d0e1a 70%)" },
+    { id: "sunset", label: "მზის ჩასვლა", css: "linear-gradient(160deg, #3a1740 0%, #642a3a 45%, #24121c 100%)" },
+    { id: "ocean", label: "ოკეანე", css: "linear-gradient(160deg, #0d2b3a 0%, #123a4a 45%, #0a1620 100%)" },
+    { id: "rose", label: "ვარდისფერი", css: "linear-gradient(160deg, #3a1024 0%, #591d33 45%, #180a12 100%)" },
+    { id: "forest", label: "ტყე", css: "linear-gradient(160deg, #0f2818 0%, #163a20 45%, #0a140d 100%)" },
+    { id: "charcoal", label: "ნახშირი", css: "#1a1b1f" },
+    { id: "amber", label: "ქარვისფერი", css: "linear-gradient(160deg, #3a2408 0%, #4a3013 45%, #1a1006 100%)" },
+    { id: "aurora", label: "ავრორა", css: "linear-gradient(150deg, #0d2b2a 0%, #1a2f4a 40%, #2a1a4a 75%, #120a20 100%)" },
+  ];
+  function fcThemeStorageKey() {
+    return `gaicani_chat_theme:${myUsername.toLowerCase()}:${friendName.toLowerCase()}`;
+  }
+  function fcLoadTheme() {
+    try { return localStorage.getItem(fcThemeStorageKey()) || "default"; } catch (_) { return "default"; }
+  }
+  function fcApplyTheme(themeId) {
+    const theme = FC_THEMES.find(t => t.id === themeId) || FC_THEMES[0];
+    elMessages.classList.add("fc-bg-transition");
+    elMessages.style.background = theme.css;
+  }
+  function fcSaveTheme(themeId) {
+    try { localStorage.setItem(fcThemeStorageKey(), themeId); } catch (_) { /* private-mode storage may reject writes — theme just won't persist */ }
+  }
+  function fcRenderThemeGrid() {
+    const current = fcLoadTheme();
+    const grid = $("fcThemeGrid");
+    grid.innerHTML = "";
+    FC_THEMES.forEach(theme => {
+      const swatch = document.createElement("div");
+      swatch.className = "fc-theme-swatch" + (theme.id === current ? " selected" : "");
+      swatch.style.background = theme.css;
+      const label = document.createElement("div");
+      label.className = "fc-theme-swatch-label";
+      label.textContent = theme.label;
+      swatch.appendChild(label);
+      swatch.addEventListener("click", () => {
+        fcApplyTheme(theme.id);
+        fcSaveTheme(theme.id);
+        grid.querySelectorAll(".fc-theme-swatch").forEach(s => s.classList.remove("selected"));
+        swatch.classList.add("selected");
+        setTimeout(closeFCThemeSheet, 220);
+      });
+      grid.appendChild(swatch);
+    });
+  }
+  function openFCThemeSheet() {
+    fcRenderThemeGrid();
+    $("fcThemeSheet").classList.add("show");
+    $("fcThemeBackdrop").classList.add("show");
+  }
+  function closeFCThemeSheet() {
+    $("fcThemeSheet").classList.remove("show");
+    $("fcThemeBackdrop").classList.remove("show");
+  }
+  $("fcThemeBtn").addEventListener("click", openFCThemeSheet);
+  $("fcThemeBackdrop").addEventListener("click", closeFCThemeSheet);
+  fcApplyTheme(fcLoadTheme());
+
   /* ── Message state ───────────────────────────────────────────── */
   let messages   = [];   // { id, from, text, ts, replyTo, reactions }
   let myUsername = username;
@@ -963,12 +1114,12 @@
       avatarEl.className = "fc-row-spacer";
     }
 
-    /* Bubble + its wrapper (meta, reactions, seen) */
     const wrap = document.createElement("div");
     wrap.className = "fc-bubble-wrap";
 
     const bubble = document.createElement("div");
     bubble.className = "fc-bubble";
+    if (msg.id) attachFCDoubleTapHeart(bubble, msg.id);
 
     /* Reply quote (text messages only) */
     if (!isMedia && msg.replyTo && msg.replyTo.text) {
@@ -1195,6 +1346,31 @@
     if (area) displayFCReaction(messageId, emoji, true, area);
   }
 
+  /* Instagram-style double-tap-to-heart. Reuses the same reaction pipeline
+     as the picker button — this is just a faster gesture for the single
+     most common reaction, with a big heart-burst animation for feedback. */
+  function attachFCDoubleTapHeart(bubbleEl, messageId) {
+    let lastTapAt = 0;
+    function trigger(e) {
+      const now = Date.now();
+      if (now - lastTapAt < 350) {
+        reactToFCMessage(messageId, "❤️");
+        spawnFCHeartBurst(bubbleEl);
+        lastTapAt = 0; // avoid a rapid triple-tap re-triggering immediately
+      } else {
+        lastTapAt = now;
+      }
+    }
+    bubbleEl.addEventListener("click", trigger);
+  }
+  function spawnFCHeartBurst(bubbleEl) {
+    const heart = document.createElement("div");
+    heart.className = "fc-heart-burst";
+    heart.textContent = "❤️";
+    bubbleEl.appendChild(heart);
+    setTimeout(() => heart.remove(), 720);
+  }
+
   function displayFCReaction(messageId, emoji, isMine, area) {
     if (!area) {
       const row = elMessages.querySelector(`[data-msgid="${messageId}"]`);
@@ -1281,6 +1457,7 @@
 
     clearFCReplyTo();
     updateFCCharCount();
+    updateFCSendButtonMode();
     elInput.focus();
   }
 
@@ -1556,6 +1733,7 @@
     elInput.style.overflowY = elInput.scrollHeight > 120 ? "auto" : "hidden";
 
     updateFCCharCount();
+    updateFCSendButtonMode();
 
     /* Typing event */
     if (!socket?.connected) return;
@@ -1565,6 +1743,20 @@
     }
     clearTimeout(typingTimer);
     typingTimer = setTimeout(() => { isTyping = false; }, 1500);
+  });
+
+  /* Instagram-style: an empty input shows a quick-heart button in place of
+     the send button; typing anything swaps it back to send. */
+  function updateFCSendButtonMode() {
+    const hasText = elInput.value.trim().length > 0;
+    $("fc-send").style.display = hasText ? "flex" : "none";
+    $("fc-heart-send").style.display = hasText ? "none" : "flex";
+  }
+  $("fc-heart-send").addEventListener("click", () => {
+    if (!socket?.connected) return;
+    elInput.value = "❤️";
+    sendMessage();
+    updateFCSendButtonMode();
   });
 
   elInput.addEventListener("keydown", (e) => {
