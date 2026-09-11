@@ -120,6 +120,20 @@
     .jk-opp-left  { left: 10px; top: 50%; transform: translateY(-50%); }
     .jk-opp-right { right: 10px; top: 50%; transform: translateY(-50%); }
 
+    /* ── Small persistent scoreboard, top-left corner ───────────────── */
+    .jk-scoreboard {
+      position: absolute; top: 8px; left: 8px; z-index: 15;
+      background: rgba(15,15,20,0.72); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px; padding: 6px 8px; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+      display: flex; flex-direction: column; gap: 3px; min-width: 92px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    .jk-sb-row { display: flex; align-items: center; gap: 6px; font-size: 0.62em; white-space: nowrap; }
+    .jk-sb-row.me { font-weight: 800; }
+    .jk-sb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; max-width: 62px; color: rgba(255,255,255,0.85); }
+    .jk-sb-score { font-weight: 800; color: var(--gold); min-width: 22px; text-align: right; }
+    .jk-sb-row.leader .jk-sb-score { color: #fff; text-shadow: 0 0 6px rgba(242,201,76,0.8); }
+
     .jk-opp-avatar-wrap { position: relative; }
     .jk-opp-avatar { width: 46px; height: 46px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,0.3); display: block; background: var(--surface-2); }
     @keyframes jkTurnPulse {
@@ -388,6 +402,7 @@
     </div>
 
     <div class="jk-table" id="table">
+      <div class="jk-scoreboard" id="scoreboard"></div>
       <div class="jk-opp jk-opp-top" id="oppTop"></div>
       <div class="jk-opp jk-opp-left" id="oppLeft"></div>
       <div class="jk-opp jk-opp-right" id="oppRight"></div>
@@ -756,7 +771,6 @@
       slot.className = "jk-trick-slot " + slotClass;
       const wasAlready = prevSnap && prevSnap.trickSeats && prevSnap.trickSeats.includes(play.seat);
       const card = cardEl(play.card, "jk-card");
-      if (!wasAlready) card.classList.add("jk-play-in");
       slot.appendChild(card);
       if (isJoker(play.card) && play.jokerChoice) {
         const tag = document.createElement("div");
@@ -765,6 +779,23 @@
         slot.appendChild(tag);
       }
       area.appendChild(slot);
+
+      if (!wasAlready) {
+        // Fly a clone of the card from whoever played it (their avatar —
+        // mine included) straight to this trick slot, so it's visually
+        // obvious whose card just landed and where it came from, instead
+        // of the card just materializing in place.
+        const fromEl = avatarElFor(mySeat, play.seat);
+        if (fromEl) {
+          card.style.opacity = "0";
+          const clone = cardEl(play.card, "jk-card");
+          clone.style.width = "40px"; clone.style.height = "56px";
+          flyToken(fromEl, card, clone, 420);
+          setTimeout(() => { card.style.opacity = "1"; card.classList.add("jk-play-in"); }, 380);
+        } else {
+          card.classList.add("jk-play-in");
+        }
+      }
     });
   }
 
@@ -779,6 +810,29 @@
       chip.textContent = "უკოზირო";
     }
     if (isNewHand) { chip.classList.remove("jk-trump-reveal"); void chip.offsetWidth; chip.classList.add("jk-trump-reveal"); }
+  }
+
+  // Small persistent scoreboard, top-left of the table — always-visible
+  // running totals so you don't have to wait for the hand-end table to see
+  // where everyone stands.
+  function renderScoreboard(room, mySeat) {
+    const board = $("scoreboard");
+    const rows = room.players.slice().sort((a, b) => (room.totals[b.seat] || 0) - (room.totals[a.seat] || 0));
+    const maxScore = Math.max(...room.players.map(p => room.totals[p.seat] || 0));
+    board.innerHTML = "";
+    rows.forEach(p => {
+      const total = room.totals[p.seat] || 0;
+      const row = document.createElement("div");
+      row.className = "jk-sb-row" + (p.seat === mySeat ? " me" : "") + (total === maxScore && maxScore > 0 ? " leader" : "");
+      const name = document.createElement("div");
+      name.className = "jk-sb-name";
+      name.textContent = (p.seat === mySeat ? "შენ" : p.username);
+      const score = document.createElement("div");
+      score.className = "jk-sb-score";
+      score.textContent = total;
+      row.appendChild(name); row.appendChild(score);
+      board.appendChild(row);
+    });
   }
 
   function myLegalCards(room, mySeat) {
@@ -924,6 +978,7 @@
     $("setLabel").textContent = setNames[room.setIdx] || "";
     $("handSizeLabel").textContent = room.trumpCard ? `კოზირი: ${isJoker(room.trumpCard) ? "ჯოკერი" : rankLabel(room.trumpCard) + SUIT_GLYPH[room.trumpCard[1]]}` : "";
     renderTrumpChip(room);
+    renderScoreboard(room, mySeat);
 
     ["left", "top", "right"].forEach(rel => renderOpponent(room, mySeat, rel));
     renderTrick(room, mySeat);
