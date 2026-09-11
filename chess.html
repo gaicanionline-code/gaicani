@@ -77,6 +77,23 @@
       background: linear-gradient(135deg, var(--accent), var(--accent-dk)); color: #fff; cursor: pointer;
     }
     .cs-new-game-btn:disabled { opacity: 0.5; }
+
+    /* ── Leaderboard — top 3 by wins ─────────────────────────────── */
+    .cs-leaderboard { background: var(--surface); border-radius: 12px; padding: 10px 10px 12px; }
+    .cs-leaderboard-label { font-size: 0.68em; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; padding: 0 4px 8px; }
+    .cs-podium { display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: end; gap: 8px; }
+    .cs-podium-slot {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 4px 8px; min-height: 64px; justify-content: center;
+    }
+    .cs-podium-slot.rank-1 { order: 2; padding-top: 14px; border-color: rgba(242,201,76,0.4); background: rgba(242,201,76,0.08); }
+    .cs-podium-slot.rank-2 { order: 1; }
+    .cs-podium-slot.rank-3 { order: 3; }
+    .cs-podium-medal { font-size: 1.3em; line-height: 1; }
+    .cs-podium-name { font-size: 0.74em; font-weight: 700; color: var(--text); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cs-podium-score { font-size: 0.9em; font-weight: 800; color: #fff; }
+    .cs-podium-empty { color: var(--muted); font-size: 0.72em; }
     .cs-section-label { font-size: 0.76em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
     .cs-pick-row {
       display: flex; align-items: center; gap: 10px; padding: 10px 12px;
@@ -259,6 +276,16 @@
     </header>
     <div class="cs-setup-body">
       <button id="createGameBtn" class="cs-new-game-btn" disabled>➕ ახალი თამაშის შექმნა</button>
+
+      <div class="cs-leaderboard">
+        <div class="cs-leaderboard-label">ტოპ 3 — ყველაზე მეტი გამარჯვება</div>
+        <div class="cs-podium" id="csPodium">
+          <div class="cs-podium-slot rank-1"><div class="cs-podium-empty">—</div></div>
+          <div class="cs-podium-slot rank-2"><div class="cs-podium-empty">—</div></div>
+          <div class="cs-podium-slot rank-3"><div class="cs-podium-empty">—</div></div>
+        </div>
+      </div>
+
       <div>
         <div class="cs-section-label">მოწვევა — ონლაინ მეგობრები</div>
         <div id="onlineFriendsList"></div>
@@ -432,6 +459,32 @@
   let selectedSquare = null; // square index currently selected for a move
   let pendingPromotion = null; // { from, to } awaiting a piece choice
   let timerInterval = null;
+
+  /* ── Leaderboard — top 3 by wins, same pattern as Flappy Bird's ──── */
+  const LEADERBOARD_MEDALS = { 1: "🥇", 2: "🥈", 3: "🥉" };
+  function renderLeaderboard(top3) {
+    const el = $("csPodium");
+    if (!el) return;
+    const byRank = [1, 2, 3].map(rank => (top3 || [])[rank - 1] || null);
+    el.innerHTML = byRank.map((row, i) => {
+      const rank = i + 1;
+      if (!row) return `<div class="cs-podium-slot rank-${rank}"><div class="cs-podium-medal">${LEADERBOARD_MEDALS[rank]}</div><div class="cs-podium-empty">—</div></div>`;
+      return `
+        <div class="cs-podium-slot rank-${rank}">
+          <div class="cs-podium-medal">${LEADERBOARD_MEDALS[rank]}</div>
+          <div class="cs-podium-name">${esc(row.username)}</div>
+          <div class="cs-podium-score">${esc(String(row.score))}</div>
+        </div>`;
+    }).join("");
+  }
+  function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+  async function loadLeaderboardInitial() {
+    try {
+      const r = await fetch("/api/chess/leaderboard");
+      const d = await r.json();
+      renderLeaderboard(d.top3 || []);
+    } catch (_) { /* leaderboard is non-critical — page still works without it */ }
+  }
 
   /* ── Setup screen ────────────────────────────────────────────── */
   function renderOnlineFriends() {
@@ -851,6 +904,7 @@
       elLoading.classList.add("hidden");
       socket.emit("users:listOnline");
       socket.emit("chess:listPublicRooms");
+      loadLeaderboardInitial();
       if (currentRoomId) socket.emit("chess:join", { roomId: currentRoomId });
       else showScreen("setup");
     });
@@ -862,6 +916,7 @@
     });
     socket.on("users:onlineChanged", () => socket.emit("users:listOnline"));
 
+    socket.on("chess:leaderboardUpdate", (top3) => renderLeaderboard(top3 || []));
     socket.on("chess:publicRooms", renderPublicGames);
 
     socket.on("chess:invited", ({ roomId, fromUsername }) => {
