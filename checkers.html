@@ -77,6 +77,23 @@
       background: linear-gradient(135deg, var(--accent), var(--accent-dk)); color: #fff; cursor: pointer;
     }
     .dm-new-game-btn:disabled { opacity: 0.5; }
+
+    /* ── Leaderboard — top 3 by wins ─────────────────────────────── */
+    .dm-leaderboard { background: var(--surface); border-radius: 12px; padding: 10px 10px 12px; }
+    .dm-leaderboard-label { font-size: 0.68em; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; padding: 0 4px 8px; }
+    .dm-podium { display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: end; gap: 8px; }
+    .dm-podium-slot {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 4px 8px; min-height: 64px; justify-content: center;
+    }
+    .dm-podium-slot.rank-1 { order: 2; padding-top: 14px; border-color: rgba(242,201,76,0.4); background: rgba(242,201,76,0.08); }
+    .dm-podium-slot.rank-2 { order: 1; }
+    .dm-podium-slot.rank-3 { order: 3; }
+    .dm-podium-medal { font-size: 1.3em; line-height: 1; }
+    .dm-podium-name { font-size: 0.74em; font-weight: 700; color: var(--text); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dm-podium-score { font-size: 0.9em; font-weight: 800; color: #fff; }
+    .dm-podium-empty { color: var(--muted); font-size: 0.72em; }
     .dm-section-label { font-size: 0.76em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
     .dm-pick-row {
       display: flex; align-items: center; gap: 10px; padding: 10px 12px;
@@ -142,6 +159,22 @@
     }
     .dm-piece.red   { background: radial-gradient(circle at 35% 30%, #e5605a, #a4211c); border: 2px solid #7a1512; }
     .dm-piece.black { background: radial-gradient(circle at 35% 30%, #55575e, #1c1d21); border: 2px solid #000; }
+
+    /* ── Mandatory-capture indicator — marks YOUR OWN piece(s) that are
+       forced to act (a legal capture exists there, so no other piece may
+       move this turn) ── */
+    .dm-forced-badge {
+      position: absolute; top: -6px; right: -6px; width: 20px; height: 20px;
+      border-radius: 50%; background: var(--gold); color: #1a1a1a;
+      display: flex; align-items: center; justify-content: center; font-size: 0.72em;
+      box-shadow: 0 0 0 2px var(--bg), 0 0 8px rgba(242,201,76,0.85);
+      animation: dmForcedPulse 1.1s ease-in-out infinite;
+      pointer-events: none;
+    }
+    @keyframes dmForcedPulse {
+      0%, 100% { transform: scale(1); }
+      50%      { transform: scale(1.18); }
+    }
 
     /* ── Move animation: flying piece, trail, capture fade, promotion ──── */
     .dm-flying-piece {
@@ -315,6 +348,16 @@
     </header>
     <div class="dm-setup-body">
       <button id="createGameBtn" class="dm-new-game-btn" disabled>➕ ახალი თამაშის შექმნა</button>
+
+      <div class="dm-leaderboard">
+        <div class="dm-leaderboard-label">ტოპ 3 — ყველაზე მეტი გამარჯვება</div>
+        <div class="dm-podium" id="dmPodium">
+          <div class="dm-podium-slot rank-1"><div class="dm-podium-empty">—</div></div>
+          <div class="dm-podium-slot rank-2"><div class="dm-podium-empty">—</div></div>
+          <div class="dm-podium-slot rank-3"><div class="dm-podium-empty">—</div></div>
+        </div>
+      </div>
+
       <div>
         <div class="dm-section-label">მოწვევა — ონლაინ მეგობრები</div>
         <div id="onlineFriendsList"></div>
@@ -475,6 +518,32 @@
   let myColor = null; // 'r' | 'b' | null
   let selectedSquare = null;
   let timerInterval = null;
+
+  /* ── Leaderboard — top 3 by wins, same pattern as Flappy Bird's ──── */
+  const LEADERBOARD_MEDALS = { 1: "🥇", 2: "🥈", 3: "🥉" };
+  function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+  function renderLeaderboard(top3) {
+    const el = $("dmPodium");
+    if (!el) return;
+    const byRank = [1, 2, 3].map(rank => (top3 || [])[rank - 1] || null);
+    el.innerHTML = byRank.map((row, i) => {
+      const rank = i + 1;
+      if (!row) return `<div class="dm-podium-slot rank-${rank}"><div class="dm-podium-medal">${LEADERBOARD_MEDALS[rank]}</div><div class="dm-podium-empty">—</div></div>`;
+      return `
+        <div class="dm-podium-slot rank-${rank}">
+          <div class="dm-podium-medal">${LEADERBOARD_MEDALS[rank]}</div>
+          <div class="dm-podium-name">${esc(row.username)}</div>
+          <div class="dm-podium-score">${esc(String(row.score))}</div>
+        </div>`;
+    }).join("");
+  }
+  async function loadLeaderboardInitial() {
+    try {
+      const r = await fetch("/api/checkers/leaderboard");
+      const d = await r.json();
+      renderLeaderboard(d.top3 || []);
+    } catch (_) { /* leaderboard is non-critical — page still works without it */ }
+  }
 
   /* ── Setup screen ────────────────────────────────────────────── */
   function renderOnlineFriends() {
@@ -766,6 +835,20 @@
         const p = document.createElement("div");
         p.className = "dm-piece " + (piece.toLowerCase() === "r" ? "red" : "black");
         if (piece === "R" || piece === "B") p.textContent = "👑";
+
+        // Mandatory capture in effect and THIS is one of the pieces forced
+        // to act (legalFrom only ever contains the current mover's own
+        // options, so this naturally only lights up on your own turn with
+        // your own pieces — never shown for the opponent's pieces).
+        const myMoves = legalFrom.get(square);
+        const isForced = piece.toLowerCase() === myColor && myMoves && myMoves.some(m => m.capture !== null);
+        if (isForced) {
+          const badge = document.createElement("div");
+          badge.className = "dm-forced-badge";
+          badge.textContent = "⚡";
+          p.appendChild(badge);
+        }
+
         el.appendChild(p);
       }
 
@@ -1020,6 +1103,7 @@
       elLoading.classList.add("hidden");
       socket.emit("users:listOnline");
       socket.emit("checkers:listPublicRooms");
+      loadLeaderboardInitial();
       if (currentRoomId) socket.emit("checkers:join", { roomId: currentRoomId });
       else showScreen("setup");
     });
@@ -1031,6 +1115,7 @@
     });
     socket.on("users:onlineChanged", () => socket.emit("users:listOnline"));
 
+    socket.on("checkers:leaderboardUpdate", (top3) => renderLeaderboard(top3 || []));
     socket.on("checkers:publicRooms", renderPublicGames);
 
     socket.on("checkers:invited", ({ roomId, fromUsername }) => {
