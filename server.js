@@ -4205,7 +4205,9 @@ function requireRegAuth(req, res) {
 }
 
 // GET /api/rooms — list every room. Open to any authenticated registered
-// user (rooms require no approval to see or join).
+// user (rooms require no approval to see or join). Loading the list also
+// marks Rooms as "visited" for the unread-notification check below — same
+// "opening it marks it read" behavior as the private-message unread system.
 app.get("/api/rooms", (req, res) => {
   const auth = requireRegAuth(req, res);
   if (!auth) return;
@@ -4214,7 +4216,37 @@ app.get("/api/rooms", (req, res) => {
     .map(r => roomPublicSummary(r, auth.usernameLower))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  auth.user.lastRoomsVisitAt = Date.now();
+  authUsersDirty = true; scheduleSave();
+
   res.json({ rooms: list, isAdmin: !!auth.user.isAdmin });
+});
+
+// GET /api/rooms/unread — does this user have unread Rooms activity since
+// their last visit? Read-only (does not mark anything as read) — meant for
+// the dashboard to check before the user actually opens Rooms. "Unread"
+// means either a brand new room was created, or a room they're already a
+// member of has a message from someone else, since lastRoomsVisitAt.
+app.get("/api/rooms/unread", (req, res) => {
+  const auth = requireRegAuth(req, res);
+  if (!auth) return;
+
+  // Lazily initialize on first check so existing users don't suddenly see a
+  // flood of "unread" for content that predates this feature.
+  if (!auth.user.lastRoomsVisitAt) { auth.user.lastRoomsVisitAt = Date.now(); authUsersDirty = true; scheduleSave(); }
+  const lastVisit = auth.user.lastRoomsVisitAt;
+  const myLc = auth.usernameLower;
+
+  let unread = false;
+  for (const room of chatRooms.values()) {
+    if (room.bannedUsers.includes(myLc)) continue;
+    if (new Date(room.createdAt).getTime() > lastVisit) { unread = true; break; }
+    if (room.members.includes(myLc)) {
+      const hasNewMsg = room.messages.some(m => m.fromLc !== myLc && new Date(m.ts).getTime() > lastVisit);
+      if (hasNewMsg) { unread = true; break; }
+    }
+  }
+  res.json({ unread });
 });
 
 // GET /api/rooms/:roomId/messages — history for one room. A user the admin
@@ -4238,6 +4270,7 @@ app.get("/api/rooms/:roomId/messages", (req, res) => {
 
 // GET /api/forum/posts?sort=new|top — feed listing. Open to any
 // authenticated registered user, same "no approval needed" spirit as Rooms.
+// Loading the feed also marks the Forum as "visited" for the unread check.
 app.get("/api/forum/posts", (req, res) => {
   const auth = requireRegAuth(req, res);
   if (!auth) return;
@@ -4246,7 +4279,32 @@ app.get("/api/forum/posts", (req, res) => {
   if (req.query.sort === "top") list.sort((a, b) => b.score - a.score || new Date(b.createdAt) - new Date(a.createdAt));
   else list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
+  auth.user.lastForumVisitAt = Date.now();
+  authUsersDirty = true; scheduleSave();
+
   res.json({ posts: list, isAdmin: !!auth.user.isAdmin });
+});
+
+// GET /api/forum/unread — does this user have unread Forum activity since
+// their last visit? Read-only, mirrors /api/rooms/unread above. "Unread"
+// means a new post, or a new comment on any post, since lastForumVisitAt —
+// excluding the user's own posts/comments, since they don't need a "you
+// have something new to read" nudge about their own content.
+app.get("/api/forum/unread", (req, res) => {
+  const auth = requireRegAuth(req, res);
+  if (!auth) return;
+
+  if (!auth.user.lastForumVisitAt) { auth.user.lastForumVisitAt = Date.now(); authUsersDirty = true; scheduleSave(); }
+  const lastVisit = auth.user.lastForumVisitAt;
+  const myLc = auth.usernameLower;
+
+  let unread = false;
+  for (const post of forumPosts.values()) {
+    if (post.authorLc !== myLc && new Date(post.createdAt).getTime() > lastVisit) { unread = true; break; }
+    const hasNewComment = post.comments.some(c => c.authorLc !== myLc && new Date(c.createdAt).getTime() > lastVisit);
+    if (hasNewComment) { unread = true; break; }
+  }
+  res.json({ unread });
 });
 
 // GET /api/forum/posts/:postId — full post + every comment, for the detail screen.
@@ -6098,6 +6156,7 @@ const JOKER_PLAY_TTL_MS = parseInt(process.env.JOKER_PLAY_TTL_MS, 10) || 20_000;
 const JOKER_INVITE_TTL_MS = 60_000;
 const JOKER_DECLINE_COOLDOWN_MS = 5 * 60_000;
 const JOKER_HAND_END_DELAY_MS = parseInt(process.env.JOKER_HAND_END_MS, 10) || 7_000; // pause on the hand-result table before the next hand deals
+const JOKER_TRICK_PAUSE_MS = parseInt(process.env.JOKER_TRICK_PAUSE_MS, 10) || 1_800; // pause showing all 4 completed-trick cards before sweeping them to the winner
 const JOKER_KHISHTI_ENABLED = true;
 const JOKER_SUITS_LIST = ["s", "h", "d", "c"];
 
@@ -6317,11 +6376,26 @@ function jokerApplyPlay(room, seat, card, jokerChoice, declaredSuit) {
     return;
   }
 
-  // Trick complete — resolve, then either continue the hand or finish it.
+  // All 4 cards are down. Broadcast this AS-IS first — so everyone actually
+  // sees the completed trick, including that 4th card, which previously
+  // never got shown because the trick was resolved and cleared in the same
+  // synchronous step that added the last card, with no broadcast in between.
+  // turnSeat is cleared to null (nobody's turn) so nobody can sneak in a
+  // play while the trick is just sitting there being admired/animated.
+  clearJokerActionTimer(room);
+  room.turnSeat = null;
+  room.actionDeadline = null;
+  broadcastJokerRoom(room);
+
+  room.trickResolveTimeoutHandle = setTimeout(() => jokerResolveCurrentTrick(room), JOKER_TRICK_PAUSE_MS);
+}
+
+function jokerResolveCurrentTrick(room) {
+  if (room.result || room.status !== "playing" || room.currentTrick.length !== 4) return;
+
   const winner = jokerResolveTrick(room.currentTrick, room.trumpSuit, room.ledSuit);
   room.tricksWon[winner.seat] += 1;
   room.trickLeader = winner.seat;
-  room.lastTrick = room.currentTrick; // kept briefly for the client's "trick just won" animation
   room.currentTrick = [];
   room.ledSuit = null;
 
@@ -6429,6 +6503,7 @@ function cleanupJokerRoom(roomId) {
   if (!room) return;
   clearJokerActionTimer(room);
   clearJokerHandEndTimer(room);
+  if (room.trickResolveTimeoutHandle) { clearTimeout(room.trickResolveTimeoutHandle); room.trickResolveTimeoutHandle = null; }
   for (const [, invite] of room.pendingInvites || []) clearTimeout(invite.timeoutHandle);
   for (const p of room.players) jokerRoomBySocket.delete(p.socketId);
   jokerRooms.delete(roomId);

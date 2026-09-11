@@ -270,6 +270,20 @@
       50%       { transform: scale(1.3); opacity: 0.7; }
     }
 
+    /* ── Unread badge on the Rooms / Forum nav buttons ── */
+    .nav-unread-dot {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      width: 12px;
+      height: 12px;
+      background: #f23f42;
+      border-radius: 50%;
+      border: 2px solid #1e1f22;
+      pointer-events: none;
+      animation: unreadPulse 1.4s ease-in-out infinite;
+    }
+
     /* ── Blocked section ── */
     .blocked-avatar {
       background: rgba(242,63,66,0.15) !important;
@@ -544,10 +558,10 @@
     <a href="/" class="btn-start-chat">🔎 შემთხვევითი ჩატის დაწყება</a>
 
     <!-- Rooms -->
-    <a href="/rooms.html" class="btn-start-chat" style="background:linear-gradient(135deg,#5865f2,#3b44c0);">🗨️ ოთახები</a>
+    <a href="/rooms.html" id="roomsNavBtn" class="btn-start-chat" style="background:linear-gradient(135deg,#5865f2,#3b44c0);position:relative;">🗨️ ოთახები &amp; დებატები</a>
 
     <!-- Forum -->
-    <a href="/forum.html" class="btn-start-chat" style="background:linear-gradient(135deg,#ff6b4a,#e0483a);margin-bottom:14px;">💬 ფორუმი</a>
+    <a href="/forum.html" id="forumNavBtn" class="btn-start-chat" style="background:linear-gradient(135deg,#ff6b4a,#e0483a);margin-bottom:14px;position:relative;">💬 ფორუმი</a>
 
     <div class="section-label" style="margin:0 0 10px;">🎮 თამაშები</div>
 
@@ -840,6 +854,7 @@
         renderPendingRequests(pendingRequests || []);
         paintUserBio();
         fetchUnreadFriends();
+        fetchRoomsAndForumUnread();
         socket.emit("users:listOnline");
         socket.emit("drawGuess:listPublicRooms");
         socket.emit("poker:listPublicRooms");
@@ -1078,6 +1093,33 @@
           markUnreadDot(lc);
         });
       } catch (_) { /* silent — non-critical */ }
+    }
+
+    /* ── Same idea, for the Rooms & Forum nav buttons ──────────────── */
+    async function fetchRoomsAndForumUnread() {
+      try {
+        const { token } = loadAuth();
+        if (!token) return;
+        const [roomsRes, forumRes] = await Promise.all([
+          fetch("/api/rooms/unread", { headers: { Authorization: `Bearer ${token}` } }),
+          fetch("/api/forum/unread", { headers: { Authorization: `Bearer ${token}` } }),
+        ]);
+        if (roomsRes.ok) {
+          const { unread } = await roomsRes.json();
+          if (unread) addNavUnreadDot("roomsNavBtn");
+        }
+        if (forumRes.ok) {
+          const { unread } = await forumRes.json();
+          if (unread) addNavUnreadDot("forumNavBtn");
+        }
+      } catch (_) { /* silent — non-critical */ }
+    }
+    function addNavUnreadDot(btnId) {
+      const btn = document.getElementById(btnId);
+      if (!btn || btn.querySelector(".nav-unread-dot")) return;
+      const dot = document.createElement("span");
+      dot.className = "nav-unread-dot";
+      btn.appendChild(dot);
     }
 
     /* ── Render friends list ─────────────────────────────────────── */
