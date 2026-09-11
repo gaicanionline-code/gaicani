@@ -376,6 +376,9 @@
     <header class="jk-header">
       <button id="lobbyBackBtn" class="jk-icon-btn" title="უკან">←</button>
       <div class="jk-header-title">მაგიდის ლობი (<span id="lobbyCount">0</span>/4)</div>
+      <button id="lobbyChatToggleBtn" class="jk-icon-btn" title="ჩატი" style="position:relative;">
+        💬<span id="lobbyChatUnreadDot" class="jk-chat-unread-dot"></span>
+      </button>
     </header>
     <div class="jk-lobby-body">
       <div id="lobbyPlayers"></div>
@@ -1068,6 +1071,9 @@
     $("bidModal").classList.remove("show");
     $("jokerModal").classList.remove("show");
     $("chatMessages").innerHTML = "";
+    $("chatUnreadDot").classList.remove("show");
+    $("lobbyChatUnreadDot").classList.remove("show");
+    chatHasUnread = false;
     closeChat();
     history.replaceState(null, "", "/joker.html");
     showScreen("setup");
@@ -1089,6 +1095,7 @@
     $("chatBackdrop").classList.add("show");
     chatHasUnread = false;
     $("chatUnreadDot").classList.remove("show");
+    $("lobbyChatUnreadDot").classList.remove("show");
     $("chatMessages").scrollTop = $("chatMessages").scrollHeight;
     setTimeout(() => $("chatInput").focus(), 150);
   }
@@ -1098,6 +1105,7 @@
     $("chatBackdrop").classList.remove("show");
   }
   $("chatToggleBtn").addEventListener("click", () => { chatOpen ? closeChat() : openChat(); });
+  $("lobbyChatToggleBtn").addEventListener("click", () => { chatOpen ? closeChat() : openChat(); });
   $("chatCloseBtn").addEventListener("click", closeChat);
   $("chatBackdrop").addEventListener("click", closeChat);
 
@@ -1117,6 +1125,7 @@
     if (!chatOpen && !isMine) {
       chatHasUnread = true;
       $("chatUnreadDot").classList.add("show");
+      $("lobbyChatUnreadDot").classList.add("show");
     }
   }
 
