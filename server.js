@@ -5331,6 +5331,52 @@ function checkersGameStatus(state) {
   return { status: "playing" };
 }
 
+// Auto-plays every move that is the ONLY legal option and is a capture —
+// a piece with no choice but to take. Loops across turn boundaries too: if
+// finishing one forced capture hands the turn to an opponent who is
+// themselves down to one forced capture, that gets played automatically as
+// well, cascading until either the game ends or someone actually has a
+// real decision to make. Always terminates — every iteration removes a
+// piece from the board, so it's bounded by the piece count.
+// Mutates room.state in place and appends each move to `movesPlayed`.
+// Returns the game status after the last move applied.
+function checkersAutoPlayForced(room, movesPlayed) {
+  let status = checkersGameStatus(room.state);
+  while (status.status !== "over") {
+    const legal = checkersLegalMoves(room.state);
+    if (legal.length !== 1 || legal[0].capture === null) break;
+    const move = legal[0];
+    room.state = checkersApplyMove(room.state, move);
+    movesPlayed.push({ from: move.from, to: move.to, capture: move.capture });
+    status = checkersGameStatus(room.state);
+  }
+  return status;
+}
+
+// Groups a flat move list into per-piece "segments" — a new segment starts
+// whenever the next move's "from" doesn't continue the previous move's
+// "to" (i.e. a different piece is now moving, only possible when a forced
+// sequence cascades across a turn boundary). The client animates each
+// segment as one continuous piece journey with its own trail.
+function checkersBuildLastMove(movesPlayed) {
+  const segments = [];
+  let current = null;
+  for (const m of movesPlayed) {
+    if (current && current.path[current.path.length - 1] === m.from) {
+      current.path.push(m.to);
+      if (m.capture !== null) current.captures.push(m.capture);
+    } else {
+      current = { path: [m.from, m.to], captures: m.capture !== null ? [m.capture] : [] };
+      segments.push(current);
+    }
+  }
+  return {
+    from: movesPlayed[0].from,
+    to: movesPlayed[movesPlayed.length - 1].to,
+    segments,
+  };
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // Georgian Joker ("ჯოკერი") — 4-player, 24-hand trick-taking engine.
 // 36-card deck (9 ranks × 4 suits minus the two black 6s, plus 2 Jokers),
@@ -8454,9 +8500,14 @@ io.on("connection", (socket) => {
     if (!match) { socket.emit("checkers:error", { message: "არალეგალური სვლა." }); return; }
 
     room.state = checkersApplyMove(room.state, match);
-    room.lastMove = { from: fromSq, to: toSq };
+    const movesPlayed = [{ from: fromSq, to: toSq, capture: match.capture }];
 
-    const status = checkersGameStatus(room.state);
+    // If this move (or the position it leads to, including possibly a new
+    // player's turn) is now fully forced, keep auto-playing — the human
+    // doesn't need to tap through moves they have no actual choice in.
+    const status = checkersAutoPlayForced(room, movesPlayed);
+    room.lastMove = checkersBuildLastMove(movesPlayed);
+
     if (status.status === "over") {
       checkersFinishGame(room, { status: "over", winner: status.winner, reason: status.reason });
       return;

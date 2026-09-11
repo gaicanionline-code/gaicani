@@ -125,7 +125,9 @@
       display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr);
       width: min(100%, 100%); aspect-ratio: 1 / 1; max-height: 100%; max-width: 100%;
       border-radius: 8px; overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,0.45); border: 3px solid #4a3a24;
+      position: relative;
     }
+    .dm-anim-layer { position: absolute; inset: 0; pointer-events: none; z-index: 25; overflow: visible; }
     .dm-sq { position: relative; display: flex; align-items: center; justify-content: center; user-select: none; -webkit-tap-highlight-color: transparent; cursor: pointer; }
     .dm-sq.light { background: var(--sq-light); cursor: default; }
     .dm-sq.dark { background: var(--sq-dark); }
@@ -140,6 +142,61 @@
     }
     .dm-piece.red   { background: radial-gradient(circle at 35% 30%, #e5605a, #a4211c); border: 2px solid #7a1512; }
     .dm-piece.black { background: radial-gradient(circle at 35% 30%, #55575e, #1c1d21); border: 2px solid #000; }
+
+    /* ── Move animation: flying piece, trail, capture fade, promotion ──── */
+    .dm-flying-piece {
+      position: absolute; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center; font-size: 1.1em;
+      box-shadow: 0 6px 14px rgba(0,0,0,0.55), inset 0 2px 3px rgba(255,255,255,0.25), inset 0 -3px 4px rgba(0,0,0,0.35);
+      transform: translate(-50%, -50%);
+      transition: left 0.38s cubic-bezier(0.3,0.1,0.2,1), top 0.38s cubic-bezier(0.3,0.1,0.2,1);
+      z-index: 3;
+    }
+    .dm-flying-piece.red   { background: radial-gradient(circle at 35% 30%, #e5605a, #a4211c); border: 2px solid #7a1512; }
+    .dm-flying-piece.black { background: radial-gradient(circle at 35% 30%, #55575e, #1c1d21); border: 2px solid #000; }
+
+    .dm-trail-dot {
+      position: absolute; border-radius: 50%;
+      transform: translate(-50%, -50%) scale(0.3);
+      opacity: 0;
+      animation: dmTrailDot 0.55s ease forwards;
+    }
+    .dm-trail-dot.red   { background: rgba(229, 96, 90, 0.75); box-shadow: 0 0 6px rgba(229,96,90,0.6); }
+    .dm-trail-dot.black { background: rgba(180, 182, 190, 0.55); box-shadow: 0 0 6px rgba(180,182,190,0.45); }
+    @keyframes dmTrailDot {
+      0%   { opacity: 0;   transform: translate(-50%, -50%) scale(0.2); }
+      25%  { opacity: 0.9; transform: translate(-50%, -50%) scale(1);   }
+      100% { opacity: 0;   transform: translate(-50%, -50%) scale(0.7); }
+    }
+
+    .dm-capture-victim {
+      animation: dmCaptureFade 0.32s ease forwards;
+    }
+    @keyframes dmCaptureFade {
+      0%   { opacity: 1; transform: scale(1); }
+      100% { opacity: 0; transform: scale(0.3) rotate(35deg); }
+    }
+
+    .dm-promote-flash {
+      position: absolute; border-radius: 50%;
+      background: radial-gradient(circle, rgba(242,201,76,0.9) 0%, rgba(242,201,76,0) 70%);
+      transform: translate(-50%, -50%) scale(0.2);
+      opacity: 0;
+      animation: dmPromoteFlash 0.6s ease-out forwards;
+    }
+    @keyframes dmPromoteFlash {
+      0%   { opacity: 0;   transform: translate(-50%, -50%) scale(0.2); }
+      35%  { opacity: 1;   transform: translate(-50%, -50%) scale(1.6); }
+      100% { opacity: 0;   transform: translate(-50%, -50%) scale(2.1); }
+    }
+    .dm-flying-piece.promoting {
+      animation: dmPromoteSpin 0.5s ease-in-out;
+    }
+    @keyframes dmPromoteSpin {
+      0%   { transform: translate(-50%, -50%) scale(1) rotate(0deg); }
+      50%  { transform: translate(-50%, -50%) scale(1.35) rotate(180deg); }
+      100% { transform: translate(-50%, -50%) scale(1) rotate(360deg); }
+    }
 
     /* ── "Me" panel captured pieces + coords not needed; reuse player bars ── */
 
@@ -521,6 +578,13 @@
       sqEl.className = "dm-sq";
       board.appendChild(sqEl);
     }
+    // 65th child, appended last — outside the 0-63 index range renderBoard()
+    // iterates, so it's never touched by the per-square render loop. Hosts
+    // the flying piece / trail dots / promotion flash during a move animation.
+    const animLayer = document.createElement("div");
+    animLayer.className = "dm-anim-layer";
+    animLayer.id = "dmAnimLayer";
+    board.appendChild(animLayer);
   }
   buildBoardSquares();
 
@@ -534,6 +598,145 @@
     }
     const file = col, rank = 7 - row;
     return rank * 8 + file;
+  }
+
+  // Inverse of the above — needed to find a square's actual on-screen cell
+  // for animation (piece position, trail dots), honoring the same board flip.
+  function squareToGridIndex(square) {
+    const file = square % 8, rank = Math.floor(square / 8);
+    if (myColor === "b") {
+      const col = 7 - file, row = rank;
+      return row * 8 + col;
+    }
+    const col = file, row = 7 - rank;
+    return row * 8 + col;
+  }
+
+  function squareCellEl(square) {
+    return $("board").children[squareToGridIndex(square)];
+  }
+
+  // Center of a square in pixels, relative to the board container — the
+  // frame every animated element (flying piece, trail dots) is positioned
+  // against. Works identically regardless of movement direction since it's
+  // purely derived from actual rendered cell positions, not board-relative
+  // assumptions like "forward is up".
+  function squareCenter(square) {
+    const boardEl = $("board");
+    const boardRect = boardEl.getBoundingClientRect();
+    const cellRect = squareCellEl(square).getBoundingClientRect();
+    return {
+      x: (cellRect.left - boardRect.left) + cellRect.width / 2,
+      y: (cellRect.top - boardRect.top) + cellRect.height / 2,
+      size: cellRect.width,
+    };
+  }
+
+  /* ── Move animation ──────────────────────────────────────────────
+     A piece visibly travels from its start square to its destination —
+     for every direction (forward, backward, diagonal — checkers moves are
+     always diagonal, but nothing here assumes which way is "forward"; it's
+     purely based on actual rendered cell positions). A capture chain
+     animates hop by hop with each captured piece fading out as the piece
+     passes over it, and a forced cascade (auto-played moves with no real
+     choice) animates every piece in the sequence, including across a turn
+     change to the opponent. Promotion gets its own flash the instant a
+     piece lands on the back row. */
+  let animationInProgress = false;
+  let lastAnimatedMoveKey = null;
+
+  function isKingChar(p) { return p === "R" || p === "B"; }
+
+  function spawnTrailDots(fromSq, toSq, colorClass, layer) {
+    const a = squareCenter(fromSq), b = squareCenter(toSq);
+    const dotCount = 5;
+    for (let i = 1; i <= dotCount; i++) {
+      const t = i / (dotCount + 1);
+      const dot = document.createElement("div");
+      dot.className = "dm-trail-dot " + colorClass;
+      const size = a.size * 0.16;
+      dot.style.width = dot.style.height = size + "px";
+      dot.style.left = (a.x + (b.x - a.x) * t) + "px";
+      dot.style.top = (a.y + (b.y - a.y) * t) + "px";
+      dot.style.animationDelay = (t * 220) + "ms";
+      layer.appendChild(dot);
+      setTimeout(() => dot.remove(), 900);
+    }
+  }
+
+  function animateSegment(segment, prevBoard, newBoard, layer) {
+    return new Promise(resolve => {
+      const path = segment.path;
+      const startSq = path[0];
+      const finalSq = path[path.length - 1];
+      const piece = prevBoard[startSq];
+      if (!piece) { resolve(); return; } // defensive — shouldn't happen with a well-formed segment
+      const colorClass = piece.toLowerCase() === "r" ? "red" : "black";
+      const wasKing = isKingChar(piece);
+      const becameKing = !wasKing && isKingChar(newBoard[finalSq]);
+
+      const startCell = squareCellEl(startSq);
+      const realStartPiece = startCell.querySelector(".dm-piece");
+      if (realStartPiece) realStartPiece.style.visibility = "hidden";
+
+      const flying = document.createElement("div");
+      flying.className = "dm-flying-piece " + colorClass;
+      const startCenter = squareCenter(startSq);
+      flying.style.width = flying.style.height = (startCenter.size * 0.78) + "px";
+      flying.style.left = startCenter.x + "px";
+      flying.style.top = startCenter.y + "px";
+      layer.appendChild(flying);
+      void flying.offsetWidth; // force the browser to commit the start position as a rendered frame — otherwise the very first hop's position change can get coalesced with the initial paint and the transition just gets skipped (piece "teleports" instead of animating)
+
+      let hopIdx = 0;
+      function nextHop() {
+        if (hopIdx >= path.length - 1) {
+          if (becameKing) {
+            flying.textContent = "👑";
+            flying.classList.add("promoting");
+            const flash = document.createElement("div");
+            flash.className = "dm-promote-flash";
+            const c = squareCenter(finalSq);
+            flash.style.width = flash.style.height = (c.size * 1.3) + "px";
+            flash.style.left = c.x + "px";
+            flash.style.top = c.y + "px";
+            layer.appendChild(flash);
+            setTimeout(resolve, 620);
+          } else {
+            setTimeout(resolve, 70);
+          }
+          return;
+        }
+        const fromSq = path[hopIdx], toSq = path[hopIdx + 1];
+        const toCenter = squareCenter(toSq);
+
+        spawnTrailDots(fromSq, toSq, colorClass, layer);
+
+        const capturedSq = segment.captures[hopIdx];
+        if (capturedSq !== undefined && capturedSq !== null) {
+          const victimEl = squareCellEl(capturedSq).querySelector(".dm-piece");
+          setTimeout(() => { if (victimEl) victimEl.classList.add("dm-capture-victim"); }, 170);
+        }
+
+        flying.style.left = toCenter.x + "px";
+        flying.style.top = toCenter.y + "px";
+
+        setTimeout(() => { hopIdx++; nextHop(); }, 400);
+      }
+      nextHop();
+    });
+  }
+
+  async function animateCheckersMove(lastMove, prevBoard, newBoard) {
+    if (!lastMove || !lastMove.segments || !lastMove.segments.length) return;
+    animationInProgress = true;
+    const layer = $("dmAnimLayer");
+    layer.innerHTML = "";
+    for (const segment of lastMove.segments) {
+      await animateSegment(segment, prevBoard, newBoard, layer);
+    }
+    layer.innerHTML = "";
+    animationInProgress = false;
   }
 
   function renderBoard(room) {
@@ -581,6 +784,7 @@
   }
 
   function onSquareClick(square, legalFrom) {
+    if (animationInProgress) return; // let the current move finish animating before accepting the next tap
     if (!latestRoom || latestRoom.status !== "playing" || latestRoom.result) return;
     if (myColor !== latestRoom.turn) { showToast("მოწინააღმდეგის სვლის რიგია"); return; }
     // Mid multi-jump: only the continuing piece may act.
@@ -612,6 +816,7 @@
   function clearTimerInterval() { if (timerInterval) { clearInterval(timerInterval); timerInterval = null; } }
 
   function renderGame(room) {
+    const prevRoom = latestRoom; // captured before it's overwritten below
     latestRoom = room;
     const me = room.players.find(p => p.username.toLowerCase() === myUsernameLower);
     const opp = room.players.find(p => p.username.toLowerCase() !== myUsernameLower);
@@ -643,7 +848,23 @@
       banner.classList.remove("mine");
     }
 
-    renderBoard(room);
+    // Animate the move if this is a genuinely new one we haven't shown yet
+    // (not the first render of the game, and there's a real previous board
+    // to animate from).
+    const newMoveKey = room.lastMove ? JSON.stringify(room.lastMove) : null;
+    const shouldAnimate = newMoveKey && newMoveKey !== lastAnimatedMoveKey && prevRoom && prevRoom.board && room.status === "playing";
+    lastAnimatedMoveKey = newMoveKey;
+
+    if (shouldAnimate) {
+      // Render immediately with the OLD board so the pieces about to move
+      // are still shown at their starting squares, then animate on top.
+      renderBoard({ ...room, board: prevRoom.board, legalMoves: [] });
+      animateCheckersMove(room.lastMove, prevRoom.board, room.board).then(() => {
+        renderBoard(room);
+      });
+    } else {
+      renderBoard(room);
+    }
 
     clearTimerInterval();
     if (room.moveDeadline && !room.result) {

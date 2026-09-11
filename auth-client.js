@@ -954,6 +954,72 @@
     if (btn) btn.click();
   });
 
+  // ── 🎨 ფონის შეცვლა — random-chat background picker ────────────────────
+  // A device-local preference (not per-partner — random-chat partners
+  // aren't a persistent identity the way friends are), same "only you see
+  // it" spirit as the private-chat background picker.
+  const RC_THEMES = [
+    { id: "default", label: "სტანდარტული", css: "#1c1e24" },
+    { id: "light",   label: "ღია", css: "linear-gradient(160deg, #f5f6fa 0%, #e4e7ef 100%)", light: true },
+    { id: "pink",    label: "ვარდისფერი", css: "linear-gradient(160deg, #3a1a2e 0%, #55243f 45%, #1a0f18 100%)" },
+    { id: "ocean",   label: "ოკეანე", css: "linear-gradient(160deg, #0d2b3a 0%, #123a4a 45%, #0a1620 100%)" },
+    { id: "sunset",  label: "მზის ჩასვლა", css: "linear-gradient(160deg, #3a2408 0%, #4a2a3a 50%, #1a1020 100%)" },
+  ];
+  function rcThemeStorageKey() { return "gaicani_random_chat_theme"; }
+  function rcLoadTheme() {
+    try { return localStorage.getItem(rcThemeStorageKey()) || "default"; } catch (_) { return "default"; }
+  }
+  function rcApplyTheme(themeId) {
+    const theme = RC_THEMES.find(t => t.id === themeId) || RC_THEMES[0];
+    const chat = $("chat");
+    if (!chat) return;
+    chat.classList.add("rc-bg-transition");
+    chat.style.background = theme.css;
+  }
+  function rcSaveTheme(themeId) {
+    try { localStorage.setItem(rcThemeStorageKey(), themeId); } catch (_) { /* private-mode storage may reject writes — theme just won't persist */ }
+  }
+  function rcRenderThemeGrid() {
+    const current = rcLoadTheme();
+    const grid = $("rcThemeGrid");
+    if (!grid) return;
+    grid.innerHTML = "";
+    RC_THEMES.forEach(theme => {
+      const swatch = document.createElement("div");
+      swatch.className = "rc-theme-swatch" + (theme.light ? " rc-light" : "") + (theme.id === current ? " selected" : "");
+      swatch.style.background = theme.css;
+      const label = document.createElement("div");
+      label.className = "rc-theme-swatch-label";
+      label.textContent = theme.label;
+      swatch.appendChild(label);
+      swatch.addEventListener("click", () => {
+        rcApplyTheme(theme.id);
+        rcSaveTheme(theme.id);
+        grid.querySelectorAll(".rc-theme-swatch").forEach(s => s.classList.remove("selected"));
+        swatch.classList.add("selected");
+        setTimeout(closeRcThemeSheet, 220);
+      });
+      grid.appendChild(swatch);
+    });
+  }
+  function openRcThemeSheet() {
+    rcRenderThemeGrid();
+    $("rcThemeSheet")?.classList.add("show");
+    $("rcThemeBackdrop")?.classList.add("show");
+  }
+  function closeRcThemeSheet() {
+    $("rcThemeSheet")?.classList.remove("show");
+    $("rcThemeBackdrop")?.classList.remove("show");
+  }
+  $("rcThemeBackdrop")?.addEventListener("click", closeRcThemeSheet);
+  rcApplyTheme(rcLoadTheme());
+
+  $("regMenuTheme")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeRegMenu();
+    openRcThemeSheet();
+  });
+
   // 🎮 Games
   $("regMenuGames")?.addEventListener("click", (e) => {
     // stopPropagation prevents the document-level outside-click listener in
