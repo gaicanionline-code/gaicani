@@ -8025,6 +8025,28 @@ io.on("connection", (socket) => {
     pokerAfterAction(room);
   });
 
+  socket.on("poker:chat", ({ roomId, text }) => {
+    if (!socket._regUser) return;
+    const room = pokerRooms.get(roomId);
+    if (!room) return;
+    const lc = socket._regUser.usernameLower;
+    const idx = room.players.findIndex(p => p.lc === lc);
+    if (idx === -1) return;
+
+    const clean = String(text || "").slice(0, 200).replace(/<[^>]*>/g, "").trim();
+    if (!clean) return;
+    if (mediaRateLimited(socket, "pokerChat", 8, 10_000)) {
+      socket.emit("poker:error", { message: "ძალიან ხშირად წერ — ცოტა დაელოდე." });
+      return;
+    }
+
+    const msg = { seatIndex: idx, username: room.players[idx].username, text: clean, ts: Date.now() };
+    for (const p of room.players) {
+      const s = io.sockets.sockets.get(p.socketId);
+      if (s) s.emit("poker:chatMessage", msg);
+    }
+  });
+
   socket.on("poker:leave", () => cleanupPokerForSocket(socket.id));
 
   // ══════════════════════════════════════════════════════════════════════
@@ -8220,6 +8242,28 @@ io.on("connection", (socket) => {
     chessFinishGame(room, { status: "resignation", winner: chessOpponent(player.color) });
   });
 
+  socket.on("chess:chat", ({ roomId, text }) => {
+    if (!socket._regUser) return;
+    const room = chessRooms.get(roomId);
+    if (!room) return;
+    const lc = socket._regUser.usernameLower;
+    const player = room.players.find(p => p.lc === lc);
+    if (!player) return;
+
+    const clean = String(text || "").slice(0, 200).replace(/<[^>]*>/g, "").trim();
+    if (!clean) return;
+    if (mediaRateLimited(socket, "chessChat", 8, 10_000)) {
+      socket.emit("chess:error", { message: "ძალიან ხშირად წერ — ცოტა დაელოდე." });
+      return;
+    }
+
+    const msg = { username: player.username, text: clean, ts: Date.now() };
+    for (const p of room.players) {
+      const s = io.sockets.sockets.get(p.socketId);
+      if (s) s.emit("chess:chatMessage", msg);
+    }
+  });
+
   socket.on("chess:leave", () => cleanupChessForSocket(socket.id));
 
   // ══════════════════════════════════════════════════════════════════════
@@ -8411,6 +8455,28 @@ io.on("connection", (socket) => {
     const player = room.players.find(p => p.lc === lc);
     if (!player || !player.color) return;
     checkersFinishGame(room, { status: "resignation", winner: checkersOpponent(player.color) });
+  });
+
+  socket.on("checkers:chat", ({ roomId, text }) => {
+    if (!socket._regUser) return;
+    const room = checkersRooms.get(roomId);
+    if (!room) return;
+    const lc = socket._regUser.usernameLower;
+    const player = room.players.find(p => p.lc === lc);
+    if (!player) return;
+
+    const clean = String(text || "").slice(0, 200).replace(/<[^>]*>/g, "").trim();
+    if (!clean) return;
+    if (mediaRateLimited(socket, "checkersChat", 8, 10_000)) {
+      socket.emit("checkers:error", { message: "ძალიან ხშირად წერ — ცოტა დაელოდე." });
+      return;
+    }
+
+    const msg = { username: player.username, text: clean, ts: Date.now() };
+    for (const p of room.players) {
+      const s = io.sockets.sockets.get(p.socketId);
+      if (s) s.emit("checkers:chatMessage", msg);
+    }
   });
 
   socket.on("checkers:leave", () => cleanupCheckersForSocket(socket.id));
@@ -8860,6 +8926,28 @@ io.on("connection", (socket) => {
 
     const correct = imposterNormalizeWord(guess) === imposterNormalizeWord(room.majorityWord);
     imposterFinishGame(room, { imposterCaught: true, imposterGuessedRight: correct });
+  });
+
+  socket.on("imposter:chat", ({ roomId, text }) => {
+    if (!socket._regUser) return;
+    const room = imposterRooms.get(roomId);
+    if (!room) return;
+    const lc = socket._regUser.usernameLower;
+    const player = room.players.find(p => p.lc === lc);
+    if (!player) return;
+
+    const clean = String(text || "").slice(0, 200).replace(/<[^>]*>/g, "").trim();
+    if (!clean) return;
+    if (mediaRateLimited(socket, "imposterChat", 8, 10_000)) {
+      socket.emit("imposter:error", { message: "ძალიან ხშირად წერ — ცოტა დაელოდე." });
+      return;
+    }
+
+    const msg = { username: player.username, text: clean, ts: Date.now() };
+    for (const p of room.players) {
+      const s = io.sockets.sockets.get(p.socketId);
+      if (s) s.emit("imposter:chatMessage", msg);
+    }
   });
 
   socket.on("imposter:leave", () => cleanupImposterForSocket(socket.id));

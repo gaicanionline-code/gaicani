@@ -107,7 +107,8 @@
     .cs-lobby-hint { text-align: center; color: var(--muted); font-size: 0.8em; padding: 6px 0; }
 
     /* ── Game screen ─────────────────────────────────────────────── */
-    .cs-game-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; padding: 8px 10px; gap: 6px; }
+    .cs-game-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; padding: 8px 10px; gap: 6px; position: relative; }
+    .cs-bubble-layer { position: absolute; inset: 0; pointer-events: none; z-index: 30; }
     .cs-player-bar { display: flex; align-items: center; gap: 8px; padding: 6px 4px; }
     .cs-player-avatar-wrap { position: relative; flex-shrink: 0; }
     .cs-player-avatar { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border); display: block; }
@@ -184,6 +185,59 @@
     }
     #csToast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+    /* ── Chat: header button, unread dot, slide-up panel ─────────────── */
+    .cs-chat-unread-dot {
+      display: none; position: absolute; top: 3px; right: 3px; width: 9px; height: 9px;
+      border-radius: 50%; background: var(--danger); border: 2px solid var(--surface);
+    }
+    .cs-chat-unread-dot.show { display: block; }
+
+    .cs-chat-backdrop {
+      position: fixed; inset: 0; z-index: 560; background: rgba(0,0,0,0.4);
+      opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+    }
+    .cs-chat-backdrop.show { opacity: 1; pointer-events: auto; }
+    .cs-chat-panel {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 561;
+      background: var(--surface); border-radius: 16px 16px 0 0; border-top: 1px solid var(--border);
+      max-width: 460px; margin: 0 auto; height: 52vh; max-height: 460px;
+      display: flex; flex-direction: column;
+      transform: translateY(105%); transition: transform 0.25s cubic-bezier(0.32,0.72,0,1);
+    }
+    .cs-chat-panel.show { transform: translateY(0); }
+    .cs-chat-panel-header {
+      display: flex; align-items: center; justify-content: space-between; padding: 12px 16px;
+      font-weight: 700; border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .cs-chat-panel-header button { background: rgba(255,255,255,0.08); border: none; color: var(--muted); width: 28px; height: 28px; border-radius: 50%; cursor: pointer; }
+    .cs-chat-messages { flex: 1; overflow-y: auto; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+    .cs-chat-msg { max-width: 78%; padding: 7px 11px; border-radius: 12px; font-size: 0.85em; line-height: 1.4; }
+    .cs-chat-msg.other { align-self: flex-start; background: var(--surface-2); border-bottom-left-radius: 4px; }
+    .cs-chat-msg.mine { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+    .cs-chat-msg .cs-chat-author { font-size: 0.76em; font-weight: 700; color: var(--accent-lt); margin-bottom: 2px; }
+    .cs-chat-msg.mine .cs-chat-author { display: none; }
+    .cs-chat-input-row { display: flex; gap: 8px; padding: 10px 14px calc(10px + var(--safe-bottom)); border-top: 1px solid var(--border); flex-shrink: 0; }
+    #csChatInput { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; color: var(--text); font-size: 16px; padding: 9px 14px; }
+    #csChatInput:focus { outline: none; border-color: rgba(88,101,242,0.5); }
+    #csChatSendBtn { flex-shrink: 0; width: 38px; height: 38px; border-radius: 50%; border: none; background: var(--accent); color: #fff; font-size: 1em; cursor: pointer; }
+
+    @keyframes csBubbleInOut {
+      0%   { opacity: 0; transform: translate(-50%, 6px) scale(0.8); }
+      10%  { opacity: 1; transform: translate(-50%, 0) scale(1); }
+      85%  { opacity: 1; transform: translate(-50%, 0) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -8px) scale(0.95); }
+    }
+    .cs-speech-bubble {
+      position: absolute; max-width: 150px; background: #fff; color: #1a1a1a;
+      border-radius: 12px; padding: 6px 10px; font-size: 0.76em; font-weight: 600; line-height: 1.3;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.35); text-align: center; z-index: 30;
+      opacity: 0; animation: csBubbleInOut 3.6s ease forwards; pointer-events: none;
+    }
+    .cs-speech-bubble::after {
+      content: ""; position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%);
+      border-width: 6px 6px 0; border-style: solid; border-color: #fff transparent transparent;
+    }
+
     @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
   </style>
 </head>
@@ -221,6 +275,9 @@
     <header class="cs-header">
       <button id="lobbyBackBtn" class="cs-icon-btn" title="უკან">←</button>
       <div class="cs-header-title">თამაშის ლობი</div>
+      <button id="lobbyChatToggleBtn" class="cs-icon-btn" title="ჩატი" style="position:relative;">
+        💬<span id="lobbyChatUnreadDot" class="cs-chat-unread-dot"></span>
+      </button>
     </header>
     <div class="cs-lobby-body">
       <div id="lobbyPlayers"></div>
@@ -237,6 +294,9 @@
     <header class="cs-header">
       <button id="gameBackBtn" class="cs-icon-btn" title="უკან">←</button>
       <div class="cs-header-title" id="gameStatusLabel">ჭადრაკი</div>
+      <button id="chatToggleBtn" class="cs-icon-btn" title="ჩატი" style="position:relative;">
+        💬<span id="chatUnreadDot" class="cs-chat-unread-dot"></span>
+      </button>
     </header>
     <div class="cs-game-body">
       <div class="cs-player-bar" id="oppBar">
@@ -263,6 +323,7 @@
         <button id="resignBtn" class="cs-resign-btn">🏳️ ჩაბარება</button>
         <button id="leaveGameBtn" class="cs-leave-game-btn">გასვლა</button>
       </div>
+      <div class="cs-bubble-layer" id="bubbleLayer"></div>
     </div>
   </div>
 
@@ -284,6 +345,20 @@
     <div class="cs-result-actions">
       <button class="cs-result-back" id="resultBackBtn">სიაში დაბრუნება</button>
     </div>
+  </div>
+</div>
+
+<!-- Chat panel — slides up from the bottom, works in both lobby and game -->
+<div id="chatBackdrop" class="cs-chat-backdrop"></div>
+<div id="chatPanel" class="cs-chat-panel">
+  <div class="cs-chat-panel-header">
+    <div>ჩატი</div>
+    <button id="chatCloseBtn">✕</button>
+  </div>
+  <div id="chatMessages" class="cs-chat-messages"></div>
+  <div class="cs-chat-input-row">
+    <input type="text" id="csChatInput" maxlength="200" placeholder="დაწერე რამე..." />
+    <button id="csChatSendBtn">➤</button>
   </div>
 </div>
 
@@ -659,12 +734,91 @@
   }
 
   /* ── Navigation ──────────────────────────────────────────────── */
+  /* ── Chat: panel open/close, sending, unread badge, speech bubbles ──── */
+  let chatOpen = false;
+  let chatHasUnread = false;
+
+  function openChat() {
+    chatOpen = true;
+    $("chatPanel").classList.add("show");
+    $("chatBackdrop").classList.add("show");
+    chatHasUnread = false;
+    $("chatUnreadDot").classList.remove("show");
+    $("lobbyChatUnreadDot").classList.remove("show");
+    $("chatMessages").scrollTop = $("chatMessages").scrollHeight;
+    setTimeout(() => $("csChatInput").focus(), 150);
+  }
+  function closeChat() {
+    chatOpen = false;
+    $("chatPanel").classList.remove("show");
+    $("chatBackdrop").classList.remove("show");
+  }
+  $("chatToggleBtn").addEventListener("click", () => { chatOpen ? closeChat() : openChat(); });
+  $("lobbyChatToggleBtn").addEventListener("click", () => { chatOpen ? closeChat() : openChat(); });
+  $("chatCloseBtn").addEventListener("click", closeChat);
+  $("chatBackdrop").addEventListener("click", closeChat);
+
+  function appendChatMessage(msg) {
+    const isMine = msg.username.toLowerCase() === myUsernameLower;
+    const row = document.createElement("div");
+    row.className = "cs-chat-msg " + (isMine ? "mine" : "other");
+    const author = document.createElement("div");
+    author.className = "cs-chat-author";
+    author.textContent = msg.username;
+    const body = document.createElement("div");
+    body.textContent = msg.text;
+    row.appendChild(author); row.appendChild(body);
+    $("chatMessages").appendChild(row);
+    $("chatMessages").scrollTop = $("chatMessages").scrollHeight;
+
+    if (!chatOpen && !isMine) {
+      chatHasUnread = true;
+      $("chatUnreadDot").classList.add("show");
+      $("lobbyChatUnreadDot").classList.add("show");
+    }
+  }
+
+  function spawnSpeechBubble(msg) {
+    if (!screens.game.classList.contains("visible")) return; // only the game screen has avatars positioned to anchor to
+    const isMine = msg.username.toLowerCase() === myUsernameLower;
+    const anchorEl = isMine ? $("meAvatar") : $("oppAvatar");
+    if (!anchorEl) return;
+    const bodyEl = $("gameScreen").querySelector(".cs-game-body");
+    const bodyRect = bodyEl.getBoundingClientRect();
+    const anchorRect = anchorEl.getBoundingClientRect();
+
+    const bubble = document.createElement("div");
+    bubble.className = "cs-speech-bubble";
+    bubble.textContent = msg.text;
+    const left = (anchorRect.left + anchorRect.width / 2) - bodyRect.left;
+    const top = (anchorRect.top - bodyRect.top) + anchorRect.height + 8;
+    bubble.style.left = left + "px";
+    bubble.style.top = top + "px";
+    bubble.style.transform = "translate(-50%, 0)";
+    $("bubbleLayer").appendChild(bubble);
+    setTimeout(() => bubble.remove(), 3700);
+  }
+
+  function sendChat() {
+    const val = $("csChatInput").value.trim();
+    if (!val || !currentRoomId) return;
+    socket.emit("chess:chat", { roomId: currentRoomId, text: val });
+    $("csChatInput").value = "";
+  }
+  $("csChatSendBtn").addEventListener("click", sendChat);
+  $("csChatInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendChat(); });
+
   function backToSetup() {
     currentRoomId = null;
     latestRoom = null;
     selectedSquare = null;
     clearTimerInterval();
     $("resultOverlay").classList.remove("show"); // it's a fixed full-screen overlay — must be dismissed explicitly, or it just sits on top of the setup screen looking like nothing happened
+    $("chatMessages").innerHTML = "";
+    $("chatUnreadDot").classList.remove("show");
+    $("lobbyChatUnreadDot").classList.remove("show");
+    chatHasUnread = false;
+    closeChat();
     history.replaceState(null, "", "/chess.html");
     showScreen("setup");
     socket.emit("chess:listPublicRooms");
@@ -738,6 +892,11 @@
     });
 
     socket.on("chess:error", ({ message }) => showToast(message));
+
+    socket.on("chess:chatMessage", (msg) => {
+      appendChatMessage(msg);
+      spawnSpeechBubble(msg);
+    });
 
     init._ready = true;
   }
