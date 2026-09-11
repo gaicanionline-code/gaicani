@@ -1269,6 +1269,11 @@
       showToast("💸 დაასრულე მონეტები ამ მაგიდაზე — თუ სულ გამოილია, ავტომატურად აღდგება 24 საათში.");
     });
 
+    socket.on("poker:kickedForDisconnect", () => {
+      showToast("კავშირი გაწყდა და მაგიდიდან მოგცილეს — ხელახლა შემოუერთდი, თუ გინდა თამაშის გაგრძელება.");
+      backToSetup();
+    });
+
     socket.on("poker:error", ({ message }) => showToast(message));
 
     socket.on("poker:chatMessage", (msg) => {

@@ -5751,14 +5751,19 @@ function pokerFinishHand(room, result) {
 
   // Busted players (stack hit exactly 0) lose their seat — they'll need to
   // rejoin (picking up any daily coin regen in the process) to play again.
-  const busted = room.players.filter(p => p.stack <= 0);
-  for (const p of busted) {
+  // Disconnected players are removed here too — coins are already synced
+  // above so they lose nothing, they'll just need to rejoin to keep
+  // playing. This happens at the safe between-hands boundary rather than
+  // mid-hand, since removing someone mid-hand would shift every other
+  // seat index and corrupt the current betting/side-pot math.
+  const leaving = room.players.filter(p => p.stack <= 0 || !p.connected);
+  for (const p of leaving) {
     const s = io.sockets.sockets.get(p.socketId);
-    if (s) s.emit("poker:bustedOut", { roomId: room.id });
+    if (s) s.emit(p.stack <= 0 ? "poker:bustedOut" : "poker:kickedForDisconnect", { roomId: room.id });
     pokerRoomBySocket.delete(p.socketId);
     s?.leave(`pokerroom:${room.id}`);
   }
-  room.players = room.players.filter(p => p.stack > 0);
+  room.players = room.players.filter(p => p.stack > 0 && p.connected);
   broadcastPublicPokerRooms();
 
   if (room.players.length < POKER_MIN_PLAYERS) {
