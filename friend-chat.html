@@ -1413,11 +1413,20 @@
     } catch (_) { return "❤️"; }
   }
   let quickReactionEmoji = loadQuickReactionEmoji();
+  // The compose-bar button's icon always matches what it will actually
+  // send/react with — so picking 😂 as your quick reaction means the button
+  // itself shows 😂, not a heart that doesn't match its own behavior.
+  function updateHeartButtonIcon() {
+    const btn = $("fc-heart-send");
+    if (btn) btn.textContent = quickReactionEmoji;
+  }
   function setQuickReactionEmoji(emoji) {
     if (!QUICK_REACTION_OPTIONS.includes(emoji)) return;
     quickReactionEmoji = emoji;
+    updateHeartButtonIcon();
     try { localStorage.setItem(quickReactionStorageKey(), emoji); } catch (_) { /* private-mode storage may reject writes — just won't persist across sessions */ }
   }
+  updateHeartButtonIcon(); // reflect a previously-saved preference immediately on load, not just after changing it
 
   /* Instagram-style double-tap-to-react. Reuses the same reaction pipeline
      as the picker button — this is just a faster gesture for whichever
@@ -1857,7 +1866,7 @@
   }
   $("fc-heart-send").addEventListener("click", () => {
     if (!socket?.connected) return;
-    elInput.value = "❤️";
+    elInput.value = quickReactionEmoji;
     sendMessage({ focusAfter: false });
     updateFCSendButtonMode();
     elInput.blur(); // belt-and-suspenders — makes sure the keyboard can't be up from some other stray focus either
