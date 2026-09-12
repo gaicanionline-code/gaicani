@@ -5312,11 +5312,36 @@ function checkersForwardDirsFor(piece) {
   return checkersPieceColor(piece) === CHECKERS_RED ? [[1, 1], [-1, 1]] : [[1, -1], [-1, -1]];
 }
 
+// Kings fly — any number of empty squares along a diagonal, same as
+// international/Russian draughts (not the American "one square only" rule).
+// Regular men are unchanged: exactly one square, forward diagonals only.
 function checkersCaptureMovesFrom(board, from) {
   const piece = board[from];
   if (!piece) return [];
   const f = checkersFileOf(from), r = checkersRankOf(from);
   const moves = [];
+
+  if (checkersIsKing(piece)) {
+    for (const [df, dr] of CHECKERS_DIRS_ALL) {
+      // Walk outward over empty squares looking for the first piece in
+      // this direction.
+      let nf = f + df, nr = r + dr;
+      while (checkersInBounds(nf, nr) && !board[checkersSq(nf, nr)]) { nf += df; nr += dr; }
+      if (!checkersInBounds(nf, nr)) continue; // ran off the board — nothing to capture this way
+      const midSq = checkersSq(nf, nr);
+      const midPiece = board[midSq];
+      if (checkersPieceColor(midPiece) === checkersPieceColor(piece)) continue; // blocked by your own piece
+      // Found one enemy piece — every empty square immediately past it
+      // (until the next piece or the edge) is a legal landing square.
+      let lf = nf + df, lr = nr + dr;
+      while (checkersInBounds(lf, lr) && !board[checkersSq(lf, lr)]) {
+        moves.push({ from, to: checkersSq(lf, lr), capture: midSq, piece });
+        lf += df; lr += dr;
+      }
+    }
+    return moves;
+  }
+
   for (const [df, dr] of checkersForwardDirsFor(piece)) {
     const midF = f + df, midR = r + dr;
     const landF = f + 2 * df, landR = r + 2 * dr;
@@ -5335,6 +5360,20 @@ function checkersSimpleMovesFrom(board, from) {
   if (!piece) return [];
   const f = checkersFileOf(from), r = checkersRankOf(from);
   const moves = [];
+
+  if (checkersIsKing(piece)) {
+    for (const [df, dr] of CHECKERS_DIRS_ALL) {
+      let nf = f + df, nr = r + dr;
+      while (checkersInBounds(nf, nr)) {
+        const t = checkersSq(nf, nr);
+        if (board[t]) break; // blocked — can't land on or pass through an occupied square
+        moves.push({ from, to: t, capture: null, piece });
+        nf += df; nr += dr;
+      }
+    }
+    return moves;
+  }
+
   for (const [df, dr] of checkersForwardDirsFor(piece)) {
     const nf = f + df, nr = r + dr;
     if (!checkersInBounds(nf, nr)) continue;

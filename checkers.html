@@ -718,7 +718,12 @@
 
   function spawnTrailDots(fromSq, toSq, colorClass, layer) {
     const a = squareCenter(fromSq), b = squareCenter(toSq);
-    const dotCount = 5;
+    // A flying king can travel several squares in one move — scale the
+    // trail density to the actual distance so a long hop doesn't look
+    // sparser than a short one (diagonal moves always have equal file/rank
+    // distance, so this is just the number of squares crossed).
+    const boardDistance = Math.abs((fromSq % 8) - (toSq % 8)) || 1;
+    const dotCount = Math.min(14, Math.max(5, boardDistance * 2));
     for (let i = 1; i <= dotCount; i++) {
       const t = i / (dotCount + 1);
       const dot = document.createElement("div");
@@ -779,18 +784,26 @@
         const fromSq = path[hopIdx], toSq = path[hopIdx + 1];
         const toCenter = squareCenter(toSq);
 
+        // A flying king can cover several squares in a single hop — scale
+        // how long the glide takes to the actual distance, so a long flight
+        // doesn't look like it's rushing to keep the same pace as a
+        // one-square step. Overrides the CSS's default transition-duration.
+        const hopDistance = Math.abs((fromSq % 8) - (toSq % 8)) || 1;
+        const hopDurationMs = Math.min(900, Math.max(380, hopDistance * 130));
+        flying.style.transitionDuration = hopDurationMs + "ms";
+
         spawnTrailDots(fromSq, toSq, colorClass, layer);
 
         const capturedSq = segment.captures[hopIdx];
         if (capturedSq !== undefined && capturedSq !== null) {
           const victimEl = squareCellEl(capturedSq).querySelector(".dm-piece");
-          setTimeout(() => { if (victimEl) victimEl.classList.add("dm-capture-victim"); }, 170);
+          setTimeout(() => { if (victimEl) victimEl.classList.add("dm-capture-victim"); }, hopDurationMs * 0.45);
         }
 
         flying.style.left = toCenter.x + "px";
         flying.style.top = toCenter.y + "px";
 
-        setTimeout(() => { hopIdx++; nextHop(); }, 400);
+        setTimeout(() => { hopIdx++; nextHop(); }, hopDurationMs + 20);
       }
       nextHop();
     });
