@@ -291,6 +291,7 @@ const ROUTE = {
   blockedUAs:   "/h6rm1qf4wt7", // JSON: list currently-blocked user-agents
   blockUA:      "/w9hq3yd6mp0", // POST: block a user-agent (kicks matching live sockets)
   unblockUA:    "/j2vc5ns8ek3", // POST: remove a user-agent block
+  regUsers:     "/y5tm2bk9lz3", // JSON: every REGISTERED username + their last-used IP (not just who's online now)
 };
 
 // ── Sensitive-URL visitor log ─────────────────────────────────────────────────
@@ -1479,6 +1480,26 @@ app.get(ROUTE.users, ownerOnly, (req, res) => {
   res.json({ count: users.length, users });
 });
 
+// GET <regUsers route> — every REGISTERED account (not just who's online
+// right now) with the IP they most recently logged in from, so a problem
+// account can be IP-banned directly from here even while they're offline.
+app.get(ROUTE.regUsers, ownerOnly, (req, res) => {
+  const rows = [];
+  for (const [, u] of registeredUsers) {
+    rows.push({
+      username: u.username,
+      lastIP: u.lastIP || null,
+      lastIPAt: u.lastIPAt || null,
+      isAdmin: !!u.isAdmin,
+      isBanned: u.lastIP ? bannedIPs.has(u.lastIP) : false,
+    });
+  }
+  // Most-recently-seen first — the accounts an admin is most likely to be
+  // looking into are the ones who were just active.
+  rows.sort((a, b) => (b.lastIPAt || 0) - (a.lastIPAt || 0));
+  res.json({ count: rows.length, users: rows });
+});
+
 // POST <ban route>?ip=1.2.3.4  — ban an IP and kick all matching sockets
 app.post(ROUTE.ban, ownerOnly, (req, res) => {
   const ip = (req.query.ip || "").trim();
@@ -1687,6 +1708,11 @@ tr:hover td{background:rgba(255,255,255,.03)}
 </div>
 
 <div class="section">
+  <h2>👤 All Registered Accounts (last-used IP)</h2>
+  <div id="regUsers">Loading...</div>
+</div>
+
+<div class="section">
   <h2>🚩 All Reports (every IP with 1+ reports — 5 still auto-bans for 24h)</h2>
   <div id="reported">Loading...</div>
 </div>
@@ -1832,6 +1858,33 @@ async function loadAll() {
         </tr>\`).join("") + "</table>";
     }
   } catch(e) { document.getElementById("users").textContent = "Error"; }
+
+  try {
+    const d = await api("GET", R.regUsers);
+    const el = document.getElementById("regUsers");
+    if (!d.users || !d.users.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No registered accounts yet</p>'; }
+    else {
+      el.innerHTML = '<table><tr><th>Username</th><th>Last IP</th><th>Last seen</th><th>Status</th><th></th></tr>' +
+        d.users.map(u => {
+          const lastSeen = u.lastIPAt ? new Date(u.lastIPAt).toLocaleString() : "never logged in";
+          const statusHtml = u.isBanned
+            ? '<span class="badge" style="background:rgba(242,63,66,.2);color:#f23f42">🔒 IP banned</span>'
+            : (u.isAdmin ? '<span class="badge green">admin</span>' : '');
+          const actionHtml = u.lastIP
+            ? (u.isBanned
+                ? \`<button class="unban-btn" onclick="unbanIP('\${esc(u.lastIP)}')">✅ Unban</button>\`
+                : \`<button class="ban-btn" onclick="banIP('\${esc(u.lastIP)}')">🚫 Ban this IP</button>\`)
+            : '<span class="hint">no IP on file</span>';
+          return \`<tr>
+            <td><span class="ip">\${esc(u.username)}</span></td>
+            <td style="font-family:monospace;color:#b5bac1">\${esc(u.lastIP || "—")}</td>
+            <td style="color:#b5bac1;font-size:.85em">\${esc(lastSeen)}</td>
+            <td>\${statusHtml}</td>
+            <td style="white-space:nowrap">\${actionHtml}</td>
+          </tr>\`;
+        }).join("") + "</table>";
+    }
+  } catch(e) { document.getElementById("regUsers").textContent = "Error"; }
 
   try {
     const d = await api("GET", R.reported);
@@ -7618,6 +7671,12 @@ io.on("connection", (socket) => {
     if (!user) return;
     socket._regUser = { usernameLower: entry.usernameLower, username: user.username };
     socket.userName = user.username;
+    // Track the IP this account was last seen using — powers the admin
+    // panel's "all registered users" list, so a problem account can be
+    // IP-banned directly, not just kicked by socket.
+    user.lastIP = socket.clientIP || "unknown";
+    user.lastIPAt = Date.now();
+    authUsersDirty = true; scheduleSave();
     if (!onlineRegSockets.has(entry.usernameLower)) onlineRegSockets.set(entry.usernameLower, new Set());
     onlineRegSockets.get(entry.usernameLower).add(socket.id);
     socket.join(`user:${entry.usernameLower}`);
