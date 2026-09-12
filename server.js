@@ -5367,7 +5367,10 @@ function checkersForwardDirsFor(piece) {
 
 // Kings fly — any number of empty squares along a diagonal, same as
 // international/Russian draughts (not the American "one square only" rule).
-// Regular men are unchanged: exactly one square, forward diagonals only.
+// Regular men can still only MOVE one square forward (see
+// checkersSimpleMovesFrom), but can CAPTURE one square in any of the 4
+// diagonal directions, including backward — also standard international
+// draughts rules, not the American restriction to forward-only captures.
 function checkersCaptureMovesFrom(board, from) {
   const piece = board[from];
   if (!piece) return [];
@@ -5395,7 +5398,11 @@ function checkersCaptureMovesFrom(board, from) {
     return moves;
   }
 
-  for (const [df, dr] of checkersForwardDirsFor(piece)) {
+  // Regular men still only MOVE forward (see checkersSimpleMovesFrom below),
+  // but — standard international/Russian draughts rule — they CAN capture
+  // in any of the 4 diagonal directions, including backward. Only their
+  // non-capturing moves stay forward-restricted.
+  for (const [df, dr] of CHECKERS_DIRS_ALL) {
     const midF = f + df, midR = r + dr;
     const landF = f + 2 * df, landR = r + 2 * dr;
     if (!checkersInBounds(landF, landR)) continue;
