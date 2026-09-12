@@ -36,7 +36,9 @@
       background: radial-gradient(circle at 50% 0%, #22232c 0%, #17181d 55%);
       color: var(--text); font-family: "Segoe UI", Arial, sans-serif;
       overflow: hidden; -webkit-text-size-adjust: 100%;
+      overscroll-behavior: contain;
     }
+    button, a, [role="button"] { touch-action: manipulation; }
     #app { display: flex; flex-direction: column; height: 100%; height: 100dvh; height: var(--app-height, 100dvh); }
 
     .pk-loading, .pk-center-screen {
@@ -222,6 +224,7 @@
       padding: 4px 10px; border-radius: 14px; white-space: nowrap;
       transition: transform 0.5s cubic-bezier(0.4,0,0.2,1), opacity 0.5s ease 0.15s;
       box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+      will-change: transform, opacity;
     }
     .pk-flying-pot {
       position: fixed; z-index: 700; pointer-events: none;
@@ -230,6 +233,7 @@
       padding: 7px 18px; border-radius: 22px; white-space: nowrap;
       transition: transform 0.65s cubic-bezier(0.4,0,0.2,1), opacity 0.65s ease 0.25s;
       box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+      will-change: transform, opacity;
     }
 
     .pk-card {

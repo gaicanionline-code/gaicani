@@ -37,7 +37,9 @@
       background: radial-gradient(circle at 50% 0%, #22232c 0%, #17181d 55%);
       color: var(--text); font-family: "Segoe UI", Arial, sans-serif;
       overflow: hidden; -webkit-text-size-adjust: 100%;
+      overscroll-behavior: contain;
     }
+    button, a, [role="button"] { touch-action: manipulation; }
     #app { display: flex; flex-direction: column; height: 100%; height: 100dvh; height: var(--app-height, 100dvh); }
 
     .dm-loading, .dm-center-screen {
@@ -183,6 +185,7 @@
       box-shadow: 0 6px 14px rgba(0,0,0,0.55), inset 0 2px 3px rgba(255,255,255,0.25), inset 0 -3px 4px rgba(0,0,0,0.35);
       transform: translate(-50%, -50%);
       transition: left 0.38s cubic-bezier(0.3,0.1,0.2,1), top 0.38s cubic-bezier(0.3,0.1,0.2,1);
+      will-change: left, top;
       z-index: 3;
     }
     .dm-flying-piece.red   { background: radial-gradient(circle at 35% 30%, #e5605a, #a4211c); border: 2px solid #7a1512; }
