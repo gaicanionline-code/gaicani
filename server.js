@@ -3595,7 +3595,24 @@ function cleanRoomName(raw) {
   return String(raw || "").slice(0, ROOM_NAME_MAX).replace(/<[^>]*>/g, "").trim();
 }
 
+// "Unread" for one specific room: newer than whichever is more specific —
+// this room's own per-room lastRead if the user has ever opened THIS room,
+// otherwise their general lastRoomsVisitAt (a one-time rollout baseline so
+// existing content doesn't all show as unread the moment this shipped).
+function roomUnreadFor(room, user, myLc) {
+  if (!myLc || room.bannedUsers.includes(myLc)) return false;
+  const lastRead = (room.lastRead && room.lastRead[myLc]) || (user && user.lastRoomsVisitAt) || 0;
+  return room.messages.some(m => m.fromLc !== myLc && new Date(m.ts).getTime() > lastRead);
+}
+function postUnreadFor(post, user, myLc) {
+  if (!myLc) return false;
+  const lastRead = (post.lastRead && post.lastRead[myLc]) || (user && user.lastForumVisitAt) || 0;
+  if (post.authorLc !== myLc && new Date(post.createdAt).getTime() > lastRead) return true;
+  return post.comments.some(c => c.authorLc !== myLc && new Date(c.createdAt).getTime() > lastRead);
+}
+
 function roomPublicSummary(room, forLc) {
+  const forUser = forLc ? registeredUsers.get(forLc) : null;
   return {
     id: room.id,
     name: room.name,
@@ -3605,6 +3622,7 @@ function roomPublicSummary(room, forLc) {
     isMember: forLc ? room.members.includes(forLc) : false,
     isBanned: forLc ? room.bannedUsers.includes(forLc) : false,
     lastMessageAt: room.messages.length ? room.messages[room.messages.length - 1].ts : null,
+    hasUnread: roomUnreadFor(room, forUser, forLc),
   };
 }
 
@@ -3641,6 +3659,7 @@ function cleanForumText(raw, maxLen) {
 
 // Feed-list shape — no comments array (kept light for the listing screen).
 function forumPostSummary(post, forLc) {
+  const forUser = forLc ? registeredUsers.get(forLc) : null;
   return {
     id: post.id,
     title: post.title,
@@ -3649,6 +3668,7 @@ function forumPostSummary(post, forLc) {
     score: forumScore(post.votes),
     myVote: forLc ? (post.votes[forLc] || 0) : 0,
     commentCount: post.comments.length,
+    hasUnread: postUnreadFor(post, forUser, forLc),
   };
 }
 
@@ -4276,9 +4296,11 @@ function requireRegAuth(req, res) {
 }
 
 // GET /api/rooms — list every room. Open to any authenticated registered
-// user (rooms require no approval to see or join). Loading the list also
-// marks Rooms as "visited" for the unread-notification check below — same
-// "opening it marks it read" behavior as the private-message unread system.
+// user (rooms require no approval to see or join). Each room in the list
+// carries its own hasUnread flag — viewing the LIST doesn't mark anything
+// as read anymore; only actually opening a specific room does (see
+// rooms:join and the single-room endpoint below), so the badge on each
+// room stays lit until you've actually looked at that one.
 app.get("/api/rooms", (req, res) => {
   const auth = requireRegAuth(req, res);
   if (!auth) return;
@@ -4287,42 +4309,32 @@ app.get("/api/rooms", (req, res) => {
     .map(r => roomPublicSummary(r, auth.usernameLower))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  auth.user.lastRoomsVisitAt = Date.now();
-  authUsersDirty = true; scheduleSave();
-
   res.json({ rooms: list, isAdmin: !!auth.user.isAdmin });
 });
 
-// GET /api/rooms/unread — does this user have unread Rooms activity since
-// their last visit? Read-only (does not mark anything as read) — meant for
-// the dashboard to check before the user actually opens Rooms. "Unread"
-// means either a brand new room was created, or a room they're already a
-// member of has a message from someone else, since lastRoomsVisitAt.
+// GET /api/rooms/unread — does this user have unread Rooms activity
+// anywhere? Read-only, for the dashboard badge. True if any individual
+// room's hasUnread is true.
 app.get("/api/rooms/unread", (req, res) => {
   const auth = requireRegAuth(req, res);
   if (!auth) return;
 
-  // Lazily initialize on first check so existing users don't suddenly see a
-  // flood of "unread" for content that predates this feature.
+  // Lazily initialize on first-ever check so existing users don't suddenly
+  // see a flood of "unread" for content that predates this feature — this
+  // is only ever used as a fallback for rooms they haven't specifically
+  // opened yet (see roomUnreadFor).
   if (!auth.user.lastRoomsVisitAt) { auth.user.lastRoomsVisitAt = Date.now(); authUsersDirty = true; scheduleSave(); }
-  const lastVisit = auth.user.lastRoomsVisitAt;
-  const myLc = auth.usernameLower;
 
   let unread = false;
   for (const room of chatRooms.values()) {
-    if (room.bannedUsers.includes(myLc)) continue;
-    if (new Date(room.createdAt).getTime() > lastVisit) { unread = true; break; }
-    if (room.members.includes(myLc)) {
-      const hasNewMsg = room.messages.some(m => m.fromLc !== myLc && new Date(m.ts).getTime() > lastVisit);
-      if (hasNewMsg) { unread = true; break; }
-    }
+    if (roomUnreadFor(room, auth.user, auth.usernameLower)) { unread = true; break; }
   }
   res.json({ unread });
 });
 
 // GET /api/rooms/:roomId/messages — history for one room. A user the admin
 // has banned from this specific room is refused, same as everyone else who
-// isn't a registered user at all.
+// isn't a registered user at all. Fetching this marks THIS room read.
 app.get("/api/rooms/:roomId/messages", (req, res) => {
   const auth = requireRegAuth(req, res);
   if (!auth) return;
@@ -4333,6 +4345,10 @@ app.get("/api/rooms/:roomId/messages", (req, res) => {
     return res.status(403).json({ error: "ადმინისტრატორმა შეგზღუდათ ამ ოთახში წვდომა" });
   }
 
+  room.lastRead = room.lastRead || {};
+  room.lastRead[auth.usernameLower] = Date.now();
+  saveChatRooms();
+
   res.json({
     room: roomPublicSummary(room, auth.usernameLower),
     messages: room.messages.map(roomMessagePublic),
@@ -4341,7 +4357,8 @@ app.get("/api/rooms/:roomId/messages", (req, res) => {
 
 // GET /api/forum/posts?sort=new|top — feed listing. Open to any
 // authenticated registered user, same "no approval needed" spirit as Rooms.
-// Loading the feed also marks the Forum as "visited" for the unread check.
+// Each post carries its own hasUnread flag — same "only opening the
+// specific post marks it read" behavior as Rooms above.
 app.get("/api/forum/posts", (req, res) => {
   const auth = requireRegAuth(req, res);
   if (!auth) return;
@@ -4350,30 +4367,20 @@ app.get("/api/forum/posts", (req, res) => {
   if (req.query.sort === "top") list.sort((a, b) => b.score - a.score || new Date(b.createdAt) - new Date(a.createdAt));
   else list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-  auth.user.lastForumVisitAt = Date.now();
-  authUsersDirty = true; scheduleSave();
-
   res.json({ posts: list, isAdmin: !!auth.user.isAdmin });
 });
 
-// GET /api/forum/unread — does this user have unread Forum activity since
-// their last visit? Read-only, mirrors /api/rooms/unread above. "Unread"
-// means a new post, or a new comment on any post, since lastForumVisitAt —
-// excluding the user's own posts/comments, since they don't need a "you
-// have something new to read" nudge about their own content.
+// GET /api/forum/unread — does this user have unread Forum activity
+// anywhere? Read-only, mirrors /api/rooms/unread above.
 app.get("/api/forum/unread", (req, res) => {
   const auth = requireRegAuth(req, res);
   if (!auth) return;
 
   if (!auth.user.lastForumVisitAt) { auth.user.lastForumVisitAt = Date.now(); authUsersDirty = true; scheduleSave(); }
-  const lastVisit = auth.user.lastForumVisitAt;
-  const myLc = auth.usernameLower;
 
   let unread = false;
   for (const post of forumPosts.values()) {
-    if (post.authorLc !== myLc && new Date(post.createdAt).getTime() > lastVisit) { unread = true; break; }
-    const hasNewComment = post.comments.some(c => c.authorLc !== myLc && new Date(c.createdAt).getTime() > lastVisit);
-    if (hasNewComment) { unread = true; break; }
+    if (postUnreadFor(post, auth.user, auth.usernameLower)) { unread = true; break; }
   }
   res.json({ unread });
 });
@@ -4385,6 +4392,10 @@ app.get("/api/forum/posts/:postId", (req, res) => {
 
   const post = forumPosts.get(req.params.postId);
   if (!post) return res.status(404).json({ error: "პოსტი ვერ მოიძებნა" });
+
+  post.lastRead = post.lastRead || {};
+  post.lastRead[auth.usernameLower] = Date.now();
+  saveForum();
 
   res.json({ post: forumPostFull(post, auth.usernameLower), isAdmin: !!auth.user.isAdmin });
 });
@@ -5400,28 +5411,6 @@ function checkersGameStatus(state) {
     };
   }
   return { status: "playing" };
-}
-
-// Auto-plays every move that is the ONLY legal option and is a capture —
-// a piece with no choice but to take. Loops across turn boundaries too: if
-// finishing one forced capture hands the turn to an opponent who is
-// themselves down to one forced capture, that gets played automatically as
-// well, cascading until either the game ends or someone actually has a
-// real decision to make. Always terminates — every iteration removes a
-// piece from the board, so it's bounded by the piece count.
-// Mutates room.state in place and appends each move to `movesPlayed`.
-// Returns the game status after the last move applied.
-function checkersAutoPlayForced(room, movesPlayed) {
-  let status = checkersGameStatus(room.state);
-  while (status.status !== "over") {
-    const legal = checkersLegalMoves(room.state);
-    if (legal.length !== 1 || legal[0].capture === null) break;
-    const move = legal[0];
-    room.state = checkersApplyMove(room.state, move);
-    movesPlayed.push({ from: move.from, to: move.to, capture: move.capture });
-    status = checkersGameStatus(room.state);
-  }
-  return status;
 }
 
 // Groups a flat move list into per-piece "segments" — a new segment starts
@@ -9024,13 +9013,13 @@ io.on("connection", (socket) => {
 
     room.state = checkersApplyMove(room.state, match);
     const movesPlayed = [{ from: fromSq, to: toSq, capture: match.capture }];
-
-    // If this move (or the position it leads to, including possibly a new
-    // player's turn) is now fully forced, keep auto-playing — the human
-    // doesn't need to tap through moves they have no actual choice in.
-    const status = checkersAutoPlayForced(room, movesPlayed);
     room.lastMove = checkersBuildLastMove(movesPlayed);
 
+    // Mandatory capture is still enforced above (checkersLegalMoves already
+    // restricts you to captures only when one exists) — but the human
+    // always taps every move themselves, including a forced one with only
+    // a single option. Nothing auto-plays on their behalf.
+    const status = checkersGameStatus(room.state);
     if (status.status === "over") {
       checkersFinishGame(room, { status: "over", winner: status.winner, reason: status.reason });
       return;
@@ -9771,6 +9760,10 @@ io.on("connection", (socket) => {
       saveChatRooms();
       socket.to(`roomchat:${roomId}`).emit("rooms:memberJoined", { roomId, username: socket._regUser.username });
     }
+
+    room.lastRead = room.lastRead || {};
+    room.lastRead[lc] = Date.now();
+    saveChatRooms();
 
     const amAdmin = isRoomAdmin(lc);
     socket.emit("rooms:room", {

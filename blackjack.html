@@ -228,6 +228,63 @@
     #bjChatInput:focus { outline: none; border-color: rgba(88,101,242,0.5); }
     #bjChatSendBtn { flex-shrink: 0; width: 38px; height: 38px; border-radius: 50%; border: none; background: var(--accent); color: #fff; font-size: 1em; cursor: pointer; }
 
+    /* ── Card & result animations ─────────────────────────────────── */
+    #bjAnimLayer { position: fixed; inset: 0; pointer-events: none; z-index: 500; overflow: visible; }
+    .bj-flying-card {
+      position: fixed; border-radius: 6px; background: #fff; color: #1a1a1a;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      font-weight: 800; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      transform: translate(-50%, -50%) scale(0.8) rotate(0deg);
+      transition: left 0.4s cubic-bezier(0.25,0.46,0.45,0.94), top 0.4s cubic-bezier(0.25,0.46,0.45,0.94),
+                  transform 0.4s cubic-bezier(0.25,0.46,0.45,0.94), opacity 0.25s ease 0.25s;
+    }
+    .bj-flying-card.red { color: #c0392b; }
+    .bj-flying-card.back {
+      background: repeating-linear-gradient(135deg, #2b3a8f, #2b3a8f 4px, #1f2a66 4px, #1f2a66 8px);
+      border: 2px solid rgba(255,255,255,0.4);
+    }
+
+    @keyframes bjFlipReveal {
+      0%   { transform: rotateY(0deg); }
+      50%  { transform: rotateY(90deg); }
+      100% { transform: rotateY(0deg); }
+    }
+    .bj-card.flip-reveal { animation: bjFlipReveal 0.5s ease-in-out both; }
+
+    @keyframes bjBustShake {
+      0%, 100% { transform: translateX(0); }
+      20%      { transform: translateX(-6px); }
+      40%      { transform: translateX(6px); }
+      60%      { transform: translateX(-4px); }
+      80%      { transform: translateX(4px); }
+    }
+    .bj-hand-block.bust-shake { animation: bjBustShake 0.4s ease; }
+    .bj-hand-block.bust-shake .bj-hand-cards .bj-card { filter: grayscale(0.6) brightness(0.75); }
+
+    @keyframes bjResultPop {
+      0%   { transform: scale(0.3); opacity: 0; }
+      60%  { transform: scale(1.25); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .bj-hand-result.pop-in { animation: bjResultPop 0.4s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+    @keyframes bjCoinSparkle {
+      0%   { transform: translate(-50%, -50%) scale(0.4); opacity: 0; }
+      35%  { transform: translate(-50%, -80%) scale(1.2); opacity: 1; }
+      100% { transform: translate(-50%, -140%) scale(0.9); opacity: 0; }
+    }
+    .bj-coin-sparkle {
+      position: absolute; left: 50%; top: 0; font-size: 1.3em;
+      animation: bjCoinSparkle 0.9s ease-out forwards; pointer-events: none; z-index: 6;
+    }
+    .bj-seat-stack { position: relative; }
+
+    @keyframes bjDealerRevealGlow {
+      0%, 100% { box-shadow: none; }
+      40%      { box-shadow: 0 0 16px 4px rgba(242,201,76,0.5); }
+    }
+    .bj-dealer-area.reveal-glow { animation: bjDealerRevealGlow 0.9s ease; border-radius: 12px; }
+
     @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
   </style>
 </head>
@@ -328,6 +385,7 @@
 </div>
 
 <!-- Chat panel -->
+<div id="bjAnimLayer"></div>
 <div id="chatBackdrop" class="bj-chat-backdrop"></div>
 <div id="chatPanel" class="bj-chat-panel">
   <div class="bj-chat-panel-header">
@@ -520,30 +578,117 @@
   }
 
   /* ── Table screen ────────────────────────────────────────────── */
-  function renderDealer(room) {
-    const row = $("dealerCards");
-    row.innerHTML = "";
-    (room.dealerCards || []).forEach((c, i) => {
-      const el = cardEl(c);
-      el.classList.add("deal-in");
-      row.appendChild(el);
+  function bjSnapshotRoom(room) {
+    const snap = { dealerCount: (room.dealerCards || []).length, dealerRevealed: !!room.dealerHoleRevealed, hands: {} };
+    room.players.forEach(p => {
+      (p.hands || []).forEach((h, hi) => {
+        snap.hands[p.seat + ":" + hi] = { count: h.cards.length, status: h.status, result: h.result };
+      });
     });
+    return snap;
+  }
+
+  function bjDealOriginRect() {
+    const dealerEl = $("dealerCards");
+    const r = dealerEl.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+
+  // Animates a card flying from `fromPoint` to wherever `targetEl` actually
+  // sits — the real card underneath stays invisible until the flight lands,
+  // so there's never a flash of it appearing in two places at once.
+  function bjFlyCardToElement(fromPoint, targetEl, cardData, delay) {
+    targetEl.style.visibility = "hidden";
+    setTimeout(() => {
+      const targetRect = targetEl.getBoundingClientRect();
+      const clone = cardEl(cardData);
+      clone.classList.add("bj-flying-card");
+      clone.style.width = targetRect.width + "px";
+      clone.style.height = targetRect.height + "px";
+      clone.style.left = fromPoint.x + "px";
+      clone.style.top = fromPoint.y + "px";
+      $("bjAnimLayer").appendChild(clone);
+      void clone.offsetWidth; // commit the start position as a real rendered frame before the transition below, or it just teleports
+      requestAnimationFrame(() => {
+        clone.style.left = (targetRect.left + targetRect.width / 2) + "px";
+        clone.style.top = (targetRect.top + targetRect.height / 2) + "px";
+        clone.style.transform = "translate(-50%, -50%) scale(1)";
+      });
+      setTimeout(() => {
+        targetEl.style.visibility = "";
+        clone.style.opacity = "0";
+        setTimeout(() => clone.remove(), 300);
+      }, 400);
+    }, delay);
+  }
+
+  function spawnBjCoinSparkle(anchorEl) {
+    const sparkle = document.createElement("div");
+    sparkle.className = "bj-coin-sparkle";
+    sparkle.textContent = "🪙";
+    anchorEl.appendChild(sparkle);
+    setTimeout(() => sparkle.remove(), 950);
+  }
+
+  function renderDealer(room, prevSnap) {
+    const row = $("dealerCards");
+    const cards = room.dealerCards || [];
+    const prevCount = prevSnap ? prevSnap.dealerCount : 0;
+    const wasRevealed = prevSnap ? prevSnap.dealerRevealed : false;
+    const justRevealed = !wasRevealed && room.dealerHoleRevealed;
+    const dealOrigin = bjDealOriginRect();
+
+    row.innerHTML = "";
+    cards.forEach((c, i) => {
+      const el = cardEl(c);
+      row.appendChild(el);
+      if (i >= prevCount && !(justRevealed && i === 1)) {
+        // A genuinely new card (not the hole card being revealed — that one
+        // flips in place below instead of flying in from nowhere).
+        bjFlyCardToElement(dealOrigin, el, c, (i - prevCount) * 140);
+      }
+    });
+    // Show a face-down placeholder for the still-hidden hole card once
+    // dealing has happened but the reveal hasn't, so the table doesn't just
+    // look like the dealer only has one card.
+    if (!room.dealerHoleRevealed && cards.length === 1 && room.phase) {
+      const back = cardEl(null);
+      row.appendChild(back);
+      if (prevCount < 1) bjFlyCardToElement(dealOrigin, back, null, 140);
+    }
+    if (justRevealed && cards.length >= 2) {
+      const revealedEl = row.children[1];
+      if (revealedEl) {
+        revealedEl.classList.add("flip-reveal");
+        $("tableBody").querySelector(".bj-dealer-area").classList.add("reveal-glow");
+        setTimeout(() => $("tableBody").querySelector(".bj-dealer-area").classList.remove("reveal-glow"), 950);
+      }
+    }
+
     const totalEl = $("dealerTotal");
-    if (room.dealerHoleRevealed && room.dealerCards && room.dealerCards.length) {
+    if (room.dealerHoleRevealed && cards.length) {
       totalEl.style.display = "inline-block";
-      totalEl.textContent = handTotalLabel(room.dealerCards);
+      totalEl.textContent = handTotalLabel(cards);
     } else {
       totalEl.style.display = "none";
     }
   }
 
-  function renderHand(hand, isActive) {
+  function renderHand(hand, seat, handIdx, isActive, prevSnap, dealOrigin, stackEl) {
     const block = document.createElement("div");
     block.className = "bj-hand-block";
+    const key = seat + ":" + handIdx;
+    const prevHand = prevSnap ? prevSnap.hands[key] : null;
+    const prevCount = prevHand ? prevHand.count : 0;
+
     const cardsRow = document.createElement("div");
     cardsRow.className = "bj-hand-cards";
-    hand.cards.forEach(c => cardsRow.appendChild(cardEl(c)));
     block.appendChild(cardsRow);
+    hand.cards.forEach((c, i) => {
+      const el = cardEl(c);
+      cardsRow.appendChild(el);
+      if (i >= prevCount) bjFlyCardToElement(dealOrigin, el, c, (i - prevCount) * 140);
+    });
 
     const meta = document.createElement("div");
     meta.className = "bj-hand-meta";
@@ -559,15 +704,26 @@
       const res = document.createElement("span");
       res.className = "bj-hand-result " + hand.result;
       res.textContent = RESULT_LABEL[hand.result] || hand.result;
+      if (!prevHand || !prevHand.result) {
+        res.classList.add("pop-in");
+        if ((hand.result === "win" || hand.result === "blackjack") && stackEl) {
+          setTimeout(() => spawnBjCoinSparkle(stackEl), 150);
+        }
+      }
       meta.appendChild(res);
     }
     block.appendChild(meta);
+
+    if (hand.status === "bust" && (!prevHand || prevHand.status !== "bust")) {
+      block.classList.add("bust-shake");
+    }
     return block;
   }
 
-  function renderPlayers(room) {
+  function renderPlayers(room, prevSnap) {
     const row = $("playersRow");
     row.innerHTML = "";
+    const dealOrigin = bjDealOriginRect();
     room.players.forEach(p => {
       const seat = document.createElement("div");
       const isMe = p.username.toLowerCase() === myUsernameLower;
@@ -591,7 +747,7 @@
       if (p.hands && p.hands.length) {
         p.hands.forEach((h, hi) => {
           const isActiveHand = isActing && hi === room.turnHandIdx;
-          seat.appendChild(renderHand(h, isActiveHand));
+          seat.appendChild(renderHand(h, p.seat, hi, isActiveHand, prevSnap, dealOrigin, stack));
         });
       } else if (room.phase === "betting") {
         const lbl = document.createElement("div");
@@ -669,17 +825,26 @@
     timerInterval = setInterval(tick, 1000);
   }
 
+  let prevBjSnap = null;
+
   function renderGame(room) {
+    // Only diff against a previous snapshot of the SAME table — a fresh
+    // join/reconnect shouldn't animate every card on the table flying in
+    // at once as if it had just been dealt.
+    const snapForDiff = (prevBjSnap && prevBjSnap.roomId === room.roomId) ? prevBjSnap.data : null;
+
     latestRoom = room;
     $("setupCoins").textContent = "—";
     const me = room.players.find(p => p.username.toLowerCase() === myUsernameLower);
     if (me) $("tableCoins").textContent = me.stack;
 
-    renderDealer(room);
-    renderPlayers(room);
+    renderDealer(room, snapForDiff);
+    renderPlayers(room, snapForDiff);
     renderBettingPanel(room);
     renderPlayPanel(room);
     renderTimer(room);
+
+    prevBjSnap = { roomId: room.roomId, data: bjSnapshotRoom(room) };
   }
 
   /* ── Chat ────────────────────────────────────────────────────── */
