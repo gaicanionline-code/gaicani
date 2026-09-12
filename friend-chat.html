@@ -743,6 +743,19 @@
 
     /* ── Responsive: tablets / desktop — frame the chat instead of letting
        it stretch edge-to-edge and look sparse on wide screens ── */
+    /* ── "New message" floating indicator — only appears when you've
+       scrolled up to read history and a new message arrives without
+       yanking your scroll position ── */
+    .fc-new-msg-pill {
+      position: fixed; left: 50%; bottom: calc(72px + var(--safe-bottom)); transform: translateX(-50%) translateY(20px);
+      background: var(--accent); color: #fff; border: none; border-radius: 20px;
+      padding: 9px 16px; font-size: 0.84em; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center; gap: 6px; z-index: 200;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+      opacity: 0; pointer-events: none; transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    .fc-new-msg-pill.show { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
+
     @media (min-width: 700px) {
       body {
         display: flex;
@@ -777,7 +790,7 @@
       </div>
       <div class="fc-sub" id="fcSub">პირადი ჩატი</div>
     </div>
-    <button class="fc-theme-btn" id="fcThemeBtn" title="ფონის შეცვლა">🎨</button>
+    <button class="fc-theme-btn" id="fcThemeBtn" title="პარამეტრები — ფონი და რეაქცია">🎨</button>
     <div class="fc-expiry-badge">🕐 3 სთ ჩაშლა</div>
   </header>
 
@@ -810,6 +823,7 @@
 
   <!-- MESSAGES -->
   <div id="fc-messages" style="display:none"></div>
+  <button id="fcNewMsgPill" class="fc-new-msg-pill">↓ ახალი შეტყობინება</button>
 
   <!-- EMPTY STATE (shown when no messages) -->
   <div id="fc-empty">
@@ -836,7 +850,7 @@
     <button class="fc-extra-btn" id="fc-question-btn" title="შემთხვევითი კითხვა">?</button>
     <textarea id="fc-input" placeholder="შეტყობინება..." rows="1" maxlength="2000"></textarea>
     <span id="fc-char-count" class="fc-char-count"></span>
-    <button class="fc-heart-send" id="fc-heart-send" title="გულის გაგზავნა">🤍</button>
+    <button class="fc-heart-send" id="fc-heart-send" title="გულის გაგზავნა — დააჭირე გასაგრძელებლად ემოჯის შესაცვლელად">🤍</button>
     <button id="fc-send" title="გაგზავნა" style="display:none">➤</button>
   </div>
 
@@ -1288,28 +1302,46 @@
 
   function scrollToBottom(smooth) {
     requestAnimationFrame(() => {
-      elMessages.scrollTop = elMessages.scrollHeight;
+      if (smooth) elMessages.scrollTo({ top: elMessages.scrollHeight, behavior: "smooth" });
+      else elMessages.scrollTop = elMessages.scrollHeight;
     });
   }
+  function isNearBottom(threshold = 120) {
+    return elMessages.scrollHeight - elMessages.scrollTop - elMessages.clientHeight < threshold;
+  }
+  function showNewMsgPill() { $("fcNewMsgPill").classList.add("show"); }
+  function hideNewMsgPill() { $("fcNewMsgPill").classList.remove("show"); }
+  $("fcNewMsgPill").addEventListener("click", () => { scrollToBottom(true); hideNewMsgPill(); });
+  elMessages.addEventListener("scroll", () => { if (isNearBottom(40)) hideNewMsgPill(); }, { passive: true });
 
   /* ── Append a single message (real-time) ─────────────────────── */
   function appendMessage(msg) {
     if (!msg.id) msg.id = fcGenId();
+    const wasNearBottom = isNearBottom();
+    const isMine = msg.from?.toLowerCase() === myUsername.toLowerCase();
     messages.push(msg);
     elEmpty.classList.remove("visible");
 
     if (msg.type === "question") {
       elMessages.appendChild(buildQuestionCard(msg));
-      scrollToBottom();
-      return msg.id;
+    } else {
+      const lastRow = elMessages.lastElementChild;
+      const lastFrom = lastRow?.dataset?.from;
+      const consec = lastFrom != null && lastFrom.toLowerCase() === msg.from?.toLowerCase();
+      elMessages.appendChild(buildRow(msg, consec));
     }
 
-    const lastRow = elMessages.lastElementChild;
-    const lastFrom = lastRow?.dataset?.from;
-    const consec = lastFrom != null && lastFrom.toLowerCase() === msg.from?.toLowerCase();
-
-    elMessages.appendChild(buildRow(msg, consec));
-    scrollToBottom();
+    // I just sent this myself, or I was already basically at the bottom
+    // reading live — either way, follow it down smoothly. But if I've
+    // scrolled up to read older messages and my friend sends something new,
+    // don't yank my scroll position out from under me — just let them know
+    // there's something new to see, waiting whenever they're ready for it.
+    if (isMine || wasNearBottom) {
+      scrollToBottom(true);
+      hideNewMsgPill();
+    } else {
+      showNewMsgPill();
+    }
     return msg.id;
   }
 
@@ -1477,7 +1509,8 @@
   }
 
   /* ── Send message ────────────────────────────────────────────── */
-  function sendMessage() {
+  function sendMessage(opts) {
+    const focusAfter = !opts || opts.focusAfter !== false;
     const text = elInput.value.trim();
     if (!text || !socket?.connected) return;
     elInput.value = "";
@@ -1500,7 +1533,10 @@
     clearFCReplyTo();
     updateFCCharCount();
     updateFCSendButtonMode();
-    elInput.focus();
+    // Only re-focus (and pop the keyboard back up) when the send was a real
+    // typed message — the quick-heart button isn't "start typing", so it
+    // must never pull focus onto the input.
+    if (focusAfter) elInput.focus();
   }
 
   /* ── Load history ────────────────────────────────────────────── */
@@ -1822,9 +1858,38 @@
   $("fc-heart-send").addEventListener("click", () => {
     if (!socket?.connected) return;
     elInput.value = "❤️";
-    sendMessage();
+    sendMessage({ focusAfter: false });
     updateFCSendButtonMode();
+    elInput.blur(); // belt-and-suspenders — makes sure the keyboard can't be up from some other stray focus either
   });
+
+  // Long-press the heart button itself to change which emoji it sends —
+  // a much more discoverable entry point than only having this tucked away
+  // in the settings sheet, since it's right where you'd wonder "can I
+  // change this?" in the first place.
+  (function attachHeartLongPress() {
+    const btn = $("fc-heart-send");
+    let pressTimer = null;
+    let longPressed = false;
+    function start(e) {
+      longPressed = false;
+      pressTimer = setTimeout(() => {
+        longPressed = true;
+        if (navigator.vibrate) navigator.vibrate(12);
+        openFCThemeSheet();
+      }, 450);
+    }
+    function cancel() { clearTimeout(pressTimer); }
+    btn.addEventListener("touchstart", start, { passive: true });
+    btn.addEventListener("touchend", cancel);
+    btn.addEventListener("touchmove", cancel);
+    btn.addEventListener("mousedown", start);
+    btn.addEventListener("mouseup", cancel);
+    btn.addEventListener("mouseleave", cancel);
+    // Swallow the click that a touch-based long-press also fires, so it
+    // doesn't ALSO send a heart right as the settings sheet opens.
+    btn.addEventListener("click", (e) => { if (longPressed) { e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+  })();
 
   elInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
