@@ -1708,13 +1708,13 @@ tr:hover td{background:rgba(255,255,255,.03)}
 </div>
 
 <div class="section">
-  <h2>👤 All Registered Accounts (last-used IP)</h2>
-  <div id="regUsers">Loading...</div>
+  <h2>🚩 All Reports (every IP with 1+ reports — 5 still auto-bans for 24h)</h2>
+  <div id="reported">Loading...</div>
 </div>
 
 <div class="section">
-  <h2>🚩 All Reports (every IP with 1+ reports — 5 still auto-bans for 24h)</h2>
-  <div id="reported">Loading...</div>
+  <h2>👤 All Registered Accounts (last-used IP)</h2>
+  <div id="regUsers">Loading...</div>
 </div>
 
 <div class="section">
