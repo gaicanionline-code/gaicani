@@ -7704,19 +7704,32 @@ io.on("connection", (socket) => {
     // either a guest name from a previous dashboard/game visit, or (more
     // commonly) whatever they already typed in for random chat via setName
     // — reuse it so they show up as themselves everywhere instead of a
-    // random "სტუმარი####", as long as it's not currently taken by a real
-    // account or another active guest. Same length/character rules as any
-    // other chosen name on this site (see setName / registration).
+    // random "სტუმარი####". Same length/character rules as any other
+    // chosen name on this site (see setName / registration).
+    //
+    // Crucially: if that name is currently held by ANOTHER GUEST entry
+    // (not a real account), it's still safe to take over — this is almost
+    // always this exact same person's previous page, whose socket just
+    // hasn't finished disconnecting yet (socket.io detects a closed tab
+    // with a short delay, not instantly), not a different person. Reusing
+    // that existing record (rather than creating a fresh one) also means
+    // whatever coins/progress they'd built up on the previous page carry
+    // over instead of resetting on every navigation.
     const preferred = (data && typeof data.preferredUsername === "string") ? data.preferredUsername.trim() : null;
+    const existingHolder = preferred ? registeredUsers.get(preferred.toLowerCase()) : null;
     const preferredValid = preferred
       && preferred.length >= NAME_MIN && preferred.length <= NAME_MAX
       && /^[\w\u10D0-\u10FF\s\-.]+$/.test(preferred)
-      && !registeredUsers.has(preferred.toLowerCase());
+      && (!existingHolder || existingHolder.isGuest);
 
-    let username, lc;
+    let username, lc, guestUser;
     if (preferredValid) {
       username = preferred;
       lc = username.toLowerCase();
+      guestUser = existingHolder || {
+        username, isGuest: true, createdAt: new Date().toISOString(),
+        friends: [], pendingRequests: [], avatar: DEFAULT_AVATAR, bio: "",
+      };
     } else {
       let attempts = 0;
       do {
@@ -7725,17 +7738,12 @@ io.on("connection", (socket) => {
         attempts++;
       } while (registeredUsers.has(lc) && attempts < 25);
       if (registeredUsers.has(lc)) { socket.emit("auth:invalid"); return; } // pathological luck, extremely unlikely
+      guestUser = {
+        username, isGuest: true, createdAt: new Date().toISOString(),
+        friends: [], pendingRequests: [], avatar: DEFAULT_AVATAR, bio: "",
+      };
     }
 
-    const guestUser = {
-      username,
-      isGuest: true,
-      createdAt: new Date().toISOString(),
-      friends: [],
-      pendingRequests: [],
-      avatar: DEFAULT_AVATAR,
-      bio: "",
-    };
     registeredUsers.set(lc, guestUser);
     guestSocketMap.set(socket.id, lc);
 
@@ -7754,7 +7762,7 @@ io.on("connection", (socket) => {
     guestTokenMap.set(socket.id, guestToken);
 
     socket.emit("auth:authenticated", {
-      username, friends: [], pendingRequests: [], avatar: DEFAULT_AVATAR, bio: "",
+      username, friends: [], pendingRequests: [], avatar: guestUser.avatar || DEFAULT_AVATAR, bio: guestUser.bio || "",
       streaks: {}, isAdmin: false, isGuest: true, guestToken
     });
     console.log(`[AUTH] ${username} started a guest session`);
