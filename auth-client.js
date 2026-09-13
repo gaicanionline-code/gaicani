@@ -15,6 +15,39 @@
       c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
   }
 
+  /* ── "Do not disturb" during chat — a device-local preference. Once on,
+     game invites stop popping up over random chat (and, separately, over
+     private chat too — see friend-chat.html). Turned back on from the
+     dashboard's settings. Same storage key as friend-chat.html so the
+     preference is unified across both contexts. ── */
+  const DND_CHAT_INVITES_KEY = "gaicani_dnd_chat_invites";
+  function isChatInviteDndOn() {
+    try { return localStorage.getItem(DND_CHAT_INVITES_KEY) === "1"; } catch (_) { return false; }
+  }
+  function enableChatInviteDnd() {
+    try { localStorage.setItem(DND_CHAT_INVITES_KEY, "1"); } catch (_) {}
+    const bar = document.getElementById("dgInviteBar");
+    if (bar) { bar.classList.remove("show"); bar.innerHTML = ""; }
+    showToast("🔕 ჩატის დროს შეტყობინებები გამორთულია — ჩართვა შესაძლებელია ჩემი გვერდიდან");
+  }
+  function renderChatInviteBar({ icon, messageHtml, onAccept, onDecline }) {
+    if (isChatInviteDndOn()) return false;
+    const bar = document.getElementById("dgInviteBar");
+    if (!bar) return false;
+    bar.innerHTML = `
+      <div class="dg-invite-bar-row">
+        <span>${icon} ${messageHtml}</span>
+        <button class="dg-invite-accept">✅</button>
+        <button class="dg-invite-decline">❌</button>
+      </div>
+      <button class="dg-invite-dnd">🔕 თუ გსურთ აღარ მოგივიდეთ ჩატის დროს შეტყობინება დააჭირეთ ღილაკს</button>`;
+    bar.classList.add("show");
+    bar.querySelector(".dg-invite-accept").onclick = () => { bar.classList.remove("show"); onAccept(); };
+    bar.querySelector(".dg-invite-decline").onclick = () => { bar.classList.remove("show"); onDecline(); };
+    bar.querySelector(".dg-invite-dnd").onclick = enableChatInviteDnd;
+    return true;
+  }
+
   /* ── Storage ─────────────────────────────────────────────────────── */
   const LS_TOKEN = "gaicani_auth_token";
   const LS_USER  = "gaicani_auth_user";
@@ -305,134 +338,71 @@
     // ── Invited to a Draw & Guess room — shown wherever the person currently
     // is (including mid-conversation in random chat), via a fixed overlay bar.
     s.on("drawGuess:invited", ({ roomId, fromUsername }) => {
-      const bar = document.getElementById("dgInviteBar");
-      if (!bar) return;
-      bar.innerHTML =
-        `<span>🎨 <strong>${esc(fromUsername)}</strong>-მა მოგიწვია დახატე-და-გამოიცანიში</span>` +
-        `<button class="dg-invite-accept">✅</button>` +
-        `<button class="dg-invite-decline">❌</button>`;
-      bar.classList.add("show");
-      bar.querySelector(".dg-invite-accept").onclick = () => {
-        window.location.href = "/draw-guess.html?room=" + encodeURIComponent(roomId);
-      };
-      bar.querySelector(".dg-invite-decline").onclick = () => {
-        bar.classList.remove("show");
-        s.emit("drawGuess:declineInvite", { roomId });
-      };
+      renderChatInviteBar({
+        icon: "🎨", messageHtml: `<strong>${esc(fromUsername)}</strong>-მა მოგიწვია დახატე-და-გამოიცანიში`,
+        onAccept: () => { window.location.href = "/draw-guess.html?room=" + encodeURIComponent(roomId); },
+        onDecline: () => s.emit("drawGuess:declineInvite", { roomId }),
+      });
     });
 
     // ── Invited to a Poker table — same fixed overlay bar, same everywhere-
     // you-are behavior as the Draw & Guess invite above.
     s.on("poker:invited", ({ roomId, fromUsername }) => {
-      const bar = document.getElementById("dgInviteBar");
-      if (!bar) return;
-      bar.innerHTML =
-        `<span>🃏 <strong>${esc(fromUsername)}</strong>-მა მოგიწვია პოკერზე</span>` +
-        `<button class="dg-invite-accept">✅</button>` +
-        `<button class="dg-invite-decline">❌</button>`;
-      bar.classList.add("show");
-      bar.querySelector(".dg-invite-accept").onclick = () => {
-        window.location.href = "/poker.html?room=" + encodeURIComponent(roomId);
-      };
-      bar.querySelector(".dg-invite-decline").onclick = () => {
-        bar.classList.remove("show");
-        s.emit("poker:declineInvite", { roomId });
-      };
+      renderChatInviteBar({
+        icon: "🃏", messageHtml: `<strong>${esc(fromUsername)}</strong>-მა მოგიწვია პოკერზე`,
+        onAccept: () => { window.location.href = "/poker.html?room=" + encodeURIComponent(roomId); },
+        onDecline: () => s.emit("poker:declineInvite", { roomId }),
+      });
     });
 
     // ── Invited to a Chess game — same fixed overlay bar, same everywhere-
     // you-are behavior as the Draw & Guess / Poker invites above.
     s.on("chess:invited", ({ roomId, fromUsername }) => {
-      const bar = document.getElementById("dgInviteBar");
-      if (!bar) return;
-      bar.innerHTML =
-        `<span>♟️ <strong>${esc(fromUsername)}</strong>-მა მოგიწვია ჭადრაკზე</span>` +
-        `<button class="dg-invite-accept">✅</button>` +
-        `<button class="dg-invite-decline">❌</button>`;
-      bar.classList.add("show");
-      bar.querySelector(".dg-invite-accept").onclick = () => {
-        window.location.href = "/chess.html?room=" + encodeURIComponent(roomId);
-      };
-      bar.querySelector(".dg-invite-decline").onclick = () => {
-        bar.classList.remove("show");
-        s.emit("chess:declineInvite", { roomId });
-      };
+      renderChatInviteBar({
+        icon: "♟️", messageHtml: `<strong>${esc(fromUsername)}</strong>-მა მოგიწვია ჭადრაკზე`,
+        onAccept: () => { window.location.href = "/chess.html?room=" + encodeURIComponent(roomId); },
+        onDecline: () => s.emit("chess:declineInvite", { roomId }),
+      });
     });
 
     // ── Invited to a Checkers game — same fixed overlay bar, same
     // everywhere-you-are behavior as the other games' invites above.
     s.on("checkers:invited", ({ roomId, fromUsername }) => {
-      const bar = document.getElementById("dgInviteBar");
-      if (!bar) return;
-      bar.innerHTML =
-        `<span>⚪ <strong>${esc(fromUsername)}</strong>-მა მოგიწვია დამაზე</span>` +
-        `<button class="dg-invite-accept">✅</button>` +
-        `<button class="dg-invite-decline">❌</button>`;
-      bar.classList.add("show");
-      bar.querySelector(".dg-invite-accept").onclick = () => {
-        window.location.href = "/checkers.html?room=" + encodeURIComponent(roomId);
-      };
-      bar.querySelector(".dg-invite-decline").onclick = () => {
-        bar.classList.remove("show");
-        s.emit("checkers:declineInvite", { roomId });
-      };
+      renderChatInviteBar({
+        icon: "⚪", messageHtml: `<strong>${esc(fromUsername)}</strong>-მა მოგიწვია დამაზე`,
+        onAccept: () => { window.location.href = "/checkers.html?room=" + encodeURIComponent(roomId); },
+        onDecline: () => s.emit("checkers:declineInvite", { roomId }),
+      });
     });
 
     // ── Invited to a Joker table — same fixed overlay bar, same
     // everywhere-you-are behavior as the other games' invites above.
     s.on("joker:invited", ({ roomId, fromUsername }) => {
-      const bar = document.getElementById("dgInviteBar");
-      if (!bar) return;
-      bar.innerHTML =
-        `<span>🃏 <strong>${esc(fromUsername)}</strong>-მა მოგიწვია ჯოკერზე</span>` +
-        `<button class="dg-invite-accept">✅</button>` +
-        `<button class="dg-invite-decline">❌</button>`;
-      bar.classList.add("show");
-      bar.querySelector(".dg-invite-accept").onclick = () => {
-        window.location.href = "/joker.html?room=" + encodeURIComponent(roomId);
-      };
-      bar.querySelector(".dg-invite-decline").onclick = () => {
-        bar.classList.remove("show");
-        s.emit("joker:declineInvite", { roomId });
-      };
+      renderChatInviteBar({
+        icon: "🃏", messageHtml: `<strong>${esc(fromUsername)}</strong>-მა მოგიწვია ჯოკერზე`,
+        onAccept: () => { window.location.href = "/joker.html?room=" + encodeURIComponent(roomId); },
+        onDecline: () => s.emit("joker:declineInvite", { roomId }),
+      });
     });
 
     // ── Invited to an Imposter game — same fixed overlay bar, same
     // everywhere-you-are behavior as the other games' invites above.
     s.on("imposter:invited", ({ roomId, fromUsername }) => {
-      const bar = document.getElementById("dgInviteBar");
-      if (!bar) return;
-      bar.innerHTML =
-        `<span>🕵️ <strong>${esc(fromUsername)}</strong>-მა მოგიწვია იმპოსტორზე</span>` +
-        `<button class="dg-invite-accept">✅</button>` +
-        `<button class="dg-invite-decline">❌</button>`;
-      bar.classList.add("show");
-      bar.querySelector(".dg-invite-accept").onclick = () => {
-        window.location.href = "/imposter.html?room=" + encodeURIComponent(roomId);
-      };
-      bar.querySelector(".dg-invite-decline").onclick = () => {
-        bar.classList.remove("show");
-        s.emit("imposter:declineInvite", { roomId });
-      };
+      renderChatInviteBar({
+        icon: "🕵️", messageHtml: `<strong>${esc(fromUsername)}</strong>-მა მოგიწვია იმპოსტორზე`,
+        onAccept: () => { window.location.href = "/imposter.html?room=" + encodeURIComponent(roomId); },
+        onDecline: () => s.emit("imposter:declineInvite", { roomId }),
+      });
     });
 
     // ── Invited to a Blackjack table — same fixed overlay bar, same
     // everywhere-you-are behavior as the other games' invites above.
     s.on("blackjack:invited", ({ roomId, fromUsername }) => {
-      const bar = document.getElementById("dgInviteBar");
-      if (!bar) return;
-      bar.innerHTML =
-        `<span>🂡 <strong>${esc(fromUsername)}</strong>-მა მოგიწვია ბლექჯეკზე</span>` +
-        `<button class="dg-invite-accept">✅</button>` +
-        `<button class="dg-invite-decline">❌</button>`;
-      bar.classList.add("show");
-      bar.querySelector(".dg-invite-accept").onclick = () => {
-        window.location.href = "/blackjack.html?room=" + encodeURIComponent(roomId);
-      };
-      bar.querySelector(".dg-invite-decline").onclick = () => {
-        bar.classList.remove("show");
-        s.emit("blackjack:declineInvite", { roomId });
-      };
+      renderChatInviteBar({
+        icon: "🂡", messageHtml: `<strong>${esc(fromUsername)}</strong>-მა მოგიწვია ბლექჯეკზე`,
+        onAccept: () => { window.location.href = "/blackjack.html?room=" + encodeURIComponent(roomId); },
+        onDecline: () => s.emit("blackjack:declineInvite", { roomId }),
+      });
     });
 
     // ── Request accepted (by the other person) ────────────────────────

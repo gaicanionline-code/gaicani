@@ -544,6 +544,27 @@
     }
     .profile-card-msg-btn:hover { background: #4752c4; }
     .profile-card-loading { color: #72767d; font-size: 0.9em; padding: 20px 0; }
+
+    /* ── Do-not-disturb toggle switch ──────────────────────────────── */
+    .dnd-toggle-switch { position: relative; display: inline-block; width: 44px; height: 26px; }
+    .dnd-toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .dnd-toggle-slider {
+      position: absolute; cursor: pointer; inset: 0; background: #40444b;
+      border-radius: 26px; transition: background 0.2s ease;
+    }
+    .dnd-toggle-slider::before {
+      content: ""; position: absolute; width: 20px; height: 20px; left: 3px; bottom: 3px;
+      background: #fff; border-radius: 50%; transition: transform 0.2s ease;
+    }
+    .dnd-toggle-switch input:checked + .dnd-toggle-slider { background: #3ba55d; }
+    .dnd-toggle-switch input:checked + .dnd-toggle-slider::before { transform: translateX(18px); }
+
+    /* ── Temporary (guest) users section ─────────────────────────────── */
+    .temp-user-tag { font-size: 0.78em; color: #72767d; font-weight: 500; }
+    .temp-user-badge {
+      font-size: 0.72em; font-weight: 700; color: #b5bac1;
+      background: rgba(255,255,255,0.06); padding: 4px 9px; border-radius: 12px;
+    }
   </style>
 </head>
 <body>
@@ -601,6 +622,23 @@
           შეგიძლია ითამაშო ყველა თამაში და ნახო ოთახები & ფორუმი. დარეგისტრირდით რომ დაამატოთ მეგობრები, გქონდეთ პირადი ჩატი, დაწეროთ ფორუმზე და ოთახებში, და შეინახოთ თქვენი პროგრესი სამუდამოდ.
         </div>
         <a href="/" style="display:inline-block;background:#fff;color:#4752c4;font-weight:800;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.86em;">დარეგისტრირდი უფასოდ →</a>
+      </div>
+    </div>
+
+    <!-- Notification settings — turn chat-time invite notifications back on
+         after having muted them from the invite bar's "🔕" link -->
+    <div class="section">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:#2b2d31;border-radius:12px;padding:14px 16px;">
+        <div style="min-width:0;">
+          <div style="font-weight:700;font-size:0.92em;">🔔 შეტყობინებები ჩატის დროს</div>
+          <div style="font-size:0.78em;color:#96989d;margin-top:2px;line-height:1.4;">
+            თამაშის მოწვევები კერძო და შემთხვევით ჩატში
+          </div>
+        </div>
+        <label class="dnd-toggle-switch" style="flex-shrink:0;">
+          <input type="checkbox" id="dndToggleInput">
+          <span class="dnd-toggle-slider"></span>
+        </label>
       </div>
     </div>
 
@@ -718,6 +756,14 @@
       <div class="friends-list" id="onlineUsersList">
         <div class="empty-state">ახლა არავინაა ონლაინ.</div>
       </div>
+    </div>
+
+    <div class="section" id="tempUsersSection" style="display:none">
+      <div class="section-label">
+        🕐 დროებითი მომხმარებლები
+        <span class="section-badge" id="tempUsersCount">0</span>
+      </div>
+      <div class="friends-list" id="tempUsersList"></div>
     </div>
 
     <!-- Blocked (session) — hidden until there are entries -->
@@ -1627,50 +1673,82 @@
     function renderOnlineUsers(users) {
       const list = document.getElementById("onlineUsersList");
       const cnt  = document.getElementById("onlineUsersCount");
+      const tempSection = document.getElementById("tempUsersSection");
+      const tempList = document.getElementById("tempUsersList");
+      const tempCnt = document.getElementById("tempUsersCount");
       if (!list) return;
 
       const myFriendsLc = new Set((authUser?.friends || []).map(f => f.toLowerCase()));
-      if (cnt) cnt.textContent = (users || []).length;
+      const all = users || [];
+      const realUsers = all.filter(u => !u.isGuest);
+      const guestUsers = all.filter(u => u.isGuest);
 
-      if (!users || !users.length) {
+      if (cnt) cnt.textContent = realUsers.length;
+      if (!realUsers.length) {
         list.innerHTML = `<div class="empty-state">ახლა არავინაა ონლაინ.</div>`;
-        return;
+      } else {
+        list.innerHTML = realUsers.map(u => {
+          const lc = u.username.toLowerCase();
+          const avatarHtml = u.avatar
+            ? `<img src="${AVATAR_DIR}${esc(u.avatar)}" alt="avatar" />`
+            : esc(u.username).charAt(0).toUpperCase();
+          const alreadyFriend = myFriendsLc.has(lc);
+          const alreadySent   = sentRequestsTo.has(lc);
+          const bioHtml = u.bio ? `<span class="online-user-bio" title="${esc(u.bio)}">${esc(u.bio)}</span>` : "";
+          const actionHtml = alreadyFriend
+            ? `<span class="already-friend-badge">✅ მეგობარი</span>`
+            : `<button class="act-btn act-add" data-u="${esc(u.username)}"${alreadySent ? " disabled" : ""}>${alreadySent ? "✅ გაგზავნილია" : "➕ დამატება"}</button>`;
+          return `
+            <div class="friend-item" data-online-user="${esc(u.username)}">
+              <div class="friend-avatar-wrap">
+                <div class="friend-avatar">${avatarHtml}</div>
+                <span class="online-dot" title="ონლაინ"></span>
+              </div>
+              <span class="friend-name">${esc(u.username)}</span>
+              ${bioHtml}
+              <div class="friend-actions">${actionHtml}</div>
+            </div>`;
+        }).join("");
+
+        list.querySelectorAll(".act-add").forEach(btn => {
+          btn.addEventListener("click", () => {
+            const uname = btn.dataset.u;
+            const lc = uname.toLowerCase();
+            sentRequestsTo.add(lc);
+            socket?.emit("friend:request", { toUsername: uname });
+            btn.disabled = true;
+            btn.textContent = "✅ გაგზავნილია";
+            showToast(`📨 მეგობრობის მოთხოვნა გაიგზავნა ${esc(uname)}-სთვის`);
+          });
+        });
       }
 
-      list.innerHTML = users.map(u => {
-        const lc = u.username.toLowerCase();
-        const avatarHtml = u.avatar
-          ? `<img src="${AVATAR_DIR}${esc(u.avatar)}" alt="avatar" />`
-          : esc(u.username).charAt(0).toUpperCase();
-        const alreadyFriend = myFriendsLc.has(lc);
-        const alreadySent   = sentRequestsTo.has(lc);
-        const bioHtml = u.bio ? `<span class="online-user-bio" title="${esc(u.bio)}">${esc(u.bio)}</span>` : "";
-        const actionHtml = alreadyFriend
-          ? `<span class="already-friend-badge">✅ მეგობარი</span>`
-          : `<button class="act-btn act-add" data-u="${esc(u.username)}"${alreadySent ? " disabled" : ""}>${alreadySent ? "✅ გაგზავნილია" : "➕ დამატება"}</button>`;
-        return `
-          <div class="friend-item" data-online-user="${esc(u.username)}">
-            <div class="friend-avatar-wrap">
-              <div class="friend-avatar">${avatarHtml}</div>
-              <span class="online-dot" title="ონლაინ"></span>
-            </div>
-            <span class="friend-name">${esc(u.username)}</span>
-            ${bioHtml}
-            <div class="friend-actions">${actionHtml}</div>
-          </div>`;
-      }).join("");
-
-      list.querySelectorAll(".act-add").forEach(btn => {
-        btn.addEventListener("click", () => {
-          const uname = btn.dataset.u;
-          const lc = uname.toLowerCase();
-          sentRequestsTo.add(lc);
-          socket?.emit("friend:request", { toUsername: uname });
-          btn.disabled = true;
-          btn.textContent = "✅ გაგზავნილია";
-          showToast(`📨 მეგობრობის მოთხოვნა გაიგზავნა ${esc(uname)}-სთვის`);
-        });
-      });
+      // Temporary (guest) users get their own section — they can't be
+      // friended (no persistent account to add), so this is a plain,
+      // non-interactive list rather than showing an "add friend" button
+      // that would always just fail.
+      if (tempSection && tempList) {
+        if (!guestUsers.length) {
+          tempSection.style.display = "none";
+        } else {
+          tempSection.style.display = "";
+          if (tempCnt) tempCnt.textContent = guestUsers.length;
+          tempList.innerHTML = guestUsers.map(u => {
+            const avatarHtml = u.avatar
+              ? `<img src="${AVATAR_DIR}${esc(u.avatar)}" alt="avatar" />`
+              : esc(u.username).charAt(0).toUpperCase();
+            return `
+              <div class="friend-item" data-online-user="${esc(u.username)}">
+                <div class="friend-avatar-wrap">
+                  <div class="friend-avatar">${avatarHtml}</div>
+                  <span class="online-dot" title="ონლაინ"></span>
+                </div>
+                <span class="friend-name">${esc(u.username)} <span class="temp-user-tag">(სტუმარი)</span></span>
+                <div class="friend-actions"><span class="temp-user-badge">დროებითი</span></div>
+              </div>`;
+          }).join("");
+        }
+      }
     }
 
     /* ── Render incoming friend requests (accept / reject) ─────────── */
@@ -1825,6 +1903,26 @@
       // Connect socket for live friend updates
       setupSocket(token);
     }
+
+    /* ── DND-during-chat toggle — reflects and controls the same
+       localStorage flag the invite bar's "🔕" link sets on friend-chat.html
+       and index.html, so turning it back on here re-enables notifications
+       everywhere at once. */
+    (function initDndToggle() {
+      const DND_KEY = "gaicani_dnd_chat_invites";
+      const input = document.getElementById("dndToggleInput");
+      if (!input) return;
+      let isOn = false;
+      try { isOn = localStorage.getItem(DND_KEY) === "1"; } catch (_) {}
+      input.checked = !isOn; // switch shows "notifications ON" (unchecked = DND is on)
+      input.addEventListener("change", () => {
+        try {
+          if (input.checked) localStorage.removeItem(DND_KEY);
+          else localStorage.setItem(DND_KEY, "1");
+        } catch (_) {}
+        showToast(input.checked ? "🔔 შეტყობინებები ჩართულია" : "🔕 შეტყობინებები გამორთულია ჩატის დროს");
+      });
+    })();
 
     document.addEventListener("DOMContentLoaded", init);
   })();

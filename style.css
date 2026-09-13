@@ -2713,13 +2713,14 @@ html, body {
   border-radius: 12px;
   padding: 12px 14px;
   display: none;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
   box-shadow: 0 8px 30px rgba(0,0,0,0.45);
   max-width: 420px;
   margin: 0 auto;
 }
 .dg-invite-bar.show { display: flex; }
+.dg-invite-bar-row { display: flex; align-items: center; gap: 10px; }
 .dg-invite-bar span { flex: 1; font-size: 0.86em; color: #dcddde; }
 .dg-invite-bar button {
   border: none;
@@ -2731,6 +2732,11 @@ html, body {
 }
 .dg-invite-accept  { background: #3ba55d; color: #fff; }
 .dg-invite-decline { background: #40444b; color: #dcddde; }
+.dg-invite-dnd {
+  background: none; border: none; color: #8b8fa8; font-size: 0.74em;
+  text-decoration: underline; cursor: pointer; padding: 0; text-align: left;
+}
+.dg-invite-dnd:hover { color: #dcddde; }
 
 /* ══════════════════════════════════════════════════════════════════════
    RANDOM-CHAT WHOLE-SITE THEMES (⋮ menu → ფონის შეცვლა)

@@ -411,14 +411,20 @@
     .dg-invite-bar {
       position: fixed; left: 12px; right: 12px; bottom: calc(12px + var(--safe-bottom)); z-index: 998;
       background: var(--surface); border: 1px solid var(--accent); border-radius: 12px;
-      padding: 12px 14px; display: none; align-items: center; gap: 10px;
+      padding: 12px 14px; display: none; flex-direction: column; gap: 8px;
       box-shadow: 0 8px 30px rgba(0,0,0,0.45);
     }
     .dg-invite-bar.show { display: flex; }
+    .dg-invite-bar-row { display: flex; align-items: center; gap: 10px; }
     .dg-invite-bar span { flex: 1; font-size: 0.86em; }
     .dg-invite-bar button { border: none; border-radius: 8px; padding: 7px 12px; font-weight: 700; font-size: 0.85em; cursor: pointer; }
     .dg-invite-accept { background: var(--good, #3ba55d); color: #fff; }
     .dg-invite-decline { background: var(--surface-2, #2f3037); color: var(--text); }
+    .dg-invite-dnd {
+      background: none; border: none; color: var(--muted); font-size: 0.74em;
+      text-decoration: underline; cursor: pointer; padding: 0; text-align: left;
+    }
+    .dg-invite-dnd:hover { color: var(--text); }
 
     /* ── Scrollbar ── */
     #fc-messages::-webkit-scrollbar { width: 4px; }
@@ -950,6 +956,40 @@
       c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
   }
   function $(id) { return document.getElementById(id); }
+
+  /* ── "Do not disturb" during chat — a device-local preference. Once on,
+     game invites stop popping up over private chat conversations (and,
+     separately, over random chat too — see script.js). Turned back on
+     from the dashboard's settings. ── */
+  const DND_CHAT_INVITES_KEY = "gaicani_dnd_chat_invites";
+  function isChatInviteDndOn() {
+    try { return localStorage.getItem(DND_CHAT_INVITES_KEY) === "1"; } catch (_) { return false; }
+  }
+  function enableChatInviteDnd() {
+    try { localStorage.setItem(DND_CHAT_INVITES_KEY, "1"); } catch (_) {}
+    const bar = $("dgInviteBar");
+    if (bar) { bar.classList.remove("show"); bar.innerHTML = ""; }
+    showToast("🔕 ჩატის დროს შეტყობინებები გამორთულია — ჩართვა შესაძლებელია ჩემი გვერდიდან");
+  }
+  // Renders an invite bar (icon + pre-escaped message HTML + accept/decline)
+  // plus a small opt-out link. Shows nothing and returns false if DND is on
+  // — callers should just skip acting on the invite entirely in that case.
+  function renderChatInviteBar({ icon, messageHtml, onAccept, onDecline }) {
+    if (isChatInviteDndOn()) return false;
+    const bar = $("dgInviteBar");
+    bar.innerHTML = `
+      <div class="dg-invite-bar-row">
+        <span>${icon} ${messageHtml}</span>
+        <button class="dg-invite-accept">✅</button>
+        <button class="dg-invite-decline">❌</button>
+      </div>
+      <button class="dg-invite-dnd">🔕 თუ გსურთ აღარ მოგივიდეთ ჩატის დროს შეტყობინება დააჭირეთ ღილაკს</button>`;
+    bar.classList.add("show");
+    bar.querySelector(".dg-invite-accept").onclick = () => { bar.classList.remove("show"); onAccept(); };
+    bar.querySelector(".dg-invite-decline").onclick = () => { bar.classList.remove("show"); onDecline(); };
+    bar.querySelector(".dg-invite-dnd").onclick = enableChatInviteDnd;
+    return true;
+  }
 
   /* ── Tap-to-preview profile card — see who you're chatting with: their
      picture, name, whether they're online right now, and their bio. ── */
@@ -1787,121 +1827,65 @@
 
     /* Invited to a Draw & Guess room while chatting */
     socket.on("drawGuess:invited", ({ roomId, fromUsername }) => {
-      const bar = $("dgInviteBar");
-      bar.innerHTML = `
-        <span>🎨 <strong>${esc(fromUsername)}</strong>-მა მოგიწვია თამაშში</span>
-        <button class="dg-invite-accept">✅</button>
-        <button class="dg-invite-decline">❌</button>`;
-      bar.classList.add("show");
-      bar.querySelector(".dg-invite-accept").onclick = () => {
-        window.location.href = "/draw-guess.html?room=" + encodeURIComponent(roomId);
-      };
-      bar.querySelector(".dg-invite-decline").onclick = () => {
-        bar.classList.remove("show");
-        socket.emit("drawGuess:declineInvite", { roomId });
-      };
+      renderChatInviteBar({
+        icon: "🎨", messageHtml: `<strong>${esc(fromUsername)}</strong>-მა მოგიწვია თამაშში`,
+        onAccept: () => { window.location.href = "/draw-guess.html?room=" + encodeURIComponent(roomId); },
+        onDecline: () => socket.emit("drawGuess:declineInvite", { roomId }),
+      });
     });
 
     /* Invited to a Poker table while chatting */
     socket.on("poker:invited", ({ roomId, fromUsername }) => {
-      const bar = $("dgInviteBar");
-      bar.innerHTML = `
-        <span>🃏 <strong>${esc(fromUsername)}</strong>-მა მოგიწვია პოკერზე</span>
-        <button class="dg-invite-accept">✅</button>
-        <button class="dg-invite-decline">❌</button>`;
-      bar.classList.add("show");
-      bar.querySelector(".dg-invite-accept").onclick = () => {
-        window.location.href = "/poker.html?room=" + encodeURIComponent(roomId);
-      };
-      bar.querySelector(".dg-invite-decline").onclick = () => {
-        bar.classList.remove("show");
-        socket.emit("poker:declineInvite", { roomId });
-      };
+      renderChatInviteBar({
+        icon: "🃏", messageHtml: `<strong>${esc(fromUsername)}</strong>-მა მოგიწვია პოკერზე`,
+        onAccept: () => { window.location.href = "/poker.html?room=" + encodeURIComponent(roomId); },
+        onDecline: () => socket.emit("poker:declineInvite", { roomId }),
+      });
     });
 
     /* Invited to a Chess game while chatting */
     socket.on("chess:invited", ({ roomId, fromUsername }) => {
-      const bar = $("dgInviteBar");
-      bar.innerHTML = `
-        <span>♟️ <strong>${esc(fromUsername)}</strong>-მა მოგიწვია ჭადრაკზე</span>
-        <button class="dg-invite-accept">✅</button>
-        <button class="dg-invite-decline">❌</button>`;
-      bar.classList.add("show");
-      bar.querySelector(".dg-invite-accept").onclick = () => {
-        window.location.href = "/chess.html?room=" + encodeURIComponent(roomId);
-      };
-      bar.querySelector(".dg-invite-decline").onclick = () => {
-        bar.classList.remove("show");
-        socket.emit("chess:declineInvite", { roomId });
-      };
+      renderChatInviteBar({
+        icon: "♟️", messageHtml: `<strong>${esc(fromUsername)}</strong>-მა მოგიწვია ჭადრაკზე`,
+        onAccept: () => { window.location.href = "/chess.html?room=" + encodeURIComponent(roomId); },
+        onDecline: () => socket.emit("chess:declineInvite", { roomId }),
+      });
     });
 
     /* Invited to a Checkers game while chatting */
     socket.on("checkers:invited", ({ roomId, fromUsername }) => {
-      const bar = $("dgInviteBar");
-      bar.innerHTML = `
-        <span>⚪ <strong>${esc(fromUsername)}</strong>-მა მოგიწვია დამაზე</span>
-        <button class="dg-invite-accept">✅</button>
-        <button class="dg-invite-decline">❌</button>`;
-      bar.classList.add("show");
-      bar.querySelector(".dg-invite-accept").onclick = () => {
-        window.location.href = "/checkers.html?room=" + encodeURIComponent(roomId);
-      };
-      bar.querySelector(".dg-invite-decline").onclick = () => {
-        bar.classList.remove("show");
-        socket.emit("checkers:declineInvite", { roomId });
-      };
+      renderChatInviteBar({
+        icon: "⚪", messageHtml: `<strong>${esc(fromUsername)}</strong>-მა მოგიწვია დამაზე`,
+        onAccept: () => { window.location.href = "/checkers.html?room=" + encodeURIComponent(roomId); },
+        onDecline: () => socket.emit("checkers:declineInvite", { roomId }),
+      });
     });
 
     /* Invited to a Joker table while chatting */
     socket.on("joker:invited", ({ roomId, fromUsername }) => {
-      const bar = $("dgInviteBar");
-      bar.innerHTML = `
-        <span>🃏 <strong>${esc(fromUsername)}</strong>-მა მოგიწვია ჯოკერზე</span>
-        <button class="dg-invite-accept">✅</button>
-        <button class="dg-invite-decline">❌</button>`;
-      bar.classList.add("show");
-      bar.querySelector(".dg-invite-accept").onclick = () => {
-        window.location.href = "/joker.html?room=" + encodeURIComponent(roomId);
-      };
-      bar.querySelector(".dg-invite-decline").onclick = () => {
-        bar.classList.remove("show");
-        socket.emit("joker:declineInvite", { roomId });
-      };
+      renderChatInviteBar({
+        icon: "🃏", messageHtml: `<strong>${esc(fromUsername)}</strong>-მა მოგიწვია ჯოკერზე`,
+        onAccept: () => { window.location.href = "/joker.html?room=" + encodeURIComponent(roomId); },
+        onDecline: () => socket.emit("joker:declineInvite", { roomId }),
+      });
     });
 
     /* Invited to an Imposter game while chatting */
     socket.on("imposter:invited", ({ roomId, fromUsername }) => {
-      const bar = $("dgInviteBar");
-      bar.innerHTML = `
-        <span>🕵️ <strong>${esc(fromUsername)}</strong>-მა მოგიწვია იმპოსტორზე</span>
-        <button class="dg-invite-accept">✅</button>
-        <button class="dg-invite-decline">❌</button>`;
-      bar.classList.add("show");
-      bar.querySelector(".dg-invite-accept").onclick = () => {
-        window.location.href = "/imposter.html?room=" + encodeURIComponent(roomId);
-      };
-      bar.querySelector(".dg-invite-decline").onclick = () => {
-        bar.classList.remove("show");
-        socket.emit("imposter:declineInvite", { roomId });
-      };
+      renderChatInviteBar({
+        icon: "🕵️", messageHtml: `<strong>${esc(fromUsername)}</strong>-მა მოგიწვია იმპოსტორზე`,
+        onAccept: () => { window.location.href = "/imposter.html?room=" + encodeURIComponent(roomId); },
+        onDecline: () => socket.emit("imposter:declineInvite", { roomId }),
+      });
     });
 
     /* Invited to a Blackjack table while chatting */
     socket.on("blackjack:invited", ({ roomId, fromUsername }) => {
-      const bar = $("dgInviteBar");
-      bar.innerHTML = `
-        <span>🂡 <strong>${esc(fromUsername)}</strong>-მა მოგიწვია ბლექჯეკზე</span>
-        <button class="dg-invite-accept">✅</button>
-        <button class="dg-invite-decline">❌</button>`;
-      bar.classList.add("show");
-      bar.querySelector(".dg-invite-accept").onclick = () => {
-        window.location.href = "/blackjack.html?room=" + encodeURIComponent(roomId);
-      };
-      bar.querySelector(".dg-invite-decline").onclick = () => {
-        bar.classList.remove("show");
-        socket.emit("blackjack:declineInvite", { roomId });
-      };
+      renderChatInviteBar({
+        icon: "🂡", messageHtml: `<strong>${esc(fromUsername)}</strong>-მა მოგიწვია ბლექჯეკზე`,
+        onAccept: () => { window.location.href = "/blackjack.html?room=" + encodeURIComponent(roomId); },
+        onDecline: () => socket.emit("blackjack:declineInvite", { roomId }),
+      });
     });
 
     socket.on("auth:error", () => {
