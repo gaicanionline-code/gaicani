@@ -580,7 +580,7 @@
       setAvatar(avatar, u.avatar, u.username);
       const name = document.createElement("div");
       name.className = "dm-pick-name";
-      name.textContent = u.username;
+      name.textContent = u.username + (u.isGuest ? " (სტუმარი)" : "");
       const check = document.createElement("div");
       check.className = "dm-pick-check";
       check.textContent = "✓";

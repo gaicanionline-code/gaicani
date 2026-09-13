@@ -520,7 +520,7 @@
       setAvatar(avatar, u.avatar, u.username);
       const name = document.createElement("div");
       name.className = "bj-pick-name";
-      name.textContent = u.username;
+      name.textContent = u.username + (u.isGuest ? " (სტუმარი)" : "");
       const check = document.createElement("div");
       check.className = "bj-pick-check";
       check.textContent = "✓";

@@ -702,7 +702,7 @@
       setAvatar(avatar, u.avatar, u.username);
       const name = document.createElement("div");
       name.className = "pk-pick-name";
-      name.textContent = u.username;
+      name.textContent = u.username + (u.isGuest ? " (სტუმარი)" : "");
       const check = document.createElement("div");
       check.className = "pk-pick-check";
       check.textContent = "✓";
