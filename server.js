@@ -3495,6 +3495,11 @@ const registeredUsers   = new Map(); // lowerUsername → userObj
 const authTokens        = new Map(); // token → { usernameLower, expiry }
 const privateRooms      = new Map(); // roomId → { messages, createdAt, expiresAt }
 const onlineRegSockets  = new Map(); // lowerUsername → Set<socketId>
+// If A sends B a friend request and B declines it, A can't send B another
+// one for 24h — stops someone from immediately re-spamming a request the
+// person just said no to.
+const FRIEND_REQUEST_DECLINE_COOLDOWN_MS = parseInt(process.env.FRIEND_REQUEST_DECLINE_COOLDOWN_MS, 10) || 24 * 60 * 60 * 1000;
+const friendRequestDeclineCooldown = new Map(); // "senderLc|recipientLc" → expiry timestamp
 const friendStreaks     = new Map(); // roomId → { count, lastDate, lastFrom: { usernameLower: "YYYY-MM-DD" } }
 
 // ── Rooms ("ოთახები" — Discord-style topic rooms) ──────────────────────────
@@ -4149,6 +4154,11 @@ setInterval(() => {
   for (const [key, expiry] of bjDeclineCooldown) if (now >= expiry) bjDeclineCooldown.delete(key);
 }, 60 * 60 * 1000);
 
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, expiry] of friendRequestDeclineCooldown) if (now >= expiry) friendRequestDeclineCooldown.delete(key);
+}, 60 * 60 * 1000);
+
 // ── REST endpoints ────────────────────────────────────────────────────────────
 const authLimiter = rateLimit({ windowMs: 15 * 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
 
@@ -4347,6 +4357,29 @@ function requireRegAuth(req, res) {
   if (!user) { res.status(401).json({ error: "User not found" }); return null; }
   return { usernameLower: entry.usernameLower, user };
 }
+
+// GET /api/users/profile?username=X — a small public-profile snapshot for
+// the tap-to-preview card (name, avatar, bio, online-or-not). Any
+// registered user can look up any other by username — the same
+// avatar/bio pair is already visible to anyone browsing the online-users
+// list elsewhere, so this isn't exposing anything new, just making it
+// reachable by name from more places (a friends list, a chat header).
+app.get("/api/users/profile", (req, res) => {
+  const auth = requireRegAuth(req, res);
+  if (!auth) return;
+
+  const lc = String(req.query.username || "").toLowerCase().trim();
+  const u = registeredUsers.get(lc);
+  if (!u) return res.status(404).json({ error: "მომხმარებელი ვერ მოიძებნა" });
+
+  const isOnline = onlineRegSockets.has(lc) && onlineRegSockets.get(lc).size > 0;
+  res.json({
+    username: u.username,
+    avatar: u.avatar || DEFAULT_AVATAR,
+    bio: u.bio || "",
+    isOnline,
+  });
+});
 
 // GET /api/rooms — list every room. Open to any authenticated registered
 // user (rooms require no approval to see or join). Each room in the list
@@ -7713,10 +7746,24 @@ io.on("connection", (socket) => {
     const targetLc = String(toUsername).toLowerCase().trim();
     const targetUser = registeredUsers.get(targetLc);
     if (!targetUser) return;
+    const myLc = socket._regUser.usernameLower;
+
+    // Blocked for 24h after this specific person declined a request from
+    // this specific sender — doesn't affect requests to anyone else.
+    const cooldownKey = `${myLc}|${targetLc}`;
+    const cooldownExpiry = friendRequestDeclineCooldown.get(cooldownKey);
+    if (cooldownExpiry) {
+      if (Date.now() < cooldownExpiry) {
+        const hoursLeft = Math.ceil((cooldownExpiry - Date.now()) / (60 * 60 * 1000));
+        socket.emit("friend:error", { msg: `${targetUser.username}-მა ახლახან უარყო თქვენი მოთხოვნა — სცადეთ ${hoursLeft} საათში` });
+        return;
+      }
+      friendRequestDeclineCooldown.delete(cooldownKey); // expired, clean it up
+    }
 
     if (!targetUser.pendingRequests) targetUser.pendingRequests = [];
-    if (!targetUser.pendingRequests.includes(socket._regUser.usernameLower)) {
-      targetUser.pendingRequests.push(socket._regUser.usernameLower);
+    if (!targetUser.pendingRequests.includes(myLc)) {
+      targetUser.pendingRequests.push(myLc);
       saveAuthUsers();
     }
 
@@ -7754,12 +7801,17 @@ io.on("connection", (socket) => {
   socket.on("friend:decline", ({ fromUsername }) => {
     if (!socket._regUser) return;
     const fromLc = String(fromUsername).toLowerCase().trim();
-    const myUser = registeredUsers.get(socket._regUser.usernameLower);
+    const myLc = socket._regUser.usernameLower;
+    const myUser = registeredUsers.get(myLc);
     if (!myUser) return;
 
     if (!myUser.pendingRequests) myUser.pendingRequests = [];
     myUser.pendingRequests = myUser.pendingRequests.filter(u => u !== fromLc);
     saveAuthUsers();
+
+    // That sender can't send ME another request for 24h — doesn't affect
+    // requests they send to anyone else, or requests anyone else sends me.
+    friendRequestDeclineCooldown.set(`${fromLc}|${myLc}`, Date.now() + FRIEND_REQUEST_DECLINE_COOLDOWN_MS);
 
     socket.emit("friend:declined");
     io.to(`user:${fromLc}`).emit("friend:declinedByOther", {

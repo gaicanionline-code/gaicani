@@ -220,6 +220,7 @@
       background: #1e1f22;
       border-radius: 10px;
       padding: 10px 12px;
+      cursor: pointer;
     }
     .friend-avatar {
       width: 34px; height: 34px;
@@ -493,6 +494,56 @@
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       max-width: 130px; flex-shrink: 0; margin-right: 4px;
     }
+
+    /* ── Tap-to-preview profile card — a small "mini profile page" for a
+       friend or online user: picture, name, online/offline, and bio ── */
+    .profile-card-backdrop {
+      position: fixed; inset: 0; z-index: 900; background: rgba(0,0,0,0.55);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.18s ease;
+      padding: 20px;
+    }
+    .profile-card-backdrop.show { opacity: 1; pointer-events: auto; }
+    .profile-card-modal {
+      background: #2b2d31; border-radius: 16px; width: 100%; max-width: 340px;
+      padding: 24px 20px 20px; text-align: center; position: relative;
+      transform: scale(0.92) translateY(8px); transition: transform 0.18s ease;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .profile-card-backdrop.show .profile-card-modal { transform: scale(1) translateY(0); }
+    .profile-card-close {
+      position: absolute; top: 10px; right: 10px; width: 30px; height: 30px;
+      border-radius: 50%; border: none; background: rgba(255,255,255,0.08);
+      color: #b5bac1; font-size: 1em; cursor: pointer;
+    }
+    .profile-card-avatar {
+      width: 84px; height: 84px; border-radius: 50%; margin: 0 auto 12px;
+      background: #1e1f22; display: flex; align-items: center; justify-content: center;
+      font-size: 2em; font-weight: 700; color: #b5bac1; overflow: hidden;
+      border: 3px solid #35373c;
+    }
+    .profile-card-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .profile-card-name { font-size: 1.15em; font-weight: 800; color: #fff; margin-bottom: 6px; }
+    .profile-card-status {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 0.82em;
+      font-weight: 600; padding: 4px 12px; border-radius: 20px; margin-bottom: 14px;
+    }
+    .profile-card-status.online { background: rgba(59,165,93,0.16); color: #3ba55d; }
+    .profile-card-status.offline { background: rgba(255,255,255,0.06); color: #72767d; }
+    .profile-card-status-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    .profile-card-bio {
+      background: #1e1f22; border-radius: 10px; padding: 12px 14px;
+      color: #dcddde; font-size: 0.88em; line-height: 1.5; text-align: left;
+      margin-bottom: 16px; word-break: break-word;
+    }
+    .profile-card-bio.empty { color: #72767d; font-style: italic; text-align: center; }
+    .profile-card-actions { display: flex; gap: 8px; }
+    .profile-card-msg-btn {
+      flex: 1; border: none; border-radius: 8px; padding: 10px; font-weight: 700;
+      font-size: 0.88em; cursor: pointer; background: #5865f2; color: #fff;
+    }
+    .profile-card-msg-btn:hover { background: #4752c4; }
+    .profile-card-loading { color: #72767d; font-size: 0.9em; padding: 20px 0; }
   </style>
 </head>
 <body>
@@ -670,6 +721,14 @@
 
   <div id="toast-container"></div>
   <div id="dgInviteBar" class="dg-invite-bar"></div>
+
+  <!-- Tap-to-preview profile card -->
+  <div id="profileCardBackdrop" class="profile-card-backdrop">
+    <div class="profile-card-modal">
+      <button class="profile-card-close" id="profileCardCloseBtn">✕</button>
+      <div id="profileCardBody"><div class="profile-card-loading">იტვირთება...</div></div>
+    </div>
+  </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
@@ -1198,6 +1257,15 @@
         });
       });
 
+      // Tapping anywhere on the row EXCEPT the action buttons opens a
+      // quick profile preview — name, picture, online status, bio.
+      list.querySelectorAll(".friend-item").forEach(item => {
+        item.addEventListener("click", (e) => {
+          if (e.target.closest(".friend-actions")) return;
+          openProfileCard(item.dataset.friend);
+        });
+      });
+
       // Re-apply any existing unread dots (dots survive re-renders)
       unreadFromFriends.forEach(lc => markUnreadDot(lc));
 
@@ -1246,6 +1314,60 @@
         })
         .catch(() => {});
     }
+
+    /* ── Tap-to-preview profile card ─────────────────────────────────
+       A small "mini profile page" for a friend or online user — picture,
+       name, whether they're online right now, and their bio if they've
+       written one. */
+    async function openProfileCard(username) {
+      const backdrop = document.getElementById("profileCardBackdrop");
+      const body = document.getElementById("profileCardBody");
+      body.innerHTML = '<div class="profile-card-loading">იტვირთება...</div>';
+      backdrop.classList.add("show");
+
+      const { token } = loadAuth();
+      if (!token) { closeProfileCard(); return; }
+
+      try {
+        const r = await fetch(`/api/users/profile?username=${encodeURIComponent(username)}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!r.ok) throw new Error("not found");
+        const d = await r.json();
+
+        const avatarHtml = d.avatar
+          ? `<img src="${AVATAR_DIR}${esc(d.avatar)}" alt="avatar" />`
+          : esc(d.username).charAt(0).toUpperCase();
+        const statusHtml = d.isOnline
+          ? '<div class="profile-card-status online"><span class="profile-card-status-dot"></span>ონლაინ</div>'
+          : '<div class="profile-card-status offline"><span class="profile-card-status-dot"></span>ოფლაინ</div>';
+        const bioHtml = d.bio
+          ? `<div class="profile-card-bio">${esc(d.bio)}</div>`
+          : '<div class="profile-card-bio empty">ბიოგრაფია ჯერ არ დაუწერია</div>';
+
+        body.innerHTML = `
+          <div class="profile-card-avatar">${avatarHtml}</div>
+          <div class="profile-card-name">${esc(d.username)}</div>
+          ${statusHtml}
+          ${bioHtml}
+          <div class="profile-card-actions">
+            <button class="profile-card-msg-btn" id="profileCardMsgBtn">💬 პირადი მიწერა</button>
+          </div>`;
+
+        document.getElementById("profileCardMsgBtn").addEventListener("click", () => {
+          window.location.href = `/friend-chat.html?friend=${encodeURIComponent(d.username)}`;
+        });
+      } catch (_) {
+        body.innerHTML = '<div class="profile-card-loading">პროფილის ჩატვირთვა ვერ მოხერხდა</div>';
+      }
+    }
+    function closeProfileCard() {
+      document.getElementById("profileCardBackdrop").classList.remove("show");
+    }
+    document.getElementById("profileCardCloseBtn").addEventListener("click", closeProfileCard);
+    document.getElementById("profileCardBackdrop").addEventListener("click", (e) => {
+      if (e.target.id === "profileCardBackdrop") closeProfileCard();
+    });
 
     /* ── Render online-users list (other registered users online now) ── */
     function renderDgRooms(rooms) {
