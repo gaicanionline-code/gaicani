@@ -942,13 +942,7 @@
   function toggleRegMenu(e) {
     const dd = $("regMenuDropdown");
     if (!dd) return;
-    // Only allow opening while actively chatting with a partner
     if (dd.style.display === "none" || !dd.style.display) {
-      if (!window.partnerConnected) {
-        showToast("⋮ მენიუ მხოლოდ ჩატის დროს ხელმისაწვდომია");
-        e.stopPropagation();
-        return;
-      }
       openRegMenu();
     } else {
       closeRegMenu();
@@ -994,10 +988,16 @@
   }
   function rcApplyTheme(themeId) {
     const theme = RC_THEMES.find(t => t.id === themeId) || RC_THEMES[0];
+    // Re-skins the WHOLE page (header, chat bubbles, input bar, menu) via a
+    // body class — not just the chat message area. See the rc-theme-*
+    // rules at the end of style.css for exactly what each theme touches.
+    document.body.classList.remove("rc-theme-default", "rc-theme-light", "rc-theme-pink", "rc-theme-ocean", "rc-theme-sunset");
+    document.body.classList.add(`rc-theme-${theme.id}`);
     const chat = $("chat");
-    if (!chat) return;
-    chat.classList.add("rc-bg-transition");
-    chat.style.background = theme.css;
+    if (chat) {
+      chat.classList.add("rc-bg-transition");
+      chat.style.background = theme.css;
+    }
   }
   function rcSaveTheme(themeId) {
     try { localStorage.setItem(rcThemeStorageKey(), themeId); } catch (_) { /* private-mode storage may reject writes — theme just won't persist */ }

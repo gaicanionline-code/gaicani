@@ -2731,3 +2731,95 @@ html, body {
 }
 .dg-invite-accept  { background: #3ba55d; color: #fff; }
 .dg-invite-decline { background: #40444b; color: #dcddde; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   RANDOM-CHAT WHOLE-SITE THEMES (⋮ menu → ფონის შეცვლა)
+   Applied as a class on <body> (rc-theme-default/light/pink/ocean/sunset)
+   by rcApplyTheme() in auth-client.js. Re-skins the page as a whole —
+   background, header, chat bubbles, input bar, menu — not just the chat
+   message area, so picking a theme actually feels like a different site.
+   A device-local preference; transitions smoothly via .rc-bg-transition.
+   ══════════════════════════════════════════════════════════════════════ */
+
+body.rc-theme-default,
+body.rc-theme-pink,
+body.rc-theme-ocean,
+body.rc-theme-sunset,
+body.rc-theme-light {
+  transition: background 0.35s ease, color 0.35s ease;
+}
+body.rc-theme-default .top-bar,
+body.rc-theme-pink .top-bar,
+body.rc-theme-ocean .top-bar,
+body.rc-theme-sunset .top-bar,
+body.rc-theme-light .top-bar,
+body.rc-theme-default .chat-input,
+body.rc-theme-pink .chat-input,
+body.rc-theme-ocean .chat-input,
+body.rc-theme-sunset .chat-input,
+body.rc-theme-light .chat-input,
+body.rc-theme-default .reg-menu-dropdown,
+body.rc-theme-pink .reg-menu-dropdown,
+body.rc-theme-ocean .reg-menu-dropdown,
+body.rc-theme-sunset .reg-menu-dropdown,
+body.rc-theme-light .reg-menu-dropdown {
+  transition: background 0.35s ease, color 0.35s ease, border-color 0.35s ease;
+}
+
+/* ── Pink ── */
+body.rc-theme-pink { background: #1a0f18; color: #fff; }
+body.rc-theme-pink .top-bar { background: rgba(58, 26, 46, 0.96); border-bottom-color: rgba(255,255,255,0.08); }
+body.rc-theme-pink .chat-input { background: rgba(58, 26, 46, 0.97); border-top-color: rgba(255,255,255,0.08); }
+body.rc-theme-pink .chat-input textarea { background: #2a1522; color: #fbe9f2; }
+body.rc-theme-pink .message-content { background: #3d1f34; color: #f3dfec; }
+body.rc-theme-pink .message-content.you { background: linear-gradient(135deg, #e0559b 0%, #b23d78 100%); }
+body.rc-theme-pink #sendBtn:not(:disabled) { background: linear-gradient(135deg, #e0559b 0%, #b23d78 100%) !important; }
+body.rc-theme-pink .reg-menu-dropdown { background: #2f1928; border-color: rgba(255,255,255,0.1); }
+body.rc-theme-pink .reg-menu-label,
+body.rc-theme-pink .reg-menu-icon { color: #f3dfec; }
+body.rc-theme-pink .system-message { color: #c98fb0; }
+
+/* ── Ocean ── */
+body.rc-theme-ocean { background: #0a1620; color: #fff; }
+body.rc-theme-ocean .top-bar { background: rgba(13, 43, 58, 0.96); border-bottom-color: rgba(255,255,255,0.08); }
+body.rc-theme-ocean .chat-input { background: rgba(13, 43, 58, 0.97); border-top-color: rgba(255,255,255,0.08); }
+body.rc-theme-ocean .chat-input textarea { background: #0d222e; color: #e2f4f9; }
+body.rc-theme-ocean .message-content { background: #123a4a; color: #dcf1f7; }
+body.rc-theme-ocean .message-content.you { background: linear-gradient(135deg, #1ea7c9 0%, #12738c 100%); }
+body.rc-theme-ocean #sendBtn:not(:disabled) { background: linear-gradient(135deg, #1ea7c9 0%, #12738c 100%) !important; }
+body.rc-theme-ocean .reg-menu-dropdown { background: #0f2c39; border-color: rgba(255,255,255,0.1); }
+body.rc-theme-ocean .reg-menu-label,
+body.rc-theme-ocean .reg-menu-icon { color: #dcf1f7; }
+body.rc-theme-ocean .system-message { color: #7fb8cc; }
+
+/* ── Sunset ── */
+body.rc-theme-sunset { background: #1a1020; color: #fff; }
+body.rc-theme-sunset .top-bar { background: rgba(58, 36, 8, 0.96); border-bottom-color: rgba(255,255,255,0.08); }
+body.rc-theme-sunset .chat-input { background: rgba(58, 36, 8, 0.97); border-top-color: rgba(255,255,255,0.08); }
+body.rc-theme-sunset .chat-input textarea { background: #2a1a10; color: #fbeee2; }
+body.rc-theme-sunset .message-content { background: #3d2a1f; color: #f3e6db; }
+body.rc-theme-sunset .message-content.you { background: linear-gradient(135deg, #e08a3d 0%, #b2542f 100%); }
+body.rc-theme-sunset #sendBtn:not(:disabled) { background: linear-gradient(135deg, #e08a3d 0%, #b2542f 100%) !important; }
+body.rc-theme-sunset .reg-menu-dropdown { background: #2f2015; border-color: rgba(255,255,255,0.1); }
+body.rc-theme-sunset .reg-menu-label,
+body.rc-theme-sunset .reg-menu-icon { color: #f3e6db; }
+body.rc-theme-sunset .system-message { color: #c9a37f; }
+
+/* ── Light — the one theme where text needs to flip dark, since it's the
+   only light-background option ── */
+body.rc-theme-light { background: #eef0f5; color: #1a1b1e; }
+body.rc-theme-light .top-bar { background: rgba(255,255,255,0.96); border-bottom-color: rgba(0,0,0,0.08); box-shadow: 0 1px 0 rgba(0,0,0,0.06); }
+body.rc-theme-light .site-name { -webkit-text-fill-color: initial; background: linear-gradient(135deg, #5865f2 0%, #2f3ac0 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+body.rc-theme-light #onlineCount { color: #6b7080; }
+body.rc-theme-light .chat-input { background: rgba(255,255,255,0.97); border-top-color: rgba(0,0,0,0.08); box-shadow: 0 -2px 16px rgba(0,0,0,0.08); }
+body.rc-theme-light .chat-input textarea { background: #f0f1f5; color: #1a1b1e; }
+body.rc-theme-light .chat-input textarea::placeholder { color: #8b8fa8; }
+body.rc-theme-light .message-content { background: #ffffff; color: #1a1b1e; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+body.rc-theme-light .message-content.you { background: linear-gradient(135deg, #5865f2 0%, #4752c4 100%); color: #fff; }
+body.rc-theme-light .reg-menu-dropdown { background: #ffffff; border-color: rgba(0,0,0,0.08); box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
+body.rc-theme-light .reg-menu-label { color: #1a1b1e; }
+body.rc-theme-light .reg-menu-icon { color: #4b4f5a; }
+body.rc-theme-light .reg-menu-btn { background: rgba(0,0,0,0.06); border-color: rgba(0,0,0,0.1); color: #4b4f5a; }
+body.rc-theme-light .reg-menu-btn:hover { background: rgba(0,0,0,0.1); color: #1a1b1e; }
+body.rc-theme-light .system-message { color: #6b7080; }
+body.rc-theme-light .seen-status { color: #8b8fa8; }
