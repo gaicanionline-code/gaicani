@@ -295,16 +295,31 @@
     socketBound = true;
     authSocket = s;
 
-    // Send auth token once socket connects or reconnects
+    // Send auth once connected or reconnected — a real token for a
+    // registered user, or a guest identity for anyone else, so game
+    // invites can be sent AND received through this same socket (the one
+    // random chat itself runs on) regardless of registration status.
     function sendAuthToken() {
-      if (authUser) s.emit("auth:login", { token: authUser.token });
+      if (authUser) {
+        s.emit("auth:login", { token: authUser.token });
+      } else {
+        let preferredUsername = null;
+        try { preferredUsername = sessionStorage.getItem("gaicani_guest_username"); } catch (_) {}
+        s.emit("auth:guest", { preferredUsername });
+      }
     }
 
     if (s.connected) sendAuthToken();
     s.on("connect", sendAuthToken);
 
     // Authentication confirmed
-    s.on("auth:authenticated", ({ username, friends, pendingRequests }) => {
+    s.on("auth:authenticated", ({ username, friends, pendingRequests, isGuest }) => {
+      if (isGuest) {
+        // Guests have no friends/pending requests to populate — just
+        // remember the assigned name so it's reused on the next page.
+        if (username) { try { sessionStorage.setItem("gaicani_guest_username", username); } catch (_) {} }
+        return;
+      }
       if (authUser) {
         authUser.friends = friends || [];
         authUser.pendingRequests = pendingRequests || [];
@@ -1069,6 +1084,14 @@
     if (bioPopup) bioPopup.style.display = "flex";
   });
 
+  // სახელის შეცვლა (Change Name) — reuses the same (now-hidden) main-bar
+  // button's existing click logic rather than duplicating it here.
+  $("regMenuChangeName")?.addEventListener("click", () => {
+    closeRegMenu();
+    const changeNameBtn = document.getElementById("changeNameBtn");
+    if (changeNameBtn) changeNameBtn.click();
+  });
+
   // ჩემი გვერდი (My Page) — navigate to the full dashboard page
   $("regMenuDash")?.addEventListener("click", () => {
     closeRegMenu();
@@ -1140,7 +1163,17 @@
     activateTab("guest");
     updateAuthBadge();
     updateRegMenuVisibility();
-    tryAutoLogin();
+    // If there's no stored token at all, bind the guest identity right
+    // away rather than waiting on tryAutoLogin (which only runs when a
+    // token exists) — otherwise a guest's socket never gets _regUser set
+    // here, and they'd never receive or send game invites while actually
+    // on the random chat page itself (only on dashboard/game pages).
+    const { token, username } = loadAuth();
+    if (token && username) {
+      tryAutoLogin();
+    } else {
+      bindSocketEvents();
+    }
   });
 
 })();

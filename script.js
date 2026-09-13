@@ -1275,12 +1275,13 @@ socket.on("nameAccepted", (acceptedName) => {
     displayEl.style.display = "block";
   }
 
-  // Show interests/bio button
-  if (interestsBtn) interestsBtn.style.display = "inline-block";
+  // Interests/bio and "change name" now live in the ⋮ menu instead of as
+  // separate main-bar buttons — keeps the main bar less cluttered. See
+  // regMenuInt / regMenuChangeName in the dropdown.
 
   // Show "ჩემი გვერდი" (My Page / dashboard) — same main-bar-icon treatment
-  // as Interests/Music, not the ⋮ menu (that's reserved for registered
-  // users, who already have myPageBtn shown via auth-client.js instead).
+  // as before, not the ⋮ menu (that's reserved for registered users, who
+  // already have myPageBtn shown via auth-client.js instead).
   const myPageBtnEl = document.getElementById("myPageBtn");
   if (myPageBtnEl && myPageBtnEl.style.display === "none") myPageBtnEl.style.display = "inline-flex";
 
