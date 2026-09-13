@@ -417,49 +417,6 @@
     socket.emit("flappy:submitScore", { sessionId, score: finalScore });
   }
 
-  function connectSocket(token) {
-    socket = io();
-
-    socket.on("connect", () => socket.emit("auth:login", { token }));
-
-    socket.on("auth:authenticated", () => {
-      requestSession();
-    });
-
-    socket.on("auth:invalid", () => {
-      clearAuth();
-      window.location.href = "/";
-    });
-
-    socket.on("flappy:sessionStarted", ({ sessionId: sid }) => {
-      sessionId = sid;
-      if (pendingScoreSubmit !== null) {
-        const s = pendingScoreSubmit;
-        pendingScoreSubmit = null;
-        submitScore(s);
-      }
-    });
-
-    socket.on("flappy:scoreResult", ({ accepted, personalBest, isNewBest, score: acceptedScore }) => {
-      if (!accepted) return; // rejected by anti-cheat — leaderboard/best simply won't move
-      if (typeof personalBest === "number") {
-        myBest = personalBest;
-        elBestScoreChip.textContent = String(myBest);
-        elGameOverBest.textContent = String(myBest);
-      }
-      if (isNewBest) {
-        elNewBestBadge.style.display = "inline-flex";
-        showToast("🎉 ახალი პირადი რეკორდი!");
-      }
-    });
-
-    socket.on("flappy:error", ({ error }) => {
-      if (error) showToast(`⚠️ ${esc(error)}`);
-    });
-
-    socket.on("flappy:leaderboardUpdate", (top3) => renderPodium(top3 || []));
-  }
-
   /* ══════════════════════════════════════════════════════════════════
      Leaderboard rendering
      ══════════════════════════════════════════════════════════════════ */
@@ -490,41 +447,64 @@
   }
 
   /* ══════════════════════════════════════════════════════════════════
-     Init — auth gate, then boot the game
+     Init — auth gate, then boot the game. Registered users use their
+     saved token; anyone else gets a temporary guest identity instead of
+     being blocked — same everywhere-else-on-the-site pattern, so guests
+     can play Flappy Bird too and still show up on the leaderboard.
      ══════════════════════════════════════════════════════════════════ */
   async function init() {
     const { token, username } = loadAuth();
 
-    if (!token || !username) {
+    socket = io();
+    socket.on("connect", () => {
+      if (token) socket.emit("auth:token", { token });
+      else socket.emit("auth:guest", { preferredUsername: sessionStorage.getItem("gaicani_guest_username") || null });
+    });
+
+    socket.on("auth:authenticated", ({ username: authedName, isGuest } = {}) => {
+      if (isGuest && authedName) {
+        try { sessionStorage.setItem("gaicani_guest_username", authedName); } catch (_) {}
+      }
+      elTopUsername.textContent = `🔐 ${authedName || username}`;
       elLoading.style.display = "none";
-      elGuestGate.classList.add("visible");
-      return;
-    }
+      elApp.classList.add("visible");
+      loadLeaderboardInitial();
+      requestSession();
+    });
 
-    let verified = null;
-    try {
-      const r = await fetch("/api/auth/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-      });
-      const d = await r.json();
-      if (r.ok && d.success) verified = d;
-    } catch (_) { /* network hiccup — fall through to guest gate below */ }
-
-    if (!verified) {
+    socket.on("auth:invalid", () => {
       clearAuth();
       elLoading.style.display = "none";
       elGuestGate.classList.add("visible");
-      return;
-    }
+    });
 
-    elTopUsername.textContent = `🔐 ${verified.username || username}`;
-    elLoading.style.display = "none";
-    elApp.classList.add("visible");
+    socket.on("flappy:sessionStarted", ({ sessionId: sid }) => {
+      sessionId = sid;
+      if (pendingScoreSubmit !== null) {
+        const s = pendingScoreSubmit;
+        pendingScoreSubmit = null;
+        submitScore(s);
+      }
+    });
 
-    loadLeaderboardInitial();
-    connectSocket(token);
+    socket.on("flappy:scoreResult", ({ accepted, personalBest, isNewBest, score: acceptedScore }) => {
+      if (!accepted) return; // rejected by anti-cheat — leaderboard/best simply won't move
+      if (typeof personalBest === "number") {
+        myBest = personalBest;
+        elBestScoreChip.textContent = String(myBest);
+        elGameOverBest.textContent = String(myBest);
+      }
+      if (isNewBest) {
+        elNewBestBadge.style.display = "inline-flex";
+        showToast("🎉 ახალი პირადი რეკორდი!");
+      }
+    });
+
+    socket.on("flappy:error", ({ error }) => {
+      if (error) showToast(`⚠️ ${esc(error)}`);
+    });
+
+    socket.on("flappy:leaderboardUpdate", (top3) => renderPodium(top3 || []));
   }
 
   document.addEventListener("DOMContentLoaded", init);
