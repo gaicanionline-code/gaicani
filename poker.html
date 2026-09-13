@@ -396,6 +396,24 @@
     }
 
     @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+
+    /* ── Desktop / big screens — the table gets real room to breathe
+       instead of a mobile-width layout stretched across a wide monitor.
+       Seats are positioned by percentage and the layout is flex-based
+       throughout, so it naturally fills the wider frame correctly. ── */
+    @media (min-width: 700px) {
+      body {
+        display: flex; align-items: center; justify-content: center;
+        background: #0e0f13;
+      }
+      #app {
+        width: 100%; max-width: 900px;
+        height: 92vh; height: 92dvh;
+        border-radius: 20px; overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        border: 1px solid rgba(255,255,255,0.06);
+      }
+    }
   </style>
 </head>
 <body>
