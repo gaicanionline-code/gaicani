@@ -2774,7 +2774,7 @@ io.on("connection", (socket) => {
   socket.on("game:request", ({ gameType }) => {
     if (!socket.partner) return;
     if (socket.partner._isGhost) return; // partner mid-reconnect, can't start game
-    if (!["ttt", "rps", "math"].includes(gameType)) return;
+    if (!["ttt", "rps", "math", "truthordare"].includes(gameType)) return;
     socket.partner.emit("game:invite", { gameType, fromId: socket.id });
   });
 
@@ -2999,51 +2999,10 @@ io.on("connection", (socket) => {
 
   // Tab-away events disabled — no action taken when user hides browser tab
 
-  // ── Disconnect ───────────────────────────────────────────────────────────
-  socket.on("disconnect", () => {
-    console.log("User disconnected", socket.id);
-    recordDisconnect(socket.clientIP, socket._connectedAt);
-
-    cleanupGameForSocket(socket.id);
-
-    if (socket.partner) {
-      const partner   = socket.partner;
-      const name      = socket.userName || "Anonymous";
-      const nameLower = name.toLowerCase();
-
-      socket.partner       = null;
-      socket._isGhost      = true;
-      socket._messageQueue = [];
-
-      // Immediately notify the staying partner so they see the disconnect
-      // message and can block right away. We clear partner.partner now so
-      // blockUser falls cleanly into the name-only block path.
-      partner.lastPartnerName = name;
-      partner.lastPartnerIP   = socket.clientIP || "";
-      partner.lastPartnerSocketId = socket.id;
-      partner.hasReportedLast = false;
-      partner.partner         = null;
-      if (partner.connected) {
-        partner.emit("partnerDisconnected", { name });
-        partner.emit("music:stop");
-      }
-
-      if (socket.userName) {
-        const timeout = setTimeout(() => {
-          pendingDisconnects.delete(nameLower);
-          activeUsernames.delete(nameLower);
-        }, RECONNECT_GRACE_MS);
-        pendingDisconnects.set(nameLower, { partner, timeout, ghostSocket: socket });
-      } else {
-        // Anonymous user — no reconnect grace needed
-      }
-    } else {
-      if (socket.userName) activeUsernames.delete(socket.userName.toLowerCase());
-    }
-
-    waitingQueue = waitingQueue.filter(s => s.id !== socket.id);
-    updateOnlineCount();
-  });
+  // (Disconnect handling for this connection lives in the merged handler
+  // further down in the file, which covers both this random-chat cleanup
+  // AND all the registered/guest/game cleanup together — see the comment
+  // there for why.)
 });
 
 // ── Stats API ────────────────────────────────────────────────────────────────
@@ -3607,9 +3566,10 @@ function getOnlineRegisteredUsers(excludeLc) {
     if (lc === excludeLc) continue;
     const u = registeredUsers.get(lc);
     if (!u) continue;
-    list.push({ username: u.username, avatar: u.avatar || null, bio: u.bio || "" });
+    list.push({ username: u.username, avatar: u.avatar || null, bio: u.bio || "", isGuest: !!u.isGuest });
   }
-  list.sort((a, b) => a.username.localeCompare(b.username));
+  // Real accounts first, temporary guests after — within each group, alphabetical.
+  list.sort((a, b) => (a.isGuest === b.isGuest ? a.username.localeCompare(b.username) : (a.isGuest ? 1 : -1)));
   return list;
 }
 
@@ -7740,15 +7700,21 @@ io.on("connection", (socket) => {
   socket.on("auth:guest", (data) => {
     if (socket._regUser) return; // already authenticated one way or the other
 
-    // If the client remembers a guest name from earlier in this browser
-    // session (sessionStorage — not persisted beyond it), reuse it as long
-    // as it's not currently taken by anyone else, so navigating between
-    // pages doesn't hand out a brand new identity every time. The pattern
-    // is strictly validated so this can't be used to claim an arbitrary or
-    // real username.
+    // If the client remembers a name from earlier in this browser session —
+    // either a guest name from a previous dashboard/game visit, or (more
+    // commonly) whatever they already typed in for random chat via setName
+    // — reuse it so they show up as themselves everywhere instead of a
+    // random "სტუმარი####", as long as it's not currently taken by a real
+    // account or another active guest. Same length/character rules as any
+    // other chosen name on this site (see setName / registration).
     const preferred = (data && typeof data.preferredUsername === "string") ? data.preferredUsername.trim() : null;
+    const preferredValid = preferred
+      && preferred.length >= NAME_MIN && preferred.length <= NAME_MAX
+      && /^[\w\u10D0-\u10FF\s\-.]+$/.test(preferred)
+      && !registeredUsers.has(preferred.toLowerCase());
+
     let username, lc;
-    if (preferred && /^სტუმარი\d{4}$/.test(preferred) && !registeredUsers.has(preferred.toLowerCase())) {
+    if (preferredValid) {
       username = preferred;
       lc = username.toLowerCase();
     } else {
@@ -8216,175 +8182,6 @@ io.on("connection", (socket) => {
     const toUser = registeredUsers.get(toLc);
     io.to(`user:${toLc}`).emit("streak:update", { friendUsername: socket._regUser.username, count: streak.count, atRisk: streak.atRisk });
     socket.emit("streak:update", { friendUsername: toUser?.username || toUsername, count: streak.count, atRisk: streak.atRisk });
-  });
-
-  // ── Message handling ─────────────────────────────────────────────────────
-  socket.on("message", (data) => {
-    if (!socket.partner || !socket.partner.connected) {
-      socket.emit("error", { msg: "Partner disconnected" });
-      return;
-    }
-
-    let msg = String(data.msg || "").trim().slice(0, MSG_MAX);
-    if (!msg) return;
-
-    // Rate limiting
-    if (!socket.msgTimes) socket.msgTimes = [];
-    const now = Date.now();
-    socket.msgTimes = socket.msgTimes.filter(t => now - t < MSG_RATE_WINDOW_MS);
-
-    if (socket.msgTimes.length >= MSG_RATE_MAX) {
-      socket.emit("rateLimited");
-      return;
-    }
-    socket.msgTimes.push(now);
-
-    socket.partner.emit("message", { msg, name: socket.userName });
-  });
-
-  // ── Name change ──────────────────────────────────────────────────────────
-  socket.on("namechange", ({ name }) => {
-    if (!name || typeof name !== "string") return;
-    const clean = String(name).trim().slice(0, NAME_MAX);
-    if (clean.length < NAME_MIN) return;
-
-    socket.userName = clean;
-    if (socket.partner) socket.partner.emit("partnerName", { name: clean });
-  });
-
-  // ── Game request ─────────────────────────────────────────────────────────
-  socket.on("game:request", ({ gameType }) => {
-    const partner = socket.partner;
-    if (!partner) return;
-    partner.emit("game:invite", { gameType, fromId: socket.id });
-  });
-
-  // ── Game response ────────────────────────────────────────────────────────
-  socket.on("game:response", ({ accepted, gameType, toId }) => {
-    const requesterSocket = io.sockets.sockets.get(toId);
-    if (!requesterSocket) return;
-
-    if (!accepted) {
-      requesterSocket.emit("game:declined");
-      return;
-    }
-
-    const gameId = `${toId}:${socket.id}`;
-    const players = [toId, socket.id];
-
-    let state;
-    if (gameType === "ttt") {
-      state = { board: Array(9).fill(null), currentTurnSocketId: toId };
-    } else if (gameType === "rps") {
-      state = { choices: {} };
-    } else if (gameType === "math") {
-      state = { question: generateMathQuestion(), answered: false };
-    }
-
-    const game = { id: gameId, type: gameType, players, state };
-    gameById.set(gameId, game);
-    gameBySocket.set(toId, gameId);
-    gameBySocket.set(socket.id, gameId);
-
-    const roles = { [toId]: "X", [socket.id]: "O" };
-
-    [toId, socket.id].forEach(pid => {
-      const s = io.sockets.sockets.get(pid);
-      if (s) s.emit("game:start", {
-        gameId,
-        gameType,
-        role: roles[pid] ?? null,
-        opponentId: pid === toId ? socket.id : toId,
-        state
-      });
-    });
-  });
-
-  // ── Game move ────────────────────────────────────────────────────────────
-  socket.on("game:move", (data) => {
-    const gameId = gameBySocket.get(socket.id);
-    if (!gameId) return;
-    const game = gameById.get(gameId);
-    if (!game) return;
-
-    const [p1Id, p2Id] = game.players;
-    const partnerId = socket.id === p1Id ? p2Id : p1Id;
-    const partnerSocket = io.sockets.sockets.get(partnerId);
-
-    if (game.type === "ttt") {
-      const { index } = data;
-      const { board, currentTurnSocketId } = game.state;
-
-      if (currentTurnSocketId !== socket.id) return;
-      if (board[index] !== null) return;
-
-      const symbol = socket.id === p1Id ? "X" : "O";
-      board[index] = symbol;
-      const winResult = checkTTTWinner(board);
-      const draw = !winResult && board.every(Boolean);
-
-      if (!winResult && !draw)
-        game.state.currentTurnSocketId = partnerId;
-
-      const update = {
-        board,
-        currentTurnSocketId: game.state.currentTurnSocketId,
-        winnerSocketId: winResult ? socket.id : undefined,
-        winLine: winResult ? winResult.line : undefined,
-        draw: draw || undefined
-      };
-
-      socket.emit("game:update", update);
-      if (partnerSocket) partnerSocket.emit("game:update", update);
-
-      if (winResult || draw) cleanupGame(game);
-    } else if (game.type === "rps") {
-      if (game.state.choices[socket.id]) return;
-      game.state.choices[socket.id] = data.choice;
-
-      if (partnerSocket)
-        partnerSocket.emit("game:update", { opponentChose: true });
-
-      if (Object.keys(game.state.choices).length === 2) {
-        const c1 = game.state.choices[p1Id];
-        const c2 = game.state.choices[p2Id];
-        const result = getRPSWinner(c1, c2);
-        const winnerSocketId = result === "draw" ? null : result === "p1" ? p1Id : p2Id;
-
-        const update = {
-          choices: game.state.choices,
-          winnerSocketId,
-          draw: result === "draw"
-        };
-        socket.emit("game:update", update);
-        if (partnerSocket) partnerSocket.emit("game:update", update);
-        cleanupGame(game);
-      }
-    } else if (game.type === "math") {
-      if (game.state.answered) return;
-      const { answer: submitted } = data;
-
-      if (submitted === game.state.question.answer) {
-        game.state.answered = true;
-        const update = {
-          winnerSocketId: socket.id,
-          answer: game.state.question.answer,
-          question: game.state.question
-        };
-        socket.emit("game:update", update);
-        if (partnerSocket) partnerSocket.emit("game:update", update);
-        cleanupGame(game);
-      } else {
-        socket.emit("game:update", { wrong: true });
-      }
-    }
-  });
-
-  // ── Rematch ──────────────────────────────────────────────────────────────
-  socket.on("game:rematch", ({ gameType, toId }) => {
-    const target = io.sockets.sockets.get(toId);
-    if (!target) return;
-    target.emit("game:invite", { gameType, fromId: socket.id, isRematch: true });
   });
 
   // ════════════════════════════════════════════════════════════════
@@ -10308,6 +10105,7 @@ io.on("connection", (socket) => {
   // ── Disconnect ───────────────────────────────────────────────────────────
   socket.on("disconnect", () => {
     console.log(`[SOCKET] Disconnected: ${socket.id}`);
+    recordDisconnect(socket.clientIP, socket._connectedAt);
 
     if (socket._regUser) {
       const sockets = onlineRegSockets.get(socket._regUser.usernameLower);
@@ -10320,11 +10118,44 @@ io.on("connection", (socket) => {
       }
     }
 
+    // Random-chat partner handling — keeps a short reconnect grace window
+    // (network blip, page refresh) instead of ending the conversation the
+    // instant a socket drops.
     if (socket.partner) {
-      socket.partner.emit("partnerDisconnected", { name: socket.userName || "" });
-      socket.partner.partner = null;
-      socket.partner = null;
+      const partner   = socket.partner;
+      const name      = socket.userName || "Anonymous";
+      const nameLower = name.toLowerCase();
+
+      socket.partner       = null;
+      socket._isGhost      = true;
+      socket._messageQueue = [];
+
+      // Immediately notify the staying partner so they see the disconnect
+      // message and can block right away. We clear partner.partner now so
+      // blockUser falls cleanly into the name-only block path.
+      partner.lastPartnerName     = name;
+      partner.lastPartnerIP       = socket.clientIP || "";
+      partner.lastPartnerSocketId = socket.id;
+      partner.hasReportedLast     = false;
+      partner.partner             = null;
+      if (partner.connected) {
+        partner.emit("partnerDisconnected", { name });
+        partner.emit("music:stop");
+      }
+
+      if (socket.userName) {
+        const timeout = setTimeout(() => {
+          pendingDisconnects.delete(nameLower);
+          activeUsernames.delete(nameLower);
+        }, RECONNECT_GRACE_MS);
+        pendingDisconnects.set(nameLower, { partner, timeout, ghostSocket: socket });
+      }
+    } else {
+      if (socket.userName) activeUsernames.delete(socket.userName.toLowerCase());
     }
+
+    waitingQueue = waitingQueue.filter(s => s.id !== socket.id);
+    updateOnlineCount();
 
     cleanupGameForSocket(socket.id);
     cleanupDrawGuessForSocket(socket.id);

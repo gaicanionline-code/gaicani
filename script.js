@@ -1261,8 +1261,12 @@ socket.on("nameAccepted", (acceptedName) => {
   nameModal.style.display = "none";
   clearNameError();
 
-  // Do NOT persist username — we never want auto-reconnect on page reload.
-  // User must always press the button themselves.
+  // Do NOT persist username to localStorage — we never want auto-reconnect
+  // on page reload. User must always press the button themselves.
+  // sessionStorage is different: it's how a guest's chosen name carries
+  // over if they later open the dashboard or a game (same tab session),
+  // so they show up there as themselves instead of a random "სტუმარი####".
+  try { sessionStorage.setItem("gaicani_guest_username", acceptedName); } catch (_) {}
 
   // Show the username in the top bar
   const displayEl = document.getElementById("userNameDisplay");
@@ -1273,6 +1277,12 @@ socket.on("nameAccepted", (acceptedName) => {
 
   // Show interests/bio button
   if (interestsBtn) interestsBtn.style.display = "inline-block";
+
+  // Show "ჩემი გვერდი" (My Page / dashboard) — same main-bar-icon treatment
+  // as Interests/Music, not the ⋮ menu (that's reserved for registered
+  // users, who already have myPageBtn shown via auth-client.js instead).
+  const myPageBtnEl = document.getElementById("myPageBtn");
+  if (myPageBtnEl && myPageBtnEl.style.display === "none") myPageBtnEl.style.display = "inline-flex";
 
   if (isFirstLogin) {
     isFirstLogin = false;
