@@ -1850,14 +1850,35 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Always show the welcome modal — user must press the button themselves.
-  // We never auto-submit the name or auto-search on page load.
+  // We never auto-submit the name or auto-search on page load. EXCEPTION:
+  // a guest who already has an established name from elsewhere on the site
+  // (dashboard, a game) gets that name auto-submitted instead of being
+  // asked to type it in again — they already told us who they are, no
+  // reason to ask twice. This does NOT auto-search for a partner though;
+  // they still press "ძებნა" themselves for that part.
   try { sessionStorage.removeItem("gaicani_username"); } catch (_) {}
 
   // If a saved auth token exists, auth-client.js will hide this immediately.
   // Still show briefly for guests; auth-client suppresses for registered users.
   const _hasToken = (() => { try { return !!localStorage.getItem("gaicani_auth_token"); } catch(_){return false;} })();
   if (!_hasToken) {
-    nameModal.style.display = "flex";
-    setTimeout(() => nameInput.focus(), 100);
+    let _existingGuestName = null;
+    try { _existingGuestName = sessionStorage.getItem("gaicani_guest_username"); } catch (_) {}
+
+    if (_existingGuestName) {
+      nameInput.value = _existingGuestName;
+      if (socket.connected) {
+        saveName();
+      } else {
+        // Socket handshake still in flight (slow network) — wait for it
+        // rather than calling saveName() too early, which would fail
+        // silently since the modal (where its error message would show)
+        // is intentionally not being displayed in this auto-submit path.
+        socket.once("connect", saveName);
+      }
+    } else {
+      nameModal.style.display = "flex";
+      setTimeout(() => nameInput.focus(), 100);
+    }
   }
 });
