@@ -3495,6 +3495,9 @@ const registeredUsers   = new Map(); // lowerUsername → userObj
 const authTokens        = new Map(); // token → { usernameLower, expiry }
 const privateRooms      = new Map(); // roomId → { messages, createdAt, expiresAt }
 const onlineRegSockets  = new Map(); // lowerUsername → Set<socketId>
+const guestSocketMap    = new Map(); // socketId → guest's lowerUsername (for cleanup on disconnect — guests never persist)
+const guestTokenMap     = new Map(); // socketId → their temporary REST token (for cleanup alongside the rest of the session)
+const GUEST_TOKEN_TTL   = 4 * 60 * 60 * 1000; // 4h — a guest's REST token outlives brief reconnects but not a real "come back tomorrow"
 // If A sends B a friend request and B declines it, A can't send B another
 // one for 24h — stops someone from immediately re-spamming a request the
 // person just said no to.
@@ -3896,6 +3899,7 @@ function scheduleSave() {
 function _saveAuthUsersToDisk() {
   const obj = {};
   for (const [k, u] of registeredUsers) {
+    if (u.isGuest) continue; // temporary guest sessions never touch disk — gone the moment they disconnect
     obj[k] = {
       username: u.username,
       passwordHash: u.passwordHash,
@@ -7725,6 +7729,72 @@ io.on("connection", (socket) => {
     io.emit("users:onlineChanged"); // let dashboards know the online list may have changed
   });
 
+  // ── auth:guest — a temporary, throwaway identity for someone who hasn't
+  // registered, so they can still play games and browse Rooms/Forum with
+  // the same interface a registered user sees. Lives only in memory for
+  // as long as this socket is connected: never written to disk (see the
+  // isGuest skip in _saveAuthUsersToDisk), and cleaned up on disconnect
+  // below. Registered-only actions (friends, private messages, posting)
+  // still check isGuest and refuse with a "register to do this" message —
+  // this only grants read/play access, not the full account.
+  socket.on("auth:guest", (data) => {
+    if (socket._regUser) return; // already authenticated one way or the other
+
+    // If the client remembers a guest name from earlier in this browser
+    // session (sessionStorage — not persisted beyond it), reuse it as long
+    // as it's not currently taken by anyone else, so navigating between
+    // pages doesn't hand out a brand new identity every time. The pattern
+    // is strictly validated so this can't be used to claim an arbitrary or
+    // real username.
+    const preferred = (data && typeof data.preferredUsername === "string") ? data.preferredUsername.trim() : null;
+    let username, lc;
+    if (preferred && /^სტუმარი\d{4}$/.test(preferred) && !registeredUsers.has(preferred.toLowerCase())) {
+      username = preferred;
+      lc = username.toLowerCase();
+    } else {
+      let attempts = 0;
+      do {
+        username = `სტუმარი${Math.floor(1000 + Math.random() * 9000)}`;
+        lc = username.toLowerCase();
+        attempts++;
+      } while (registeredUsers.has(lc) && attempts < 25);
+      if (registeredUsers.has(lc)) { socket.emit("auth:invalid"); return; } // pathological luck, extremely unlikely
+    }
+
+    const guestUser = {
+      username,
+      isGuest: true,
+      createdAt: new Date().toISOString(),
+      friends: [],
+      pendingRequests: [],
+      avatar: DEFAULT_AVATAR,
+      bio: "",
+    };
+    registeredUsers.set(lc, guestUser);
+    guestSocketMap.set(socket.id, lc);
+
+    socket._regUser = { usernameLower: lc, username, isGuest: true };
+    socket.userName = username;
+    if (!onlineRegSockets.has(lc)) onlineRegSockets.set(lc, new Set());
+    onlineRegSockets.get(lc).add(socket.id);
+    socket.join(`user:${lc}`);
+
+    // Also issue a short-lived REST token (reusing the same authTokens /
+    // requireRegAuth path real accounts use) so the client can fetch
+    // read-only Forum/Rooms content over REST, not just sockets. Tracked
+    // for cleanup alongside the rest of the guest session on disconnect.
+    const guestToken = authToken();
+    authTokens.set(guestToken, { usernameLower: lc, expiry: Date.now() + GUEST_TOKEN_TTL, isGuest: true });
+    guestTokenMap.set(socket.id, guestToken);
+
+    socket.emit("auth:authenticated", {
+      username, friends: [], pendingRequests: [], avatar: DEFAULT_AVATAR, bio: "",
+      streaks: {}, isAdmin: false, isGuest: true, guestToken
+    });
+    console.log(`[AUTH] ${username} started a guest session`);
+    io.emit("users:onlineChanged");
+  });
+
   // ── auth:checkPartner — tell client if current partner is registered ──────
   socket.on("auth:checkPartner", () => {
     if (!socket.partner || !socket._regUser) return;
@@ -7743,9 +7813,11 @@ io.on("connection", (socket) => {
 
   socket.on("friend:request", ({ toUsername }) => {
     if (!socket._regUser) return;
+    if (socket._regUser.isGuest) { socket.emit("guest:registerRequired", { feature: "addFriend" }); return; }
     const targetLc = String(toUsername).toLowerCase().trim();
     const targetUser = registeredUsers.get(targetLc);
     if (!targetUser) return;
+    if (targetUser.isGuest) { socket.emit("friend:error", { msg: "ეს მომხმარებელი სტუმარია და ჯერ არ დარეგისტრირებულა" }); return; }
     const myLc = socket._regUser.usernameLower;
 
     // Blocked for 24h after this specific person declined a request from
@@ -7962,6 +8034,7 @@ io.on("connection", (socket) => {
   // ── Private message request ──────────────────────────────────────────────
   socket.on("privateMsg:send", ({ toUsername, message, messageId, replyTo }) => {
     if (!socket._regUser || !toUsername || !message) return;
+    if (socket._regUser.isGuest) { socket.emit("guest:registerRequired", { feature: "privateChat" }); return; }
     const toLc = String(toUsername).toLowerCase().trim();
     const roomId = privRoomId(socket._regUser.usernameLower, toLc);
     let room = privateRooms.get(roomId);
@@ -9948,6 +10021,7 @@ io.on("connection", (socket) => {
 
   socket.on("rooms:send", ({ roomId, text }) => {
     if (!socket._regUser || typeof text !== "string") return;
+    if (socket._regUser.isGuest) { socket.emit("guest:registerRequired", { feature: "roomsWrite" }); return; }
     const room = chatRooms.get(roomId);
     if (!room) { socket.emit("rooms:error", { message: "ოთახი ვერ მოიძებნა" }); return; }
     const lc = socket._regUser.usernameLower;
@@ -10118,6 +10192,7 @@ io.on("connection", (socket) => {
 
   socket.on("forum:createPost", ({ title, body }) => {
     if (!socket._regUser) return;
+    if (socket._regUser.isGuest) { socket.emit("guest:registerRequired", { feature: "forumWrite" }); return; }
     const cleanTitle = cleanForumText(title, FORUM_TITLE_MAX);
     const cleanBody = cleanForumText(body, FORUM_BODY_MAX);
     if (!cleanTitle) { socket.emit("forum:error", { message: "სათაური სავალდებულოა" }); return; }
@@ -10156,6 +10231,7 @@ io.on("connection", (socket) => {
 
   socket.on("forum:comment", ({ postId, body }) => {
     if (!socket._regUser) return;
+    if (socket._regUser.isGuest) { socket.emit("guest:registerRequired", { feature: "forumWrite" }); return; }
     const post = forumPosts.get(postId);
     if (!post) { socket.emit("forum:error", { message: "პოსტი ვერ მოიძებნა" }); return; }
     const cleanBody = cleanForumText(body, FORUM_COMMENT_MAX);
@@ -10198,6 +10274,7 @@ io.on("connection", (socket) => {
   // direction: 1 (upvote), -1 (downvote), 0 (remove my vote)
   socket.on("forum:vote", ({ postId, direction }) => {
     if (!socket._regUser) return;
+    if (socket._regUser.isGuest) { socket.emit("guest:registerRequired", { feature: "forumWrite" }); return; }
     const post = forumPosts.get(postId);
     if (!post) return;
     const dir = Number(direction);
@@ -10258,6 +10335,25 @@ io.on("connection", (socket) => {
     cleanupImposterForSocket(socket.id);
     cleanupBjForSocket(socket.id);
     for (const [sid, s] of flappySessions) if (s.socketId === socket.id) flappySessions.delete(sid);
+
+    // A guest's identity lives only as long as they're connected somewhere —
+    // once their last socket disconnects, their temporary shadow account
+    // disappears entirely (it was never written to disk regardless).
+    if (guestSocketMap.has(socket.id)) {
+      const lc = guestSocketMap.get(socket.id);
+      guestSocketMap.delete(socket.id);
+      if (guestTokenMap.has(socket.id)) {
+        authTokens.delete(guestTokenMap.get(socket.id));
+        guestTokenMap.delete(socket.id);
+      }
+      const sockets = onlineRegSockets.get(lc);
+      if (sockets) { sockets.delete(socket.id); if (sockets.size === 0) onlineRegSockets.delete(lc); }
+      const stillConnected = [...guestSocketMap.values()].includes(lc);
+      if (!stillConnected) {
+        registeredUsers.delete(lc);
+        io.emit("users:onlineChanged");
+      }
+    }
   });
 });
 

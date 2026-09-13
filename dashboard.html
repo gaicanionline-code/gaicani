@@ -585,10 +585,22 @@
       <div class="user-avatar" id="userAvatar">?</div>
       <div class="user-info">
         <div class="user-name" id="userName">—</div>
-        <div class="user-meta">რეგისტრირებული მომხმარებელი</div>
+        <div class="user-meta" id="userMeta">რეგისტრირებული მომხმარებელი</div>
         <div class="user-bio-display" id="userBioDisplay" style="display:none"></div>
         <button class="btn-change-avatar" id="changeAvatarBtn">🖼️ სურათის შეცვლა</button>
         <button class="btn-change-bio" id="changeBioBtn">აღწერე შენი თავი მოკლედ  სხვა რეგისტრირებული იუზერებისთვის</button>
+      </div>
+    </div>
+
+    <!-- Guest-mode banner: shown instead of Friends/Pending/Blocked, explains
+         what registering unlocks. Hidden entirely for real accounts. -->
+    <div class="section" id="guestBanner" style="display:none">
+      <div style="background:linear-gradient(135deg,#5865f2,#4752c4);border-radius:12px;padding:16px;">
+        <div style="font-weight:800;font-size:1.02em;margin-bottom:6px;">✨ სტუმრის რეჟიმში ხარ</div>
+        <div style="font-size:0.86em;line-height:1.6;opacity:0.95;margin-bottom:12px;">
+          შეგიძლია ითამაშო ყველა თამაში და ნახო ოთახები & ფორუმი. დარეგისტრირდით რომ დაამატოთ მეგობრები, გქონდეთ პირადი ჩატი, დაწეროთ ფორუმზე და ოთახებში, და შეინახოთ თქვენი პროგრესი სამუდამოდ.
+        </div>
+        <a href="/" style="display:inline-block;background:#fff;color:#4752c4;font-weight:800;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.86em;">დარეგისტრირდი უფასოდ →</a>
       </div>
     </div>
 
@@ -845,6 +857,54 @@
       }
     }
 
+    /* ── Guest mode — same interface, registered-only sections replaced
+       with a banner, registered-only actions prompt to register instead
+       of silently failing. Games, Rooms, and Forum stay reachable. ── */
+    function enterGuestMode() {
+      document.body.classList.add("guest-mode");
+
+      const nameEl = document.getElementById("userName");
+      const topUserEl = document.getElementById("topUsername");
+      const metaEl = document.getElementById("userMeta");
+      paintUserAvatar();
+      if (nameEl) nameEl.textContent = authUser.username;
+      if (topUserEl) topUserEl.textContent = `👤 ${authUser.username} (სტუმარი)`;
+      if (metaEl) metaEl.textContent = "სტუმარი — არარეგისტრირებული";
+
+      // Hide account-only sections and editing (nothing here would persist
+      // for a guest anyway), show the register banner in their place.
+      ["friendsSection", "pendingSection", "blockedSection"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = "none";
+      });
+      const changeAvatarBtn = document.getElementById("changeAvatarBtn");
+      const changeBioBtn = document.getElementById("changeBioBtn");
+      if (changeAvatarBtn) changeAvatarBtn.style.display = "none";
+      if (changeBioBtn) changeBioBtn.style.display = "none";
+      const banner = document.getElementById("guestBanner");
+      if (banner) banner.style.display = "";
+
+      const logoutBtn = document.getElementById("logoutBtn");
+      if (logoutBtn) logoutBtn.textContent = "მთავარზე დაბრუნება";
+
+      const loading = document.getElementById("loading-screen");
+      const mainPg = document.getElementById("main-page");
+      if (loading) loading.style.display = "none";
+      if (mainPg) mainPg.style.display = "";
+    }
+
+    const GUEST_FEATURE_MESSAGES = {
+      privateChat: "პირადი ჩატისთვის საჭიროა რეგისტრაცია",
+      addFriend: "მეგობრების დასამატებლად საჭიროა რეგისტრაცია",
+      roomsWrite: "ოთახებში წერისთვის საჭიროა რეგისტრაცია — კითხვა შეგიძლიათ სტუმრადაც",
+      forumWrite: "ფორუმზე წერისთვის საჭიროა რეგისტრაცია — კითხვა შეგიძლიათ სტუმრადაც",
+    };
+    function promptGuestToRegister(feature) {
+      const msg = GUEST_FEATURE_MESSAGES[feature] || "ამისთვის საჭიროა რეგისტრაცია";
+      if (typeof showToast === "function") showToast(`🔒 ${msg}`);
+      else alert(msg);
+    }
+
     const bioEditorInput = document.getElementById("bioEditorInput");
     const bioEditorCount = document.getElementById("bioEditorCount");
 
@@ -915,10 +975,24 @@
     function setupSocket(token) {
       socket = io();
       socket.on("connect", () => {
-        socket.emit("auth:token", token);
+        if (token) {
+          socket.emit("auth:token", token);
+        } else {
+          // No real account — ask for a temporary guest identity instead of
+          // blocking access. If this browser tab already got one earlier in
+          // the session, ask to keep the same one rather than a fresh
+          // random name on every page.
+          const preferredUsername = sessionStorage.getItem("gaicani_guest_username") || null;
+          socket.emit("auth:guest", { preferredUsername });
+        }
       });
 
-      socket.on("auth:authenticated", ({ username, friends, pendingRequests, avatar, bio, streaks }) => {
+      socket.on("auth:authenticated", ({ username, friends, pendingRequests, avatar, bio, streaks, isGuest }) => {
+        if (isGuest) {
+          try { sessionStorage.setItem("gaicani_guest_username", username); } catch (_) {}
+          authUser = { username, token: null, friends: [], pendingRequests: [], avatar: avatar || AVAILABLE_AVATARS[0], bio: bio || "", isGuest: true };
+          enterGuestMode();
+        }
         if (authUser) {
           authUser.friends = friends || [];
           authUser.pendingRequests = pendingRequests || [];
@@ -929,8 +1003,7 @@
         renderFriends(friends || []);
         renderPendingRequests(pendingRequests || []);
         paintUserBio();
-        fetchUnreadFriends();
-        fetchRoomsAndForumUnread();
+        if (!isGuest) { fetchUnreadFriends(); fetchRoomsAndForumUnread(); }
         socket.emit("users:listOnline");
         socket.emit("drawGuess:listPublicRooms");
         socket.emit("poker:listPublicRooms");
@@ -940,6 +1013,8 @@
         socket.emit("imposter:listPublicRooms");
         socket.emit("blackjack:listPublicRooms");
       });
+
+      socket.on("guest:registerRequired", ({ feature }) => promptGuestToRegister(feature));
 
       socket.on("auth:invalid", () => {
         clearAuth();
@@ -1696,8 +1771,13 @@
       const mainPg  = document.getElementById("main-page");
 
       if (!token || !username) {
+        // No account on this device — connect as a temporary guest instead
+        // of blocking the page. Same interface, limited to browsing +
+        // playing; setupSocket's auth:authenticated handler finishes the
+        // guest setup (enterGuestMode) once the server confirms it.
         if (loading) loading.style.display = "none";
-        if (authScr) authScr.style.display = "flex";
+        if (mainPg)  mainPg.style.display  = "";
+        setupSocket(null);
         return;
       }
 

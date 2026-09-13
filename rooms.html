@@ -368,18 +368,13 @@
     } catch (_) { return ""; }
   }
 
-  const { token, username } = loadAuth();
-  const myUsernameLower = (username || "").toLowerCase();
+  let { token, username } = loadAuth();
+  let myUsernameLower = (username || "").toLowerCase();
   let isAdminGlobal = false;
 
   const elLoading = $("rmLoading");
   const elAuth    = $("rmAuthScreen");
   const screens   = { list: $("listScreen"), chat: $("chatScreen") };
-
-  if (!token || !username) {
-    elLoading.classList.add("hidden");
-    elAuth.classList.remove("hidden");
-  }
 
   function showScreen(name) {
     Object.entries(screens).forEach(([k, el]) => el.classList.toggle("visible", k === name));
@@ -601,12 +596,18 @@
 
   /* ── Boot ────────────────────────────────────────────────────── */
   function init() {
-    if (!token || !username) return;
-
     socket = io();
-    socket.on("connect", () => socket.emit("auth:token", { token }));
+    socket.on("connect", () => {
+      if (token) socket.emit("auth:token", { token });
+      else socket.emit("auth:guest", { preferredUsername: sessionStorage.getItem("gaicani_guest_username") || null });
+    });
 
-    socket.on("auth:authenticated", ({ isAdmin }) => {
+    socket.on("auth:authenticated", ({ username: authedName, isAdmin, isGuest, guestToken }) => {
+      if (isGuest && authedName) {
+        myUsernameLower = authedName.toLowerCase();
+        token = guestToken; // needed for the REST fetches below — reading is allowed as a guest
+        try { sessionStorage.setItem("gaicani_guest_username", authedName); } catch (_) {}
+      }
       isAdminGlobal = !!isAdmin;
       elLoading.classList.add("hidden");
       $("newRoomBtn").style.display = isAdminGlobal ? "flex" : "none";
@@ -620,6 +621,10 @@
     });
 
     socket.on("auth:invalid", () => { window.location.href = "/"; });
+
+    socket.on("guest:registerRequired", () => {
+      showToast("🔒 ოთახებში წერისთვის საჭიროა რეგისტრაცია — კითხვა შეგიძლიათ სტუმრადაც");
+    });
 
     socket.on("rooms:updated", fetchRoomsList);
 

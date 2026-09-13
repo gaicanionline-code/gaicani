@@ -459,12 +459,11 @@
   function nameToSquare(name) { return FILES.indexOf(name[0]) + (Number(name[1]) - 1) * 8; }
 
   const { token, username } = loadAuth();
-  const myUsernameLower = (username || "").toLowerCase();
+  let myUsernameLower = (username || "").toLowerCase();
 
   const elLoading = $("csLoading");
   const elAuth = $("csAuthScreen");
   const screens = { setup: $("setupScreen"), lobby: $("lobbyScreen"), game: $("gameScreen") };
-  if (!token || !username) { elLoading.classList.add("hidden"); elAuth.classList.remove("hidden"); }
   function showScreen(name) { Object.entries(screens).forEach(([k, el]) => el.classList.toggle("visible", k === name)); }
 
   /* ── State ───────────────────────────────────────────────────── */
@@ -914,11 +913,17 @@
 
   /* ── Boot ────────────────────────────────────────────────────── */
   function init() {
-    if (!token || !username) return;
     socket = io();
-    socket.on("connect", () => socket.emit("auth:token", { token }));
+    socket.on("connect", () => {
+      if (token) socket.emit("auth:token", { token });
+      else socket.emit("auth:guest", { preferredUsername: sessionStorage.getItem("gaicani_guest_username") || null });
+    });
 
-    socket.on("auth:authenticated", () => {
+    socket.on("auth:authenticated", ({ username: authedName, isGuest } = {}) => {
+      if (isGuest && authedName) {
+        myUsernameLower = authedName.toLowerCase();
+        try { sessionStorage.setItem("gaicani_guest_username", authedName); } catch (_) {}
+      }
       elLoading.classList.add("hidden");
       socket.emit("users:listOnline");
       socket.emit("chess:listPublicRooms");

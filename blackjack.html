@@ -488,12 +488,11 @@
   const RESULT_LABEL = { win: "მოგება", lose: "წაგება", push: "ფლანგი", bust: "ბასტი", blackjack: "ბლექჯეკი!" };
 
   const { token, username } = loadAuth();
-  const myUsernameLower = (username || "").toLowerCase();
+  let myUsernameLower = (username || "").toLowerCase();
 
   const elLoading = $("bjLoading");
   const elAuth = $("bjAuthScreen");
   const screens = { setup: $("setupScreen"), lobby: $("lobbyScreen"), table: $("tableScreen") };
-  if (!token || !username) { elLoading.classList.add("hidden"); elAuth.classList.remove("hidden"); }
   function showScreen(name) { Object.entries(screens).forEach(([k, el]) => el.classList.toggle("visible", k === name)); }
 
   let socket = null;
@@ -941,11 +940,17 @@
 
   /* ── Boot ────────────────────────────────────────────────────── */
   function init() {
-    if (!token || !username) return;
     socket = io();
-    socket.on("connect", () => socket.emit("auth:token", { token }));
+    socket.on("connect", () => {
+      if (token) socket.emit("auth:token", { token });
+      else socket.emit("auth:guest", { preferredUsername: sessionStorage.getItem("gaicani_guest_username") || null });
+    });
 
-    socket.on("auth:authenticated", () => {
+    socket.on("auth:authenticated", ({ username: authedName, isGuest } = {}) => {
+      if (isGuest && authedName) {
+        myUsernameLower = authedName.toLowerCase();
+        try { sessionStorage.setItem("gaicani_guest_username", authedName); } catch (_) {}
+      }
       elLoading.classList.add("hidden");
       socket.emit("users:listOnline");
       socket.emit("blackjack:listPublicRooms");
