@@ -844,14 +844,6 @@
     <div class="fc-expiry-badge">🕐 3 სთ ჩაშლა</div>
   </header>
 
-  <!-- Tap-to-preview profile card -->
-  <div id="profileCardBackdrop" class="profile-card-backdrop">
-    <div class="profile-card-modal">
-      <button class="profile-card-close" id="profileCardCloseBtn">✕</button>
-      <div id="profileCardBody"><div class="profile-card-loading">იტვირთება...</div></div>
-    </div>
-  </div>
-
   <!-- Chat background picker -->
   <div id="fcThemeBackdrop" class="fc-theme-backdrop"></div>
   <div id="fcThemeSheet" class="fc-theme-sheet">
@@ -918,6 +910,17 @@
     <div id="fc-gif-results"></div>
   </div>
 
+</div>
+
+<!-- Tap-to-preview profile card — kept OUTSIDE #app on purpose: #app gets
+     overflow:hidden + a constrained size on desktop (the "phone frame"
+     look), which would clip or otherwise interfere with this fixed
+     full-viewport overlay if it were nested inside. -->
+<div id="profileCardBackdrop" class="profile-card-backdrop">
+  <div class="profile-card-modal">
+    <button class="profile-card-close" id="profileCardCloseBtn">✕</button>
+    <div id="profileCardBody"><div class="profile-card-loading">იტვირთება...</div></div>
+  </div>
 </div>
 
 <!-- TOAST -->

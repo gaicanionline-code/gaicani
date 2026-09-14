@@ -1033,10 +1033,10 @@
         }
       });
 
-      socket.on("auth:authenticated", ({ username, friends, pendingRequests, avatar, bio, streaks, isGuest }) => {
+      socket.on("auth:authenticated", ({ username, friends, pendingRequests, avatar, bio, streaks, isGuest, guestToken }) => {
         if (isGuest) {
           try { sessionStorage.setItem("gaicani_guest_username", username); } catch (_) {}
-          authUser = { username, token: null, friends: [], pendingRequests: [], avatar: avatar || AVAILABLE_AVATARS[0], bio: bio || "", isGuest: true };
+          authUser = { username, token: guestToken || null, friends: [], pendingRequests: [], avatar: avatar || AVAILABLE_AVATARS[0], bio: bio || "", isGuest: true };
           enterGuestMode();
         }
         if (authUser) {
@@ -1446,7 +1446,8 @@
       body.innerHTML = '<div class="profile-card-loading">იტვირთება...</div>';
       backdrop.classList.add("show");
 
-      const { token } = loadAuth();
+      const { token: storedToken } = loadAuth();
+      const token = storedToken || authUser?.token; // guests use their temporary token instead — localStorage never has one for them
       if (!token) { closeProfileCard(); return; }
 
       try {
