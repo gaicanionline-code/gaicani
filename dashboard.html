@@ -1721,6 +1721,16 @@
             showToast(`📨 მეგობრობის მოთხოვნა გაიგზავნა ${esc(uname)}-სთვის`);
           });
         });
+
+        // Same as the friends list — tapping the row anywhere except the
+        // action button opens the profile preview, works for anyone
+        // online, not just people you're already friends with.
+        list.querySelectorAll(".friend-item").forEach(item => {
+          item.addEventListener("click", (e) => {
+            if (e.target.closest(".friend-actions")) return;
+            openProfileCard(item.dataset.onlineUser);
+          });
+        });
       }
 
       // Temporary (guest) users get their own section — they can't be
@@ -1747,6 +1757,15 @@
                 <div class="friend-actions"><span class="temp-user-badge">დროებითი</span></div>
               </div>`;
           }).join("");
+
+          // Guests can be previewed too — same tap-anywhere-but-the-badge
+          // behavior, even though there's no add-friend action here.
+          tempList.querySelectorAll(".friend-item").forEach(item => {
+            item.addEventListener("click", (e) => {
+              if (e.target.closest(".friend-actions")) return;
+              openProfileCard(item.dataset.onlineUser);
+            });
+          });
         }
       }
     }
