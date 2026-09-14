@@ -2337,6 +2337,28 @@ io.on("connection", (socket) => {
       }
     }
 
+    // Same idea, one level down: this exact name is a known GUEST identity
+    // (established via auth:guest on the dashboard/a game, "სტუმარი####" or
+    // a chosen name carried over) — evict any stale socket still holding
+    // it in activeUsernames so its owner can reclaim it here too. Almost
+    // always this is literally the same browser tab's previous socket that
+    // hasn't finished disconnecting yet (socket.io detects a closed
+    // connection with a short delay, not instantly) — this is exactly the
+    // same race the auth:guest name-reuse fix handles, just showing up in
+    // this separate activeUsernames tracker instead of registeredUsers.
+    else if (registeredUsers.get(lowerTrimmed)?.isGuest &&
+             activeUsernames.has(lowerTrimmed) && !pendingDisconnects.has(lowerTrimmed)) {
+      for (const [, s] of io.sockets.sockets) {
+        if (s.id !== socket.id && s.userName && s.userName.toLowerCase() === lowerTrimmed) {
+          activeUsernames.delete(lowerTrimmed);
+          s.userName = "";
+          if (s.partner) { s.partner.partner = null; s.partner.emit("partnerDisconnected", { name: lowerTrimmed }); }
+          waitingQueue = waitingQueue.filter(q => q.id !== s.id);
+          break;
+        }
+      }
+    }
+
     // Allow reclaiming a name that is pending reconnect (user's own name during grace period)
     if (activeUsernames.has(lowerTrimmed)) {
       if (pendingDisconnects.has(lowerTrimmed)) {
@@ -3434,6 +3456,12 @@ const AVAILABLE_AVATARS = [
   "avatar21.jpg",
 ];
 const DEFAULT_AVATAR = AVAILABLE_AVATARS[0];
+
+// A dedicated avatar specifically for temporary guest accounts — kept
+// separate from AVAILABLE_AVATARS on purpose, so it never shows up as a
+// pickable option in a real registered user's avatar picker (that would
+// be confusing — it would look like they'd chosen to appear as a guest).
+const GUEST_AVATAR = "avatar-guest.jpg";
 
 const USERS_FILE        = path.join(DATA_PATH, "registered_users.json");
 const PRIV_MSGS_FILE    = path.join(DATA_PATH, "private_messages.json");
@@ -7728,7 +7756,7 @@ io.on("connection", (socket) => {
       lc = username.toLowerCase();
       guestUser = existingHolder || {
         username, isGuest: true, createdAt: new Date().toISOString(),
-        friends: [], pendingRequests: [], avatar: DEFAULT_AVATAR, bio: "",
+        friends: [], pendingRequests: [], avatar: GUEST_AVATAR, bio: "",
       };
     } else {
       let attempts = 0;
@@ -7740,7 +7768,7 @@ io.on("connection", (socket) => {
       if (registeredUsers.has(lc)) { socket.emit("auth:invalid"); return; } // pathological luck, extremely unlikely
       guestUser = {
         username, isGuest: true, createdAt: new Date().toISOString(),
-        friends: [], pendingRequests: [], avatar: DEFAULT_AVATAR, bio: "",
+        friends: [], pendingRequests: [], avatar: GUEST_AVATAR, bio: "",
       };
     }
 
@@ -7762,7 +7790,7 @@ io.on("connection", (socket) => {
     guestTokenMap.set(socket.id, guestToken);
 
     socket.emit("auth:authenticated", {
-      username, friends: [], pendingRequests: [], avatar: guestUser.avatar || DEFAULT_AVATAR, bio: guestUser.bio || "",
+      username, friends: [], pendingRequests: [], avatar: guestUser.avatar || GUEST_AVATAR, bio: guestUser.bio || "",
       streaks: {}, isAdmin: false, isGuest: true, guestToken
     });
     console.log(`[AUTH] ${username} started a guest session`);
@@ -7773,7 +7801,12 @@ io.on("connection", (socket) => {
   socket.on("auth:checkPartner", () => {
     if (!socket.partner || !socket._regUser) return;
     const partnerReg = socket.partner._regUser;
-    if (!partnerReg) return; // partner is a guest, nothing to report
+    // A guest's socket also carries _regUser now (needed so they can send/
+    // receive game invites while on this page) — but a guest isn't a real
+    // account to add as a friend, so they must NOT be reported as
+    // "registered" here, or the ➕ add-friend button would incorrectly
+    // show up for them.
+    if (!partnerReg || partnerReg.isGuest) return;
     const myUser = registeredUsers.get(socket._regUser.usernameLower);
     const isFriend = (myUser?.friends || []).includes(partnerReg.usernameLower);
     const roomId = privRoomId(socket._regUser.usernameLower, partnerReg.usernameLower);

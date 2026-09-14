@@ -948,14 +948,6 @@
   document.addEventListener("click", () => closeRegMenu());
   $("regMenuBtn")?.addEventListener("click", toggleRegMenu);
 
-  // ✏️ Change Name — same modal the standalone button used to open
-  $("regMenuChangeName")?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    closeRegMenu();
-    const btn = $("changeNameBtn");
-    if (btn) btn.click();
-  });
-
   // ── 🎨 ფონის შეცვლა — random-chat background picker ────────────────────
   // A device-local preference (not per-partner — random-chat partners
   // aren't a persistent identity the way friends are), same "only you see
