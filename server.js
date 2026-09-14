@@ -292,6 +292,7 @@ const ROUTE = {
   blockUA:      "/w9hq3yd6mp0", // POST: block a user-agent (kicks matching live sockets)
   unblockUA:    "/j2vc5ns8ek3", // POST: remove a user-agent block
   regUsers:     "/y5tm2bk9lz3", // JSON: every REGISTERED username + their last-used IP (not just who's online now)
+  accountReports: "/z3np8wk1yh6", // JSON: reports filed against registered accounts from their profile card
 };
 
 // ── Sensitive-URL visitor log ─────────────────────────────────────────────────
@@ -1562,6 +1563,22 @@ app.get(ROUTE.reported, ownerOnly, (req, res) => {
   res.json({ count: result.length, reported: result });
 });
 
+// GET <accountReports route> — reports filed against registered accounts
+// from their profile card (see accountReportLog / user:report above)
+app.get(ROUTE.accountReports, ownerOnly, (req, res) => {
+  const result = [];
+  for (const [targetLc, reports] of accountReportLog) {
+    const targetUser = registeredUsers.get(targetLc);
+    result.push({
+      username: targetUser?.username || targetLc,
+      count: reports.length,
+      reports: reports.slice(-20).reverse(), // most recent first, capped
+    });
+  }
+  result.sort((a, b) => b.count - a.count);
+  res.json({ count: result.length, reported: result });
+});
+
 // POST <unbanReported route>?ip=1.2.3.4  — clear a report-ban early (resets strike count to 0)
 app.post(ROUTE.unbanReported, ownerOnly, (req, res) => {
   const ip = (req.query.ip || "").trim();
@@ -1710,6 +1727,11 @@ tr:hover td{background:rgba(255,255,255,.03)}
 <div class="section">
   <h2>🚩 All Reports (every IP with 1+ reports — 5 still auto-bans for 24h)</h2>
   <div id="reported">Loading...</div>
+</div>
+
+<div class="section">
+  <h2>🚩 Profile Reports (registered accounts reported via their profile card)</h2>
+  <div id="accountReported">Loading...</div>
 </div>
 
 <div class="section">
@@ -1925,6 +1947,25 @@ async function loadAll() {
   } catch(e) { document.getElementById("reported").textContent = "Error"; }
 
   try {
+    const d = await api("GET", R.accountReports);
+    const el = document.getElementById("accountReported");
+    if (!d.reported || !d.reported.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No profile reports on file</p>'; }
+    else {
+      el.innerHTML = '<table><tr><th>Username</th><th>Reports</th><th>Latest reasons</th></tr>' +
+        d.reported.map(r => {
+          const reasonsListHtml = r.reports.map(rp =>
+            \`<div style="margin-bottom:4px;font-size:.85em"><b>\${esc(rp.reportedBy)}</b>: \${esc(rp.reason)} <span style="color:#72767d">(\${new Date(rp.timestamp).toLocaleString()})</span></div>\`
+          ).join("");
+          return \`<tr>
+            <td style="color:#fff">\${esc(r.username)}</td>
+            <td><span style="color:#f23f42;font-weight:700">\${r.count}</span></td>
+            <td>\${reasonsListHtml}</td>
+          </tr>\`;
+        }).join("") + "</table>";
+    }
+  } catch(e) { document.getElementById("accountReported").textContent = "Error"; }
+
+  try {
     const d = await api("GET", R.bans);
     const el = document.getElementById("bans");
     if (!d.ips || !d.ips.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No banned IPs</p>'; }
@@ -1987,6 +2028,13 @@ let waitingQueue         = [];
 const activeUsernames    = new Set();
 const pendingDisconnects = new Map();
 const reportLog          = [];
+
+// Reports filed against a REGISTERED account from their profile card —
+// separate from reportStrikes above, which is IP-based and built for
+// anonymous random-chat abuse. This is account-based instead, since the
+// target may not even be online at report time, and the account (not
+// whatever IP they last used) is the stable identity that matters here.
+const accountReportLog = new Map(); // targetUsernameLower → [{reason, reportedBy, timestamp}]
 
 // [AUTH] Reserved registered usernames — populated by the auth section below
 const authReservedNames  = new Set();
@@ -4370,6 +4418,7 @@ app.get("/api/users/profile", (req, res) => {
     avatar: u.avatar || DEFAULT_AVATAR,
     bio: u.bio || "",
     isOnline,
+    isGuest: !!u.isGuest,
   });
 });
 
@@ -7679,7 +7728,7 @@ io.on("connection", (socket) => {
     onlineRegSockets.get(entry.usernameLower).add(socket.id);
 
     socket.join(`user:${entry.usernameLower}`);
-    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin });
+    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, blockedUsers: user.blockedUsers || [] });
     console.log(`[AUTH] ${user.username} logged in`);
     io.emit("users:onlineChanged"); // let dashboards know the online list may have changed
   });
@@ -7713,7 +7762,7 @@ io.on("connection", (socket) => {
     if (!onlineRegSockets.has(entry.usernameLower)) onlineRegSockets.set(entry.usernameLower, new Set());
     onlineRegSockets.get(entry.usernameLower).add(socket.id);
     socket.join(`user:${entry.usernameLower}`);
-    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin });
+    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, blockedUsers: user.blockedUsers || [] });
     console.log(`[AUTH] ${user.username} logged in via auth:token`);
     io.emit("users:onlineChanged"); // let dashboards know the online list may have changed
   });
@@ -7900,8 +7949,20 @@ io.on("connection", (socket) => {
     const targetLc = String(toUsername).toLowerCase().trim();
     const targetUser = registeredUsers.get(targetLc);
     if (!targetUser) return;
-    if (targetUser.isGuest) { socket.emit("friend:error", { msg: "ეს მომხმარებელი სტუმარია და ჯერ არ დარეგისტრირებულა" }); return; }
+    if (targetUser.isGuest) { socket.emit("friend:error", { msg: "ეს მომხმარებელი სტუმარია და ჯერ არ დარეგისტრირებულა", targetUsername: targetUser.username }); return; }
     const myLc = socket._regUser.usernameLower;
+    const myUser = registeredUsers.get(myLc);
+
+    // A permanent block (either direction) blocks friend requests entirely —
+    // doesn't affect random chat matching, only friend requests/messaging.
+    if (targetUser.blockedUsers && targetUser.blockedUsers.includes(myLc)) {
+      socket.emit("friend:error", { msg: "ამ მომხმარებელს არ შეუძლია მოთხოვნის მიღება", targetUsername: targetUser.username });
+      return;
+    }
+    if (myUser?.blockedUsers && myUser.blockedUsers.includes(targetLc)) {
+      socket.emit("friend:error", { msg: "მოხსენით ბლოკი ჯერ, რომ მოთხოვნა გაგზავნოთ", targetUsername: targetUser.username });
+      return;
+    }
 
     // Blocked for 24h after this specific person declined a request from
     // this specific sender — doesn't affect requests to anyone else.
@@ -7910,7 +7971,7 @@ io.on("connection", (socket) => {
     if (cooldownExpiry) {
       if (Date.now() < cooldownExpiry) {
         const hoursLeft = Math.ceil((cooldownExpiry - Date.now()) / (60 * 60 * 1000));
-        socket.emit("friend:error", { msg: `${targetUser.username}-მა ახლახან უარყო თქვენი მოთხოვნა — სცადეთ ${hoursLeft} საათში` });
+        socket.emit("friend:error", { msg: `${targetUser.username}-მა ახლახან უარყო თქვენი მოთხოვნა — სცადეთ ${hoursLeft} საათში`, targetUsername: targetUser.username });
         return;
       }
       friendRequestDeclineCooldown.delete(cooldownKey); // expired, clean it up
@@ -8086,32 +8147,69 @@ io.on("connection", (socket) => {
   });
 
   // ── Session block ────────────────────────────────────────────────────────
-  socket.on("reg:sessionBlock", ({ targetUsername }) => {
-    if (!socket._regUser || !targetUsername) return;
+  // ── Block another registered user, permanently — not session-scoped.
+  // Blocks friend requests and private messages in BOTH directions, but
+  // deliberately does NOT affect random chat matching — they can still be
+  // paired there. Also removes any existing friendship, since staying
+  // "friends" with someone you've just blocked doesn't make sense.
+  socket.on("friend:block", ({ targetUsername }) => {
+    if (!socket._regUser || socket._regUser.isGuest || !targetUsername) return;
+    const myLc = socket._regUser.usernameLower;
     const targetLc = String(targetUsername).toLowerCase().trim();
-    if (!targetLc || targetLc === socket._regUser.usernameLower) return;
+    if (!targetLc || targetLc === myLc) return;
+    const myUser = registeredUsers.get(myLc);
+    const targetUser = registeredUsers.get(targetLc);
+    if (!myUser || !targetUser) return;
 
-    if (!socket.blockedNames) socket.blockedNames = [];
-    if (!socket.blockedNames.includes(targetLc)) {
-      socket.blockedNames.push(targetLc);
-    }
+    if (!myUser.blockedUsers) myUser.blockedUsers = [];
+    if (!myUser.blockedUsers.includes(targetLc)) myUser.blockedUsers.push(targetLc);
 
-    if (socket.partner && socket.partner.userName &&
-        socket.partner.userName.toLowerCase() === targetLc) {
-      socket.partner.emit("partnerDisconnected", { name: socket.userName || "" });
-      socket.partner.partner = null;
-      socket.partner = null;
-    }
+    // Blocking removes any existing friendship on both sides
+    if (myUser.friends) myUser.friends = myUser.friends.filter(u => u !== targetLc);
+    if (targetUser.friends) targetUser.friends = targetUser.friends.filter(u => u !== myLc);
+    if (myUser.pendingRequests) myUser.pendingRequests = myUser.pendingRequests.filter(u => u !== targetLc);
+    if (targetUser.pendingRequests) targetUser.pendingRequests = targetUser.pendingRequests.filter(u => u !== myLc);
 
-    socket.emit("reg:sessionBlockAck", { targetUsername: targetLc });
+    saveAuthUsers();
+    socket.emit("friend:blockAck", { targetUsername: targetLc, friends: myUser.friends, blockedUsers: myUser.blockedUsers });
   });
 
-  // ── Session unblock ──────────────────────────────────────────────────────
-  socket.on("reg:sessionUnblock", ({ targetUsername }) => {
-    if (!socket._regUser || !targetUsername) return;
+  socket.on("friend:unblock", ({ targetUsername }) => {
+    if (!socket._regUser || socket._regUser.isGuest || !targetUsername) return;
+    const myLc = socket._regUser.usernameLower;
     const targetLc = String(targetUsername).toLowerCase().trim();
-    if (!socket.blockedNames) return;
-    socket.blockedNames = socket.blockedNames.filter(n => n !== targetLc);
+    const myUser = registeredUsers.get(myLc);
+    if (!myUser || !myUser.blockedUsers) return;
+    myUser.blockedUsers = myUser.blockedUsers.filter(u => u !== targetLc);
+    saveAuthUsers();
+    socket.emit("friend:unblockAck", { targetUsername: targetLc });
+  });
+
+  // ── Report a registered account from their profile card — registered
+  // reporters only. Separate from the random-chat reportUser above; this
+  // one is account-based (see accountReportLog comment), and does NOT
+  // trigger any automatic ban — it's logged for an admin to review, not
+  // acted on automatically like the anonymous IP-based system is.
+  socket.on("user:report", ({ targetUsername, reason }) => {
+    if (!socket._regUser || socket._regUser.isGuest) return;
+    const myLc = socket._regUser.usernameLower;
+    const targetLc = String(targetUsername || "").toLowerCase().trim();
+    if (!targetLc || targetLc === myLc) return;
+    const targetUser = registeredUsers.get(targetLc);
+    if (!targetUser || targetUser.isGuest) return; // guests aren't reportable — temporary identity, names get reused
+
+    const cleanReason = (reason || "").trim().slice(0, 300);
+    if (!cleanReason) { socket.emit("user:reportResult", { success: false, error: "მიუთითეთ მიზეზი" }); return; }
+
+    if (!accountReportLog.has(targetLc)) accountReportLog.set(targetLc, []);
+    accountReportLog.get(targetLc).push({
+      reason: cleanReason,
+      reportedBy: socket._regUser.username,
+      timestamp: new Date().toISOString(),
+    });
+
+    console.log(`[PROFILE REPORT] ${socket._regUser.username} reported ${targetUser.username}: ${cleanReason}`);
+    socket.emit("user:reportResult", { success: true });
   });
 
   // ── Private message request ──────────────────────────────────────────────
@@ -8119,6 +8217,22 @@ io.on("connection", (socket) => {
     if (!socket._regUser || !toUsername || !message) return;
     if (socket._regUser.isGuest) { socket.emit("guest:registerRequired", { feature: "privateChat" }); return; }
     const toLc = String(toUsername).toLowerCase().trim();
+
+    // A permanent block (either direction) blocks private messages too —
+    // random chat is deliberately untouched by this. Deliberately vague
+    // error (not "they blocked you") so this can't be used to confirm a
+    // block exists from the other side.
+    const myUser = registeredUsers.get(socket._regUser.usernameLower);
+    const toUser = registeredUsers.get(toLc);
+    if (toUser?.blockedUsers && toUser.blockedUsers.includes(socket._regUser.usernameLower)) {
+      socket.emit("privateMsg:sent", { success: false, messageId: messageId || null });
+      return;
+    }
+    if (myUser?.blockedUsers && myUser.blockedUsers.includes(toLc)) {
+      socket.emit("privateMsg:sent", { success: false, messageId: messageId || null });
+      return;
+    }
+
     const roomId = privRoomId(socket._regUser.usernameLower, toLc);
     let room = privateRooms.get(roomId);
 
@@ -8162,7 +8276,6 @@ io.on("connection", (socket) => {
 
     // ── Streak: this counts as today's message for both sides ─────────────
     const streak = recordFriendMessage(socket._regUser.usernameLower, toLc);
-    const toUser = registeredUsers.get(toLc);
     io.to(`user:${toLc}`).emit("streak:update", { friendUsername: socket._regUser.username, count: streak.count, atRisk: streak.atRisk });
     socket.emit("streak:update", { friendUsername: toUser?.username || toUsername, count: streak.count, atRisk: streak.atRisk });
   });

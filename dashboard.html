@@ -587,6 +587,18 @@
       font-size: 0.88em; cursor: pointer; background: #5865f2; color: #fff;
     }
     .profile-card-msg-btn:hover { background: #4752c4; }
+    .profile-card-block-btn {
+      flex: 1; border: none; border-radius: 8px; padding: 10px; font-weight: 700;
+      font-size: 0.88em; cursor: pointer; background: #40444b; color: #f23f42;
+    }
+    .profile-card-block-btn:hover { background: #4a4e56; }
+    .profile-card-block-btn.blocked { background: rgba(242,63,66,0.15); color: #f23f42; }
+    .profile-card-report-btn {
+      width: 100%; margin-top: 8px; border: none; border-radius: 8px; padding: 9px;
+      font-weight: 600; font-size: 0.8em; cursor: pointer; background: none;
+      color: #72767d; text-decoration: underline;
+    }
+    .profile-card-report-btn:hover { color: #f23f42; }
     .profile-card-loading { color: #72767d; font-size: 0.9em; padding: 20px 0; }
 
     /* ── Do-not-disturb toggle switch ──────────────────────────────── */
@@ -844,6 +856,21 @@
       <div class="rename-modal-actions">
         <button class="rename-modal-btn rename-modal-cancel" id="renameModalCancel">გაუქმება</button>
         <button class="rename-modal-btn rename-modal-save" id="renameModalSave">შენახვა</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Report-reason modal — reachable from the profile card's 🚩 button,
+       registered users only -->
+  <div id="reportModalBackdrop" class="rename-modal-backdrop">
+    <div class="rename-modal">
+      <div class="rename-modal-title">🚩 მომხმარებლის დარეპორტება</div>
+      <div class="rename-modal-sub" id="reportModalSub"></div>
+      <textarea id="reportModalInput" class="rename-modal-input" style="min-height:80px;resize:vertical;" maxlength="300" placeholder="მიუთითეთ მიზეზი (სავალდებულოა)..."></textarea>
+      <div class="rename-modal-error" id="reportModalError"></div>
+      <div class="rename-modal-actions">
+        <button class="rename-modal-btn rename-modal-cancel" id="reportModalCancel">გაუქმება</button>
+        <button class="rename-modal-btn rename-modal-save" id="reportModalSave" style="background:#f23f42;">🚩 გაგზავნა</button>
       </div>
     </div>
   </div>
@@ -1131,7 +1158,7 @@
 
     /* ── State ───────────────────────────────────────────────────── */
     let authUser = null;
-    let sessionBlocked = new Set(); // lowercase usernames blocked this session
+    let blockedUsers = new Set(); // lowercase usernames blocked — persistent, until explicitly unblocked
     let socket = null;
     let unreadFromFriends = new Set(); // lowercase usernames with unread messages
     let lastOnlineUsers = []; // cached [{username, avatar}] from the server
@@ -1154,7 +1181,7 @@
         }
       });
 
-      socket.on("auth:authenticated", ({ username, friends, pendingRequests, avatar, bio, streaks, isGuest, guestToken }) => {
+      socket.on("auth:authenticated", ({ username, friends, pendingRequests, avatar, bio, streaks, isGuest, guestToken, blockedUsers: serverBlockedUsers }) => {
         if (isGuest) {
           try { sessionStorage.setItem("gaicani_guest_username", username); } catch (_) {}
           authUser = { username, token: guestToken || null, friends: [], pendingRequests: [], avatar: avatar || AVAILABLE_AVATARS[0], bio: bio || "", isGuest: true };
@@ -1167,9 +1194,12 @@
           if (avatar) authUser.avatar = avatar;
           authUser.bio = bio || "";
         }
+        blockedUsers = new Set(serverBlockedUsers || []);
+        if (typeof window._bindReportListener === "function") window._bindReportListener(socket);
         friendStreaks = streaks || {};
         renderFriends(friends || []);
         renderPendingRequests(pendingRequests || []);
+        renderBlocked();
         paintUserBio();
         if (!isGuest) { fetchUnreadFriends(); fetchRoomsAndForumUnread(); }
         socket.emit("users:listOnline");
@@ -1248,7 +1278,17 @@
         showToast(`ℹ️ ${esc(byUsername)}-მ შენი მეგობრობა გაიუქმა`);
       });
 
-      socket.on("friend:error", ({ msg }) => showToast(`❌ ${esc(msg)}`));
+      socket.on("friend:error", ({ msg, targetUsername }) => {
+        showToast(`❌ ${esc(msg)}`);
+        // Undo the optimistic "✅ გაგზავნილია" state on the add-friend
+        // button — otherwise it'd be stuck looking successful forever
+        // even though the request was actually rejected (blocked,
+        // cooldown, etc).
+        if (targetUsername) {
+          sentRequestsTo.delete(targetUsername.toLowerCase());
+          renderOnlineUsers(lastOnlineUsers);
+        }
+      });
 
       // ── Unread private messages — show red dot on 💬 button ───────────────
       socket.on("privateMsg:received", ({ fromUsername }) => {
@@ -1523,13 +1563,14 @@
       list.querySelectorAll(".act-block").forEach(btn => {
         btn.addEventListener("click", () => {
           const fname = btn.dataset.f;
-          if (!confirm(`დაბლოკოთ ${esc(fname)} ამ სესიაზე?`)) return;
+          if (!confirm(`დაბლოკოთ ${esc(fname)} სამუდამოდ? ვეღარ შეძლებთ მეგობრობის მოთხოვნის ან შეტყობინების გაგზავნას ერთმანეთისთვის.`)) return;
           const lc = fname.toLowerCase();
-          sessionBlocked.add(lc);
-          socket?.emit("reg:sessionBlock", { targetUsername: lc });
+          blockedUsers.add(lc);
+          socket?.emit("friend:block", { targetUsername: lc });
+          if (authUser?.friends) authUser.friends = authUser.friends.filter(f => f.toLowerCase() !== lc);
           renderFriends(authUser?.friends || []);
           renderBlocked();
-          showToast(`🚫 ${esc(fname)} — დაბლოკილია ამ სესიაზე`);
+          showToast(`🚫 ${esc(fname)} — დაბლოკილია`);
         });
       });
 
@@ -1589,6 +1630,16 @@
           ? `<div class="profile-card-bio">${esc(d.bio)}</div>`
           : '<div class="profile-card-bio empty">ბიოგრაფია ჯერ არ დაუწერია</div>';
 
+        const isMe = d.username.toLowerCase() === (authUser?.username || "").toLowerCase();
+        const isBlocked = blockedUsers.has(d.username.toLowerCase());
+        const canModerate = !isMe && !authUser?.isGuest && !d.isGuest;
+        const blockBtnHtml = (!isMe && !authUser?.isGuest)
+          ? `<button class="profile-card-block-btn${isBlocked ? " blocked" : ""}" id="profileCardBlockBtn" data-u="${esc(d.username)}">${isBlocked ? "✓ დაბლოკილია" : "🚫 დაბლოკვა"}</button>`
+          : "";
+        const reportBtnHtml = canModerate
+          ? `<button class="profile-card-report-btn" id="profileCardReportBtn" data-u="${esc(d.username)}">🚩 რეპორტი</button>`
+          : "";
+
         body.innerHTML = `
           <div class="profile-card-avatar">${avatarHtml}</div>
           <div class="profile-card-name">${esc(d.username)}</div>
@@ -1596,11 +1647,40 @@
           ${bioHtml}
           <div class="profile-card-actions">
             <button class="profile-card-msg-btn" id="profileCardMsgBtn">💬 პირადი მიწერა</button>
-          </div>`;
+            ${blockBtnHtml}
+          </div>
+          ${reportBtnHtml}`;
 
         document.getElementById("profileCardMsgBtn").addEventListener("click", () => {
           window.location.href = `/friend-chat.html?friend=${encodeURIComponent(d.username)}`;
         });
+
+        const reportBtn = document.getElementById("profileCardReportBtn");
+        if (reportBtn) {
+          reportBtn.addEventListener("click", () => openReportModal(reportBtn.dataset.u));
+        }
+
+        const blockBtn = document.getElementById("profileCardBlockBtn");
+        if (blockBtn) {
+          blockBtn.addEventListener("click", () => {
+            const targetName = blockBtn.dataset.u;
+            const lc = targetName.toLowerCase();
+            if (blockedUsers.has(lc)) {
+              blockedUsers.delete(lc);
+              socket?.emit("friend:unblock", { targetUsername: lc });
+              showToast(`✅ ${esc(targetName)} — ბლოკი მოხსნილია`);
+            } else {
+              if (!confirm(`დაბლოკოთ ${esc(targetName)} სამუდამოდ? ვეღარ შეძლებთ მეგობრობის მოთხოვნის ან შეტყობინების გაგზავნას ერთმანეთისთვის.`)) return;
+              blockedUsers.add(lc);
+              socket?.emit("friend:block", { targetUsername: lc });
+              if (authUser?.friends) authUser.friends = authUser.friends.filter(f => f.toLowerCase() !== lc);
+              renderFriends(authUser?.friends || []);
+              showToast(`🚫 ${esc(targetName)} — დაბლოკილია`);
+            }
+            renderBlocked();
+            closeProfileCard();
+          });
+        }
       } catch (_) {
         body.innerHTML = '<div class="profile-card-loading">პროფილის ჩატვირთვა ვერ მოხერხდა</div>';
       }
@@ -1612,6 +1692,52 @@
     document.getElementById("profileCardBackdrop").addEventListener("click", (e) => {
       if (e.target.id === "profileCardBackdrop") closeProfileCard();
     });
+
+    /* ── Report modal — registered users only, reachable from the profile
+       card. Reuses the rename modal's visual style. ── */
+    (function initReportModal() {
+      const backdrop = document.getElementById("reportModalBackdrop");
+      const sub = document.getElementById("reportModalSub");
+      const input = document.getElementById("reportModalInput");
+      const errorEl = document.getElementById("reportModalError");
+      const saveBtn = document.getElementById("reportModalSave");
+      const cancelBtn = document.getElementById("reportModalCancel");
+      let targetUsername = null;
+
+      window.openReportModal = function (username) {
+        targetUsername = username;
+        sub.textContent = `რატომ დარეპორტებთ "${username}"-ს?`;
+        input.value = "";
+        errorEl.textContent = "";
+        closeProfileCard();
+        backdrop.classList.add("show");
+        setTimeout(() => input.focus(), 50);
+      };
+      function closeReportModal() { backdrop.classList.remove("show"); }
+
+      cancelBtn.addEventListener("click", closeReportModal);
+      backdrop.addEventListener("click", (e) => { if (e.target === backdrop) closeReportModal(); });
+      saveBtn.addEventListener("click", () => {
+        const reason = input.value.trim();
+        if (reason.length < 3) { errorEl.textContent = "გთხოვთ, მიუთითოთ მიზეზი"; return; }
+        errorEl.textContent = "";
+        saveBtn.disabled = true;
+        socket?.emit("user:report", { targetUsername, reason });
+      });
+
+      // socket doesn't exist yet when this IIFE runs at page load — bound
+      // once it does, from setupSocket's auth:authenticated handler.
+      window._bindReportListener = function (s) {
+        if (s._reportListenerBound) return;
+        s._reportListenerBound = true;
+        s.on("user:reportResult", ({ success, error }) => {
+          saveBtn.disabled = false;
+          if (!success) { errorEl.textContent = error || "ვერ მოხერხდა"; return; }
+          closeReportModal();
+          showToast("🚩 რეპორტი გაიგზავნა — მადლობა!");
+        });
+      };
+    })();
 
     /* ── Render online-users list (other registered users online now) ── */
     function renderDgRooms(rooms) {
@@ -1949,7 +2075,7 @@
       const cnt     = document.getElementById("blockedCount");
       if (!list || !section) return;
 
-      const blocked = [...sessionBlocked];
+      const blocked = [...blockedUsers];
       if (cnt) cnt.textContent = blocked.length;
       section.style.display = blocked.length ? "" : "none";
 
@@ -1964,8 +2090,8 @@
 
       list.querySelectorAll(".act-unblock").forEach(btn => {
         btn.addEventListener("click", () => {
-          sessionBlocked.delete(btn.dataset.u);
-          socket?.emit("reg:sessionUnblock", { targetUsername: btn.dataset.u });
+          blockedUsers.delete(btn.dataset.u);
+          socket?.emit("friend:unblock", { targetUsername: btn.dataset.u });
           renderBlocked();
           renderFriends(authUser?.friends || []);
           showToast(`✅ ${esc(btn.dataset.u)} — ბლოკი მოხსნილია`);

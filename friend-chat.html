@@ -1783,8 +1783,13 @@
       incUnread();
     });
 
-    /* Message sent confirmation (no-op, we already optimistically appended) */
-    socket.on("privateMsg:sent", () => {});
+    /* Message sent confirmation — normally a no-op (already optimistically
+       appended), but if it failed (e.g. a block on either side), let the
+       sender know without revealing why, since server-side this is
+       deliberately vague to avoid confirming a block exists. */
+    socket.on("privateMsg:sent", ({ success } = {}) => {
+      if (success === false) showToast("⚠️ შეტყობინება ვერ გაიგზავნა");
+    });
 
     /* Friend reacted to one of our messages */
     socket.on("friendChat:reacted", ({ fromUsername, messageId, emoji }) => {
