@@ -207,6 +207,8 @@
       background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
       border-radius: 8px; width: 32px; height: 32px; font-size: 0.95em; cursor: pointer; flex-shrink: 0;
     }
+    .dg-tool-btn.active { border-color: var(--accent); background: rgba(88,101,242,0.25); }
+    .dg-tool-btn:disabled { opacity: 0.4; cursor: default; }
 
     .dg-scoreboard {
       display: flex; gap: 6px; overflow-x: auto; flex-shrink: 0;
@@ -249,6 +251,10 @@
       padding: 0 18px; font-weight: 700; cursor: pointer;
     }
     #guessSend:disabled { opacity: 0.4; }
+    .dg-guess-hint {
+      font-size: 0.72em; color: var(--muted); text-align: center;
+      padding: 4px 12px 0; flex-shrink: 0; background: var(--surface);
+    }
 
     /* ── End screen ──────────────────────────────────────────────── */
     #endScreen .dg-header { justify-content: center; }
@@ -360,12 +366,15 @@
     <div id="drawTools" class="dg-tools" style="display:none">
       <div class="dg-colors" id="dgColors"></div>
       <input type="range" id="brushSize" min="2" max="22" value="5" title="ფუნჯის ზომა" />
+      <button id="fillToolBtn" class="dg-tool-btn" title="შევსება — შეავსე არეალი ფერით">🪣</button>
+      <button id="undoBtn" class="dg-tool-btn" title="ბოლო მოქმედების გაუქმება" disabled>↩️</button>
       <button id="clearCanvasBtn" class="dg-tool-btn" title="გასუფთავება">🗑️</button>
     </div>
 
     <div class="dg-scoreboard" id="scoreboard"></div>
     <div class="dg-chat" id="dgChat"></div>
 
+    <div class="dg-guess-hint" id="dgGuessHint">✍️ დაწერე ვარაუდი ქართული კლავიატურით</div>
     <div class="dg-guess-bar" id="guessBar" style="display:none">
       <input id="guessInput" placeholder="დაწერე შენი ვარაუდი..." maxlength="60" autocomplete="off" />
       <button id="guessSend">გაგზავნა</button>
@@ -482,10 +491,63 @@
     ctx.lineTo(x2, y2);
     ctx.stroke();
   }
+
+  /* ── Flood fill — "bucket" tool, like Paint's fill: tapping an enclosed
+     area fills every connected pixel of the same color. Runs on raw pixel
+     data rather than the line-segment model everything else here uses, so
+     it's synced to other players as its own action type, not a stroke. ── */
+  function hexToRgb(hex) {
+    const m = String(hex).replace("#", "").match(/.{1,2}/g) || ["f5","f5","f7"];
+    return [parseInt(m[0], 16), parseInt(m[1], 16), parseInt(m[2], 16)];
+  }
+  function floodFillAt(logicalX, logicalY, fillColorHex) {
+    const w = canvas.width, h = canvas.height;
+    const dpr = window.devicePixelRatio || 1;
+    const startX = Math.round(logicalX * dpr);
+    const startY = Math.round(logicalY * dpr);
+    if (startX < 0 || startY < 0 || startX >= w || startY >= h) return;
+
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+    const fillRgb = hexToRgb(fillColorHex);
+
+    const startIdx = (startY * w + startX) * 4;
+    const targetR = data[startIdx], targetG = data[startIdx + 1], targetB = data[startIdx + 2], targetA = data[startIdx + 3];
+
+    // Already this exact color under the tap — nothing to do
+    if (Math.abs(targetR - fillRgb[0]) < 8 && Math.abs(targetG - fillRgb[1]) < 8 && Math.abs(targetB - fillRgb[2]) < 8 && targetA > 200) return;
+
+    const TOLERANCE = 45; // generous enough to swallow anti-aliased stroke edges
+    function matches(i) {
+      return Math.abs(data[i] - targetR) <= TOLERANCE &&
+             Math.abs(data[i + 1] - targetG) <= TOLERANCE &&
+             Math.abs(data[i + 2] - targetB) <= TOLERANCE &&
+             Math.abs(data[i + 3] - targetA) <= TOLERANCE;
+    }
+
+    const visited = new Uint8Array(w * h);
+    const stack = [startX, startY];
+    while (stack.length) {
+      const y = stack.pop(), x = stack.pop();
+      if (x < 0 || y < 0 || x >= w || y >= h) continue;
+      const vIdx = y * w + x;
+      if (visited[vIdx]) continue;
+      const i = vIdx * 4;
+      if (!matches(i)) continue;
+      visited[vIdx] = 1;
+      data[i] = fillRgb[0]; data[i + 1] = fillRgb[1]; data[i + 2] = fillRgb[2]; data[i + 3] = 255;
+      stack.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
+    }
+    ctx.putImageData(imgData, 0, 0);
+  }
+
   function clearCanvasLocal() { paintCanvasBg(); }
   function replayStrokes(strokes) {
     clearCanvasLocal();
-    (strokes || []).forEach(s => drawSegment(s.x1, s.y1, s.x2, s.y2, s.color, s.size));
+    (strokes || []).forEach(s => {
+      if (s.type === "fill") floodFillAt(s.x, s.y, s.color);
+      else drawSegment(s.x1, s.y1, s.x2, s.y2, s.color, s.size);
+    });
   }
 
   function getCanvasPos(e) {
@@ -495,22 +557,48 @@
     return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
   }
 
+  /* ── Local action log (drawer side only) — lets Undo remove just the
+     last stroke or fill instead of wiping the whole canvas. Grouped by
+     strokeId so one continuous pen drag (made of many tiny line segments)
+     undoes as a single unit, not one segment at a time. Reset whenever
+     the canvas itself is cleared or a new round starts. ── */
+  let myActions = [];
+  let currentStrokeId = 0;
+  let fillModeOn = false;
+
   let drawingNow = false, lastX = 0, lastY = 0;
   canvas.addEventListener("pointerdown", (e) => {
     if (!isDrawer) return;
-    drawingNow = true;
     const p = getCanvasPos(e);
+
+    if (fillModeOn) {
+      currentStrokeId++;
+      const action = { type: "fill", x: p.x, y: p.y, color: currentColor, strokeId: currentStrokeId };
+      floodFillAt(p.x, p.y, currentColor);
+      myActions.push(action);
+      updateUndoBtnState();
+      emitStroke(action);
+      return;
+    }
+
+    currentStrokeId++;
+    drawingNow = true;
     lastX = p.x; lastY = p.y;
     canvas.setPointerCapture(e.pointerId);
     // a dot on tap-without-drag
-    drawSegment(p.x, p.y, p.x + 0.1, p.y, currentColor, currentSize);
-    emitStroke({ x1: p.x, y1: p.y, x2: p.x + 0.1, y2: p.y, color: currentColor, size: currentSize });
+    const seg = { x1: p.x, y1: p.y, x2: p.x + 0.1, y2: p.y, color: currentColor, size: currentSize, strokeId: currentStrokeId };
+    drawSegment(seg.x1, seg.y1, seg.x2, seg.y2, seg.color, seg.size);
+    myActions.push(seg);
+    updateUndoBtnState();
+    emitStroke(seg);
   });
   canvas.addEventListener("pointermove", (e) => {
-    if (!isDrawer || !drawingNow) return;
+    if (!isDrawer || !drawingNow || fillModeOn) return;
     const p = getCanvasPos(e);
-    drawSegment(lastX, lastY, p.x, p.y, currentColor, currentSize);
-    emitStroke({ x1: lastX, y1: lastY, x2: p.x, y2: p.y, color: currentColor, size: currentSize });
+    const seg = { x1: lastX, y1: lastY, x2: p.x, y2: p.y, color: currentColor, size: currentSize, strokeId: currentStrokeId };
+    drawSegment(seg.x1, seg.y1, seg.x2, seg.y2, seg.color, seg.size);
+    myActions.push(seg);
+    emitStroke(seg);
     lastX = p.x; lastY = p.y;
   });
   ["pointerup", "pointercancel", "pointerleave"].forEach(ev => canvas.addEventListener(ev, () => { drawingNow = false; }));
@@ -518,6 +606,20 @@
   function emitStroke(stroke) {
     if (!socket || !currentRoomId) return;
     socket.emit("drawGuess:stroke", { roomId: currentRoomId, stroke });
+  }
+
+  function updateUndoBtnState() {
+    const btn = $("undoBtn");
+    if (btn) btn.disabled = myActions.length === 0;
+  }
+
+  function undoLastAction() {
+    if (!isDrawer || !myActions.length) return;
+    const lastId = myActions[myActions.length - 1].strokeId;
+    myActions = myActions.filter(a => a.strokeId !== lastId);
+    replayStrokes(myActions);
+    updateUndoBtnState();
+    socket.emit("drawGuess:undo", { roomId: currentRoomId });
   }
 
   /* ── Color/tool UI ───────────────────────────────────────────── */
@@ -537,7 +639,14 @@
   $("clearCanvasBtn").addEventListener("click", () => {
     if (!isDrawer) return;
     clearCanvasLocal();
+    myActions = [];
+    updateUndoBtnState();
     socket.emit("drawGuess:clear", { roomId: currentRoomId });
+  });
+  $("undoBtn").addEventListener("click", undoLastAction);
+  $("fillToolBtn").addEventListener("click", () => {
+    fillModeOn = !fillModeOn;
+    $("fillToolBtn").classList.toggle("active", fillModeOn);
   });
 
   /* ── Setup screen: friend picker ─────────────────────────────── */
@@ -681,6 +790,10 @@
     $("wordChoiceOverlay").style.display = "none";
     $("roundEndOverlay").style.display = "none";
     clearCanvasLocal();
+    myActions = [];
+    fillModeOn = false;
+    $("fillToolBtn")?.classList.remove("active");
+    updateUndoBtnState();
     clearChat();
     startTimer(endsAt);
 
@@ -695,6 +808,7 @@
 
     $("drawTools").style.display = iAmDrawer ? "flex" : "none";
     $("guessBar").style.display = iAmDrawer ? "none" : "flex";
+    $("dgGuessHint").style.display = iAmDrawer ? "none" : "block";
     $("guessInput").disabled = false;
     $("guessSend").disabled = false;
     $("guessInput").value = "";
@@ -850,13 +964,16 @@
       else { hint.textContent = Array(payload.wordLength || 0).fill("_").join(" "); hint.classList.remove("is-word"); }
       $("drawTools").style.display = payload.isDrawer ? "flex" : "none";
       $("guessBar").style.display = payload.isDrawer ? "none" : "flex";
+      $("dgGuessHint").style.display = payload.isDrawer ? "none" : "block";
       if (payload.strokes && payload.strokes.length) replayStrokes(payload.strokes);
     });
 
     socket.on("drawGuess:stroke", ({ stroke }) => {
-      drawSegment(stroke.x1, stroke.y1, stroke.x2, stroke.y2, stroke.color, stroke.size);
+      if (stroke.type === "fill") floodFillAt(stroke.x, stroke.y, stroke.color);
+      else drawSegment(stroke.x1, stroke.y1, stroke.x2, stroke.y2, stroke.color, stroke.size);
     });
     socket.on("drawGuess:clear", () => clearCanvasLocal());
+    socket.on("drawGuess:undo", ({ strokes }) => replayStrokes(strokes));
 
     socket.on("drawGuess:chat", (payload) => appendChat(payload));
 
@@ -878,6 +995,7 @@
     socket.on("drawGuess:roundEnd", ({ word, drawerUsername, drawerPoints, correctCount, scores, reason }) => {
       clearInterval(timerInterval);
       $("guessBar").style.display = "none";
+      $("dgGuessHint").style.display = "none";
       $("drawTools").style.display = "none";
       const overlay = $("roundEndOverlay");
       overlay.style.display = "flex";

@@ -8503,6 +8503,26 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Undo — removes only the last stroke/fill (grouped by strokeId, so one
+  // continuous pen drag comes off as a single unit), not the whole canvas.
+  // Sends the full remaining strokes list to everyone else so their
+  // canvas can do a clean replay rather than trying to patch in place.
+  socket.on("drawGuess:undo", ({ roomId }) => {
+    if (!socket._regUser) return;
+    const room = drawRooms.get(roomId);
+    if (!room || !room.round) return;
+    if (room.round.drawerLc !== socket._regUser.usernameLower) return;
+    if (!room.round.strokes.length) return;
+
+    const lastStrokeId = room.round.strokes[room.round.strokes.length - 1].strokeId;
+    room.round.strokes = room.round.strokes.filter(s => s.strokeId !== lastStrokeId);
+
+    for (const p of room.players) {
+      if (p.lc === room.round.drawerLc) continue; // drawer already updated their own canvas locally
+      io.sockets.sockets.get(p.socketId)?.emit("drawGuess:undo", { strokes: room.round.strokes });
+    }
+  });
+
   // A guess — right or wrong, wrong ones are shown to everyone like chat;
   // correct ones are announced without revealing the word to non-guessers yet.
   socket.on("drawGuess:guess", ({ roomId, text }) => {
