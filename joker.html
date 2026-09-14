@@ -128,7 +128,7 @@
       background: rgba(15,15,20,0.72); border: 1px solid rgba(255,255,255,0.12);
       border-radius: 10px; padding: 6px 8px; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
       display: flex; flex-direction: column; gap: 3px; min-width: 92px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3); cursor: pointer;
     }
     .jk-sb-row { display: flex; align-items: center; gap: 6px; font-size: 0.62em; white-space: nowrap; }
     .jk-sb-row.me { font-weight: 800; }
@@ -215,6 +215,33 @@
     .jk-modal-box { background: var(--surface); border-radius: 18px; padding: 22px 20px; max-width: 360px; width: 100%; text-align: center; }
     .jk-modal-title { font-weight: 800; font-size: 1.05em; margin-bottom: 4px; }
     .jk-modal-sub { color: var(--muted); font-size: 0.82em; margin-bottom: 16px; }
+
+    /* ── Expanded scoreboard modal — opened by tapping the small corner
+       scoreboard. Bigger totals + a scrollable hand-by-hand history. ── */
+    .jk-sb-modal-box { max-width: 400px; max-height: 82vh; display: flex; flex-direction: column; position: relative; text-align: left; }
+    .jk-sb-modal-close {
+      position: absolute; top: 10px; right: 10px; width: 30px; height: 30px; border-radius: 50%;
+      background: var(--surface-2); border: none; color: var(--text); font-size: 1em; cursor: pointer;
+    }
+    .jk-sb-modal-totals { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 16px; }
+    .jk-sb-modal-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
+    .jk-sb-modal-row.leader { background: rgba(242,201,76,0.14); border: 1px solid rgba(242,201,76,0.4); }
+    .jk-sb-modal-row.me { font-weight: 800; }
+    .jk-sb-modal-name { flex: 1; font-size: 0.95em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .jk-sb-modal-score { font-size: 1.15em; font-weight: 800; color: var(--gold); }
+    .jk-sb-modal-row.leader .jk-sb-modal-score { color: #fff; text-shadow: 0 0 6px rgba(242,201,76,0.8); }
+    .jk-sb-modal-history-label { font-size: 0.78em; font-weight: 700; color: var(--muted); margin-bottom: 8px; }
+    .jk-sb-modal-history { overflow-y: auto; flex: 1; display: flex; flex-direction: column-reverse; gap: 8px; min-height: 60px; }
+    .jk-sb-hand-card { background: var(--surface-2); border-radius: 10px; padding: 8px 10px; }
+    .jk-sb-hand-head { display: flex; justify-content: space-between; align-items: center; font-size: 0.74em; color: var(--muted); margin-bottom: 6px; }
+    .jk-sb-hand-row { display: flex; align-items: center; gap: 6px; font-size: 0.8em; padding: 2px 0; }
+    .jk-sb-hand-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .jk-sb-hand-bid { color: var(--muted); font-size: 0.85em; min-width: 46px; text-align: right; }
+    .jk-sb-hand-score { font-weight: 800; min-width: 32px; text-align: right; }
+    .jk-sb-hand-score.pos { color: #3ba55d; }
+    .jk-sb-hand-score.neg { color: #f23f42; }
+    .jk-sb-hand-empty { color: var(--muted); font-size: 0.85em; text-align: center; padding: 20px 0; }
+    .jk-sb-bonus-tag { font-size: 0.68em; color: var(--gold); font-weight: 700; margin-left: 4px; }
     .jk-bid-grid { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 6px; }
     .jk-bid-choice { width: 46px; height: 46px; border-radius: 50%; border: none; background: var(--surface-2); color: var(--text); font-weight: 800; font-size: 1em; cursor: pointer; }
     .jk-bid-choice:disabled { opacity: 0.25; cursor: default; }
@@ -516,6 +543,18 @@
   </div>
 </div>
 
+<!-- Expanded scoreboard — opens when the small corner scoreboard is tapped.
+     Bigger score view plus a hand-by-hand history of what happened. -->
+<div id="scoreboardModal" class="jk-modal">
+  <div class="jk-modal-box jk-sb-modal-box">
+    <button class="jk-sb-modal-close" id="scoreboardModalClose">✕</button>
+    <div class="jk-modal-title">ანგარიში</div>
+    <div class="jk-sb-modal-totals" id="scoreboardModalTotals"></div>
+    <div class="jk-sb-modal-history-label">ისტორია — რა მოხდა თითოეულ ხელში</div>
+    <div class="jk-sb-modal-history" id="scoreboardModalHistory"></div>
+  </div>
+</div>
+
 <script src="/socket.io/socket.io.js"></script>
 <script>
   (function () {
@@ -590,6 +629,7 @@
   /* ── State ───────────────────────────────────────────────────── */
   let socket = null;
   let currentRoomId = getRoomParam() || null;
+  let latestRoomState = null; // cached so the scoreboard-tap handler (independent of the render flow) can access it
   let onlineUsers = [];
   let selectedInvitees = new Set();
   let latestRoom = null;
@@ -854,6 +894,71 @@
       board.appendChild(row);
     });
   }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+  }
+
+  /* ── Expanded scoreboard — bigger totals + a full hand-by-hand history,
+     opened by tapping the small corner scoreboard. All the data (room.history)
+     is already sent to the client for every room update — this just renders it. ── */
+  function openScoreboardModal() {
+    if (!latestRoomState) return;
+    renderScoreboardModal(latestRoomState);
+    $("scoreboardModal").classList.add("show");
+  }
+  function closeScoreboardModal() {
+    $("scoreboardModal").classList.remove("show");
+  }
+  function renderScoreboardModal(room) {
+    const mySeat = room.mySeat;
+    const totalsWrap = $("scoreboardModalTotals");
+    const rows = room.players.slice().sort((a, b) => (room.totals[b.seat] || 0) - (room.totals[a.seat] || 0));
+    const maxScore = Math.max(...room.players.map(p => room.totals[p.seat] || 0));
+    totalsWrap.innerHTML = rows.map(p => {
+      const total = room.totals[p.seat] || 0;
+      const isLeader = total === maxScore && maxScore > 0;
+      const isMe = p.seat === mySeat;
+      return `
+        <div class="jk-sb-modal-row${isLeader ? " leader" : ""}${isMe ? " me" : ""}">
+          <div class="jk-sb-modal-name">${isMe ? "შენ" : esc(p.username)}</div>
+          <div class="jk-sb-modal-score">${total}</div>
+        </div>`;
+    }).join("");
+
+    const historyWrap = $("scoreboardModalHistory");
+    const history = room.history || [];
+    if (!history.length) {
+      historyWrap.innerHTML = `<div class="jk-sb-hand-empty">ისტორია ჯერ ცარიელია — პირველი ხელი ჯერ არ დასრულებულა</div>`;
+      return;
+    }
+    // column-reverse wrapper handles newest-first order, so build oldest→newest here
+    historyWrap.innerHTML = history.map(h => {
+      const playerRowsHtml = room.players.map(p => {
+        const bid = h.bids[p.seat];
+        const actual = h.tricksWon[p.seat];
+        const score = h.scores[p.seat];
+        const scoreClass = score > 0 ? "pos" : (score < 0 ? "neg" : "");
+        const khishti = h.khishtiHit && h.khishtiHit[p.seat] ? " 🎯" : "";
+        const bonusTag = h.setBonuses && h.setBonuses[p.seat] ? `<span class="jk-sb-bonus-tag">+${h.setBonuses[p.seat]} სეტი</span>` : "";
+        const isMe = p.seat === mySeat;
+        return `
+          <div class="jk-sb-hand-row">
+            <div class="jk-sb-hand-name">${isMe ? "შენ" : esc(p.username)}</div>
+            <div class="jk-sb-hand-bid">${bid}/${actual}${khishti}</div>
+            <div class="jk-sb-hand-score ${scoreClass}">${score > 0 ? "+" : ""}${score}${bonusTag}</div>
+          </div>`;
+      }).join("");
+      return `
+        <div class="jk-sb-hand-card">
+          <div class="jk-sb-hand-head"><span>ხელი ${h.handIndex + 1} — ${h.handSize} ბარათი</span></div>
+          ${playerRowsHtml}
+        </div>`;
+    }).join("");
+  }
+  $("scoreboard").addEventListener("click", openScoreboardModal);
+  $("scoreboardModalClose").addEventListener("click", closeScoreboardModal);
+  $("scoreboardModal").addEventListener("click", (e) => { if (e.target.id === "scoreboardModal") closeScoreboardModal(); });
 
   function myLegalCards(room, mySeat) {
     if (room.phase !== "playing" || room.turnSeat !== mySeat) return [];
@@ -1230,6 +1335,7 @@
 
     socket.on("joker:room", (room) => {
       currentRoomId = room.roomId;
+      latestRoomState = room;
       history.replaceState(null, "", "/joker.html?room=" + encodeURIComponent(room.roomId));
       if (room.status === "lobby") { showScreen("lobby"); renderLobby(room); }
       else { showScreen("game"); renderGame(room); }
