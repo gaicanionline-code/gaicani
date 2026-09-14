@@ -5765,6 +5765,7 @@ function drawRoomPublicState(room) {
     status: room.status,
     players: room.players.map(p => ({
       username: p.username,
+      avatar: registeredUsers.get(p.lc)?.avatar || null,
       score: p.score,
       connected: p.connected,
       isDrawer: !!(room.round && room.round.drawerLc === p.lc),
