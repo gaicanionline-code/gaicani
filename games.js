@@ -45,29 +45,6 @@
     const qsa = (sel) => document.querySelectorAll(sel);
 
     // ────────────────────────────────────────────────────────────
-    // 1.  Inject 🎮 button into top-bar
-    // ────────────────────────────────────────────────────────────
-    function injectGameButton() {
-      const rightSide = qs('.right-side');
-      if (!rightSide || el('gameBtn')) return;
-
-      const btn = document.createElement('button');
-      btn.id        = 'gameBtn';
-      btn.className = 'game-btn';
-      btn.disabled  = true;
-      btn.title     = 'Play Games';
-      btn.innerHTML =
-        '<span class="btn-icon game-btn-icon">🎮</span>' +
-        '<span class="btn-label">თამაში</span>';
-
-      // Desktop: before changeNameBtn  |  Mobile: after interestsBtn
-      const anchor = el('changeNameBtn');
-      rightSide.insertBefore(btn, anchor);
-
-      btn.addEventListener('click', toggleGameMenu);
-    }
-
-    // ────────────────────────────────────────────────────────────
     // 2.  Game Menu popup
     // ────────────────────────────────────────────────────────────
     function createGameMenu() {
@@ -551,7 +528,9 @@
     // Init
     // ────────────────────────────────────────────────────────────
     function init() {
-      injectGameButton();
+      // injectGameButton() intentionally not called — 🎮 Games now lives
+      // only in the ⋮ menu (regMenuGames in auth-client.js, which calls
+      // window._toggleGameMenu() below), not as its own main-bar icon.
       createGameMenu();
       createGameOverlay();
     }

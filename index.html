@@ -46,23 +46,15 @@
   <link rel="stylesheet" href="style-MOBILE-FIX.css" />
   <style>
     /* ── Top-bar cleanup ─────────────────────────────────────────────
-       🚩 Report still lives in the ⋮ menu to save space. ✏️ Change Name
-       and 🎮 Games now sit in the main bar next to 🎵 Music (both on
-       desktop and mobile) instead of being tucked into the ⋮ menu.
-       ინტ. stays in the main bar for guests and only moves into the
-       ⋮ menu once registered (unchanged from before).
-       !important overrides any inline display set by script.js/games.js. */
+       🚩 Report, ✏️ Change Name, 🎮 Games, and ინტ. (Interests) all live
+       only in the ⋮ menu now — for everyone, guest or registered — not
+       as separate main-bar buttons. Their old main-bar elements were
+       removed from the page entirely rather than just hidden. 🎵 Music
+       stays as a main-bar icon for guests; for registered users it's
+       hidden here and reached through the ⋮ menu instead (added as a
+       reg-only-item entry above). */
     #reportBtn { display: none !important; }
-    body.reg-user #interestsBtn { display: none !important; }
 
-    /* Registered users can't rename themselves in random chat (their
-       registered username is fixed), so ✏️ სახელის შეცვლა doesn't apply
-       to them — remove it entirely. 🎮 Games and 🎵 Music move into the
-       ⋮ menu for them too (added as reg-only-item entries above), so their
-       main-bar icons are hidden here; guests keep Games/Music as regular
-       icons in the main row. Applies on both desktop and mobile. */
-    body.reg-user #changeNameBtn,
-    body.reg-user #gameBtn,
     body.reg-user #musicBtn { display: none !important; }
 
     /* ── Whole-site appearance picker (⋮ menu → გარეგნობა) ──────────────── */
@@ -187,7 +179,7 @@
             <span class="reg-menu-icon">✏️</span>
             <span class="reg-menu-label">სახელის შეცვლა</span>
           </button>
-          <button class="reg-menu-item reg-only-item" id="regMenuGames" data-action="games">
+          <button class="reg-menu-item" id="regMenuGames" data-action="games">
             <span class="reg-menu-icon">🎮</span>
             <span class="reg-menu-label">Games</span>
           </button>
