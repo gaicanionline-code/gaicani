@@ -7797,6 +7797,81 @@ io.on("connection", (socket) => {
     io.emit("users:onlineChanged");
   });
 
+  // ── auth:guest:rename — let a guest pick a new temporary name from the
+  // dashboard (registered accounts can't rename — their username is fixed
+  // to their real account). Moves their existing record (avatar, bio) to
+  // the new name rather than starting fresh, same as the name-reuse logic
+  // in auth:guest above. ──────────────────────────────────────────────
+  socket.on("auth:guest:rename", (data) => {
+    if (!socket._regUser || !socket._regUser.isGuest) return;
+    const oldLc = socket._regUser.usernameLower;
+    const oldUser = registeredUsers.get(oldLc);
+    if (!oldUser) return;
+
+    const newName = (data && typeof data.newName === "string") ? data.newName.trim() : "";
+    const newLc = newName.toLowerCase();
+
+    if (!newName || newName.length < NAME_MIN || newName.length > NAME_MAX || !/^[\w\u10D0-\u10FF\s\-.]+$/.test(newName)) {
+      socket.emit("auth:guest:renameResult", { success: false, error: "სახელი უნდა იყოს 2-20 სიმბოლო" });
+      return;
+    }
+    if (newLc === oldLc) {
+      socket.emit("auth:guest:renameResult", { success: false, error: "ეს უკვე შენი სახელია" });
+      return;
+    }
+    const existingHolder = registeredUsers.get(newLc);
+    if (existingHolder && !existingHolder.isGuest) {
+      socket.emit("auth:guest:renameResult", { success: false, error: "ეს სახელი დაკავებულია" });
+      return;
+    }
+    if (existingHolder && existingHolder.isGuest) {
+      // Belongs to some other active guest right now (extremely unlikely
+      // collision, but possible) — can't hand out a name someone else is
+      // actively using without knowing it's actually the same person.
+      const stillHeldByAnother = [...guestSocketMap.entries()].some(([sid, lc]) => sid !== socket.id && lc === newLc);
+      if (stillHeldByAnother) {
+        socket.emit("auth:guest:renameResult", { success: false, error: "ეს სახელი დაკავებულია" });
+        return;
+      }
+    }
+
+    // Move the record to the new key, carrying avatar/bio/etc. over.
+    registeredUsers.delete(oldLc);
+    oldUser.username = newName;
+    registeredUsers.set(newLc, oldUser);
+
+    // Re-point this socket's tracking to the new name.
+    guestSocketMap.set(socket.id, newLc);
+    const oldSockets = onlineRegSockets.get(oldLc);
+    if (oldSockets) {
+      oldSockets.delete(socket.id);
+      if (oldSockets.size === 0) onlineRegSockets.delete(oldLc);
+    }
+    if (!onlineRegSockets.has(newLc)) onlineRegSockets.set(newLc, new Set());
+    onlineRegSockets.get(newLc).add(socket.id);
+
+    socket.leave(`user:${oldLc}`);
+    socket.join(`user:${newLc}`);
+    socket._regUser = { usernameLower: newLc, username: newName, isGuest: true };
+    socket.userName = newName;
+
+    // Critical: any REST token(s) issued for the old name (this socket's
+    // guestToken, or others from another tab on the same identity) still
+    // point at usernameLower=oldLc in authTokens. If left alone, the very
+    // next REST call using one of them (profile lookups, forum/rooms
+    // reads) would 401 — requireRegAuth looks the token up, finds
+    // oldLc, and registeredUsers no longer has anything under that key
+    // since it was just moved above. Repoint every such token to newLc
+    // instead of only fixing this one socket's.
+    for (const entry of authTokens.values()) {
+      if (entry.usernameLower === oldLc) entry.usernameLower = newLc;
+    }
+
+    socket.emit("auth:guest:renameResult", { success: true, newName });
+    console.log(`[AUTH] guest renamed: ${oldLc} -> ${newName}`);
+    io.emit("users:onlineChanged");
+  });
+
   // ── auth:checkPartner — tell client if current partner is registered ──────
   socket.on("auth:checkPartner", () => {
     if (!socket.partner || !socket._regUser) return;

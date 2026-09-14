@@ -468,6 +468,50 @@
       cursor: pointer;
       transition: background 0.15s;
     }
+    .btn-change-name-guest {
+      margin-top: 8px;
+      padding: 4px 10px;
+      background: rgba(88,101,242,0.12);
+      border: 1px solid rgba(88,101,242,0.3);
+      color: #a78bfa;
+      border-radius: 7px;
+      font-size: 0.72em;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-change-name-guest:hover { background: rgba(88,101,242,0.22); }
+
+    /* ── Guest rename modal ──────────────────────────────────────── */
+    .rename-modal-backdrop {
+      position: fixed; inset: 0; z-index: 950; background: rgba(0,0,0,0.55);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.18s ease;
+      padding: 20px;
+    }
+    .rename-modal-backdrop.show { opacity: 1; pointer-events: auto; }
+    .rename-modal {
+      background: #2b2d31; border-radius: 16px; width: 100%; max-width: 320px;
+      padding: 22px 20px; transform: scale(0.92) translateY(8px); transition: transform 0.18s ease;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .rename-modal-backdrop.show .rename-modal { transform: scale(1) translateY(0); }
+    .rename-modal-title { font-weight: 800; font-size: 1.02em; margin-bottom: 4px; color: #fff; }
+    .rename-modal-sub { font-size: 0.78em; color: #96989d; margin-bottom: 14px; line-height: 1.4; }
+    .rename-modal-input {
+      width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12);
+      background: #1e1f22; color: #fff; font-size: 0.95em; margin-bottom: 6px;
+    }
+    .rename-modal-input:focus { outline: none; border-color: #5865f2; }
+    .rename-modal-error { font-size: 0.76em; color: #f23f42; min-height: 16px; margin-bottom: 8px; }
+    .rename-modal-actions { display: flex; gap: 8px; }
+    .rename-modal-btn {
+      flex: 1; border: none; border-radius: 8px; padding: 10px; font-weight: 700;
+      font-size: 0.86em; cursor: pointer;
+    }
+    .rename-modal-cancel { background: #40444b; color: #dcddde; }
+    .rename-modal-save { background: #5865f2; color: #fff; }
+    .rename-modal-save:hover { background: #4752c4; }
     .btn-change-bio:hover { background: rgba(88,101,242,0.22); }
     .bio-editor-row { display: flex; gap: 8px; padding: 12px 14px 16px; align-items: center; }
     .bio-editor-input {
@@ -610,6 +654,7 @@
         <div class="user-bio-display" id="userBioDisplay" style="display:none"></div>
         <button class="btn-change-avatar" id="changeAvatarBtn">🖼️ სურათის შეცვლა</button>
         <button class="btn-change-bio" id="changeBioBtn">აღწერე შენი თავი მოკლედ  სხვა რეგისტრირებული იუზერებისთვის</button>
+        <button class="btn-change-name-guest" id="changeGuestNameBtn" style="display:none">✏️ სახელის შეცვლა</button>
       </div>
     </div>
 
@@ -788,6 +833,21 @@
     </div>
   </div>
 
+  <!-- Guest rename modal — only reachable via changeGuestNameBtn, which is
+       only ever shown for guests (registered usernames are fixed) -->
+  <div id="renameModalBackdrop" class="rename-modal-backdrop">
+    <div class="rename-modal">
+      <div class="rename-modal-title">✏️ სახელის შეცვლა</div>
+      <div class="rename-modal-sub">დროებითი სახელი — ვრცელდება მთელ საიტზე, სანამ არ დარეგისტრირდები</div>
+      <input type="text" id="renameModalInput" class="rename-modal-input" maxlength="20" autocomplete="off" placeholder="შენი სახელი" />
+      <div class="rename-modal-error" id="renameModalError"></div>
+      <div class="rename-modal-actions">
+        <button class="rename-modal-btn rename-modal-cancel" id="renameModalCancel">გაუქმება</button>
+        <button class="rename-modal-btn rename-modal-save" id="renameModalSave">შენახვა</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/socket.io/socket.io.js"></script>
   <script>
   (function () {
@@ -927,6 +987,8 @@
       const changeBioBtn = document.getElementById("changeBioBtn");
       if (changeAvatarBtn) changeAvatarBtn.style.display = "none";
       if (changeBioBtn) changeBioBtn.style.display = "none";
+      const changeGuestNameBtn = document.getElementById("changeGuestNameBtn");
+      if (changeGuestNameBtn) changeGuestNameBtn.style.display = "";
       const banner = document.getElementById("guestBanner");
       if (banner) banner.style.display = "";
 
@@ -950,6 +1012,65 @@
       if (typeof showToast === "function") showToast(`🔒 ${msg}`);
       else alert(msg);
     }
+
+    /* ── Guest rename — change your temporary name from the dashboard,
+       not just from random chat. Only ever shown/usable for guests;
+       registered usernames are fixed to the account and can't change. */
+    (function initGuestRename() {
+      const btn      = document.getElementById("changeGuestNameBtn");
+      const backdrop = document.getElementById("renameModalBackdrop");
+      const input    = document.getElementById("renameModalInput");
+      const errorEl  = document.getElementById("renameModalError");
+      const saveBtn  = document.getElementById("renameModalSave");
+      const cancelBtn = document.getElementById("renameModalCancel");
+      if (!btn || !backdrop || !input) return;
+
+      function openRenameModal() {
+        errorEl.textContent = "";
+        input.value = authUser?.username || "";
+        backdrop.classList.add("show");
+        setTimeout(() => { input.focus(); input.select(); }, 50);
+      }
+      function closeRenameModal() { backdrop.classList.remove("show"); }
+
+      btn.addEventListener("click", openRenameModal);
+      cancelBtn.addEventListener("click", closeRenameModal);
+      backdrop.addEventListener("click", (e) => { if (e.target === backdrop) closeRenameModal(); });
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") submitRename(); if (e.key === "Escape") closeRenameModal(); });
+      saveBtn.addEventListener("click", submitRename);
+
+      function submitRename() {
+        const newName = input.value.trim();
+        if (newName.length < 2 || newName.length > 20) {
+          errorEl.textContent = "სახელი უნდა იყოს 2-20 სიმბოლო";
+          return;
+        }
+        errorEl.textContent = "";
+        saveBtn.disabled = true;
+        socket?.emit("auth:guest:rename", { newName });
+      }
+
+      // Bound once the socket actually exists — see the call to this from
+      // setupSocket's auth:authenticated handler further down. Guarded so
+      // a reconnect (which re-fires auth:authenticated) can't stack a
+      // second listener on the same socket.
+      window._bindGuestRenameListener = function (s) {
+        if (s._guestRenameBound) return;
+        s._guestRenameBound = true;
+        s.on("auth:guest:renameResult", ({ success, newName, error }) => {
+          saveBtn.disabled = false;
+          if (!success) { errorEl.textContent = error || "ვერ მოხერხდა"; return; }
+          if (authUser) authUser.username = newName;
+          const nameEl = document.getElementById("userName");
+          const topUserEl = document.getElementById("topUsername");
+          if (nameEl) nameEl.textContent = newName;
+          if (topUserEl) topUserEl.textContent = `👤 ${newName} (სტუმარი)`;
+          try { sessionStorage.setItem("gaicani_guest_username", newName); } catch (_) {}
+          closeRenameModal();
+          showToast("✅ სახელი შეიცვალა!");
+        });
+      };
+    })();
 
     const bioEditorInput = document.getElementById("bioEditorInput");
     const bioEditorCount = document.getElementById("bioEditorCount");
@@ -1038,6 +1159,7 @@
           try { sessionStorage.setItem("gaicani_guest_username", username); } catch (_) {}
           authUser = { username, token: guestToken || null, friends: [], pendingRequests: [], avatar: avatar || AVAILABLE_AVATARS[0], bio: bio || "", isGuest: true };
           enterGuestMode();
+          if (typeof window._bindGuestRenameListener === "function") window._bindGuestRenameListener(socket);
         }
         if (authUser) {
           authUser.friends = friends || [];
