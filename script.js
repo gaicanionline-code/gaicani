@@ -1093,13 +1093,17 @@ function openBioPopup() {
   bioPopupOpen = true;
   setTimeout(() => bioInput.focus(), 50);
 }
+// Exposed so the ⋮ menu (auth-client.js, a separate script) can open this
+// directly — "ინტერესები" lives only in that menu now, not as its own
+// main-bar button, so there's no button element to proxy a click through.
+window.openBioPopup = openBioPopup;
 
 function closeBioPopup() {
   bioPopup.style.display = "none";
   bioPopupOpen = false;
 }
 
-interestsBtn.addEventListener("click", (e) => {
+interestsBtn?.addEventListener("click", (e) => {
   e.stopPropagation();
   bioPopupOpen ? closeBioPopup() : openBioPopup();
 });
@@ -1118,7 +1122,7 @@ function saveBio() {
   const text = bioInput.value.trim().slice(0, 60);
   userBio = text;
   socket.emit("setBio", text);
-  interestsBtn.classList.toggle("has-bio", text.length > 0);
+  interestsBtn?.classList.toggle("has-bio", text.length > 0);
   closeBioPopup();
   if (text) showToast("✅ ინფო შენახულია!");
 }
@@ -1128,7 +1132,7 @@ function clearBio() {
   bioCharCount.textContent = "0/60";
   userBio = "";
   socket.emit("setBio", "");
-  interestsBtn.classList.remove("has-bio");
+  interestsBtn?.classList.remove("has-bio");
 }
 
 bioSaveBtn.addEventListener("click", saveBio);
@@ -1753,7 +1757,7 @@ messageInput.addEventListener("input", () => {
   }, 1500);
 });
 
-changeNameBtn.addEventListener("click", () => {
+function openChangeNameModal() {
   nameInput.value         = userName;
   saveNameBtn.textContent = "Save Name";
   clearNameError();
@@ -1761,7 +1765,11 @@ changeNameBtn.addEventListener("click", () => {
   const closeBtn = document.getElementById("nameModalClose");
   if (closeBtn) closeBtn.style.display = "block";
   setTimeout(() => nameInput.focus(), 50);
-});
+}
+changeNameBtn?.addEventListener("click", openChangeNameModal);
+// Exposed for the same reason as openBioPopup above — "სახელის შეცვლა"
+// lives only in the ⋮ menu now (auth-client.js calls this directly).
+window.openChangeNameModal = openChangeNameModal;
 
 saveNameBtn.addEventListener("click", saveName);
 nameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveName(); } });
