@@ -2814,4 +2814,29 @@ body.rc-theme-light .reg-menu-icon { color: #4b4f5a; }
 body.rc-theme-light .reg-menu-btn { background: rgba(0,0,0,0.06); border-color: rgba(0,0,0,0.1); color: #4b4f5a; }
 body.rc-theme-light .reg-menu-btn:hover { background: rgba(0,0,0,0.1); color: #1a1b1e; }
 body.rc-theme-light .system-message { color: #6b7080; }
-body.rc-theme-light .seen-status { color: #8b8fa8; }
+body.rc-theme-light .seen-status { color: #9096a8; }
+
+/* ── Fixing genuine contrast/visibility bugs — these sit directly on
+   elements that turn light in this theme, but were still using text
+   colors meant for a dark background, making them hard or impossible
+   to read (the press-counter badge especially — near-white text over
+   a pale, barely-tinted background). ── */
+body.rc-theme-light .press-counter { color: #3a3f52; background: rgba(88, 101, 242, 0.14); }
+body.rc-theme-light #blockBtnCounter { color: #7a2a2c; background: rgba(242, 63, 66, 0.14); }
+body.rc-theme-light .timestamp { color: #8a8fa0; }
+body.rc-theme-light .char-count { color: #8a8fa0; }
+
+/* ── Self-contained dark popups (their own hardcoded background, so not
+   actually unreadable) that looked jarring dropped onto an otherwise
+   light page — themed here for visual consistency, not contrast.
+   NOTE: the name-entry modal (#nameModal) is deliberately NOT included —
+   its login/signup tabs have several paragraphs with inline
+   style="color:..." that a CSS override can't reach (inline always wins
+   over a class rule), so lightening its background there would leave
+   that text unreadable. It stays dark and internally consistent instead. ── */
+body.rc-theme-light .typing-indicator { background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+body.rc-theme-light .typing-indicator span { background: #9096a8; }
+body.rc-theme-light .reply-preview-bar { background: #f0f1f5; border-bottom-color: rgba(0,0,0,0.08); }
+body.rc-theme-light .reply-preview-text { color: #4b4f5a; }
+body.rc-theme-light .reply-preview-close { color: #6b7080; }
+body.rc-theme-light .reply-preview-close:hover { color: #1a1b1e; background: rgba(0,0,0,0.06); }

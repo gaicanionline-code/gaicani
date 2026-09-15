@@ -218,6 +218,12 @@
     .im-chat-msg.mine { align-self: flex-end; background: #8b5cf6; color: #fff; border-bottom-right-radius: 4px; }
     .im-chat-msg .im-chat-author { font-size: 0.76em; font-weight: 700; color: #c4b5fd; margin-bottom: 2px; }
     .im-chat-msg.mine .im-chat-author { display: none; }
+    /* Subtly different from a normal message — not flagged as fake, just
+       a shade cooler/greyer, so it registers as slightly "off" without
+       announcing itself. The mystery is the point. */
+    .im-chat-msg.ghost { background: #2a2d3a; }
+    .im-chat-msg.ghost .im-chat-author { color: #8891a8; }
+    .im-chat-system-line { align-self: center; font-size: 0.74em; color: var(--muted); font-style: italic; padding: 2px 10px; text-align: center; }
     .im-chat-input-row { display: flex; gap: 8px; padding: 10px 14px calc(10px + var(--safe-bottom)); border-top: 1px solid var(--border); flex-shrink: 0; }
     #imChatInput { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; color: var(--text); font-size: 16px; padding: 9px 14px; }
     #imChatInput:focus { outline: none; border-color: rgba(139,92,246,0.5); }
@@ -713,9 +719,18 @@
   $("chatBackdrop").addEventListener("click", closeChat);
 
   function appendChatMessage(msg) {
+    if (msg.kind === "ghostSystem") {
+      const line = document.createElement("div");
+      line.className = "im-chat-system-line";
+      line.textContent = `${msg.username} — ${msg.text}`;
+      $("chatMessages").appendChild(line);
+      $("chatMessages").scrollTop = $("chatMessages").scrollHeight;
+      if (!chatOpen) { chatHasUnread = true; $("chatUnreadDot").classList.add("show"); }
+      return;
+    }
     const isMine = msg.username.toLowerCase() === myUsernameLower;
     const row = document.createElement("div");
-    row.className = "im-chat-msg " + (isMine ? "mine" : "other");
+    row.className = "im-chat-msg " + (isMine ? "mine" : "other") + (msg.kind === "ghost" ? " ghost" : "");
     const author = document.createElement("div");
     author.className = "im-chat-author";
     author.textContent = msg.username;

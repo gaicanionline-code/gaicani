@@ -6890,6 +6890,344 @@ function imposterNormalizeWord(w) {
   return String(w || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+// ════════════════════════════════════════════════════════════════════════
+//  IMPOSTER — "mysterious visitors" ambiance system
+// ────────────────────────────────────────────────────────────────────────
+//  A layer of scripted, unexplained chat events that occasionally surface
+//  during a live match, meant to feel like something other than the 5
+//  real players has entered the conversation. Deliberately never fully
+//  explained — some events are red herrings, some hint at a hidden,
+//  never-fully-told backstory, some are just wrong.
+//
+//  Hard rule: these NEVER speak as an actual player's real username, alive
+//  or eliminated — only as one of the fictional identities below. They can
+//  reference a real player by name in the message TEXT, but the message
+//  SENDER is always fictional. A duplicate/spoofed message that looks like
+//  it came from someone's actual friend could be genuinely confusing or
+//  hurtful between real people who trust each other outside the game —
+//  the horror here comes from the unknown, not from impersonating someone
+//  you know.
+// ════════════════════════════════════════════════════════════════════════
+const IMPOSTER_GHOST_NAMES = [
+  "unknown", "????", "visitor", "no_name", "user_0", "offline", "deleted_user",
+  "M", "...", "nobody", "guest", "████", "you", "last_seen_2009", "stranger",
+];
+
+// Cross-match memory — never exposed to players directly, just quietly
+// shapes how often "M" specifically shows back up and what it says when it
+// does, so attentive players who play many matches might eventually
+// notice a pattern without ever being told one exists.
+const imposterGhostLore = {
+  mAppearances: 0,
+  totalGhostEvents: 0,
+};
+
+function imposterGhostRandomPlayer(room, excludeLc) {
+  const pool = room.players.filter(p => p.connected && p.lc !== excludeLc);
+  if (!pool.length) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// Sends one ghost line into the room's chat feed. `kind` lets the client
+// style it slightly differently from a real player's message (subtle —
+// the point is never being fully sure whether something was real).
+//   kind: "ghost"       — a normal-looking chat bubble from a fictional name
+//   kind: "ghostSystem" — a muted system-style line (joins/leaves/anomalies)
+function imposterSendGhostLine(room, username, text, kind = "ghost") {
+  if (!room || room.status !== "playing") return;
+  const msg = { username, text, ts: Date.now(), kind };
+  for (const p of room.players) {
+    const s = io.sockets.sockets.get(p.socketId);
+    if (s) s.emit("imposter:chatMessage", msg);
+  }
+  imposterGhostLore.totalGhostEvents++;
+}
+
+// Runs a short scripted exchange as a sequence of timed lines. Re-checks
+// the room is still a live, active match before every single step, so a
+// match ending mid-sequence just quietly stops the sequence rather than
+// sending ghost lines into a room nobody's looking at anymore.
+function imposterRunGhostSequence(room, steps) {
+  let elapsed = 0;
+  for (const step of steps) {
+    elapsed += step.delayMs ?? 900;
+    setTimeout(() => {
+      const liveRoom = imposterRooms.get(room.id);
+      if (!liveRoom || liveRoom.status !== "playing") return;
+      if (typeof step.text === "function") {
+        const line = step.text(liveRoom);
+        if (line == null) return; // step can bail out if its precondition no longer holds
+        imposterSendGhostLine(liveRoom, step.username, line, step.kind || "ghost");
+      } else {
+        imposterSendGhostLine(liveRoom, step.username, step.text, step.kind || "ghost");
+      }
+    }, elapsed);
+  }
+}
+
+// ── Event catalog ──────────────────────────────────────────────────────
+// Each entry is a function(room) that fires an event. Some need a real
+// player's name to reference in the text (a silent player, a random
+// target, etc); those return null/bail if the room doesn't currently have
+// what they need, and the scheduler just tries a different one that tick.
+const IMPOSTER_GHOST_EVENTS = [
+
+  // "Nobody invited them" — the baseline unexplained visitor. Doesn't
+  // script a reply from any real player — they react organically or don't.
+  (room) => {
+    imposterRunGhostSequence(room, [
+      { username: "unknown", text: "hello", delayMs: 0 },
+      { username: "unknown", text: "შენ უკვე იცი ვინ ვარ", delayMs: 4500 },
+      { username: "unknown", text: "დატოვა ჩატი", kind: "ghostSystem", delayMs: 2000 },
+    ]);
+    return true;
+  },
+
+  // Wrong-but-confident accusation — sometimes right, sometimes not,
+  // deliberately, so players learn not to fully trust it either way.
+  (room) => {
+    const target = imposterGhostRandomPlayer(room);
+    if (!target) return false;
+    imposterRunGhostSequence(room, [
+      { username: "unknown", text: `${target.username} — შენ ხარ თვალთმაქცი.`, delayMs: 0 },
+      { username: "unknown", text: (r) => (r.imposterLc === target.lc ? "მართალი ვიყავი." : "ოჰ."), delayMs: 3200 },
+      { username: "unknown", text: (r) => (r.imposterLc === target.lc ? null : "ბოდიში."), delayMs: 1400 },
+      { username: "unknown", text: "დატოვა ჩატი", kind: "ghostSystem", delayMs: 1200 },
+    ]);
+    return true;
+  },
+
+  // (Silence callouts are dispatched separately by imposterCheckSilence,
+  // not picked at random from this list — they need to react to an actual
+  // real silence, not fire arbitrarily.)
+
+  // Foreknowledge of a vote nobody's cast yet — right about as often as
+  // chance alone would make it, which is the point.
+  (room) => {
+    if (room.phase !== "voting" && room.phase !== "clue") return false;
+    const voter = imposterGhostRandomPlayer(room);
+    const target = voter ? imposterGhostRandomPlayer(room, voter.lc) : null;
+    if (!voter || !target) return false;
+    imposterSendGhostLine(room, "unknown", `${voter.username} აპირებს ${target.username}-ზე ხმის მიცემას.`);
+    return true;
+  },
+
+  // Cryptic reference to something with no established context at all —
+  // "again" is never explained.
+  (room) => {
+    const target = imposterGhostRandomPlayer(room);
+    if (!target) return false;
+    imposterSendGhostLine(room, "unknown", `არ დაუშვათ, რომ ${target.username} ისევ დაიღუპოს.`);
+    return true;
+  },
+
+  // Someone claiming to know the imposter — sometimes true, sometimes not,
+  // and it stops itself before actually saying anything either way.
+  (room) => {
+    const guessLc = Math.random() < 0.55 ? room.imposterLc : imposterGhostRandomPlayer(room)?.lc;
+    const guessPlayer = room.players.find(p => p.lc === guessLc);
+    imposterRunGhostSequence(room, [
+      { username: "unknown", text: "ვიცი ვინ არის თვალთმაქცი.", delayMs: 0 },
+      { username: "unknown", text: guessPlayer ? "შეხედე ვინც არაფერს ამბობს." : "ყველა თანაბრად საეჭვოა.", delayMs: 2600 },
+      { username: "unknown", text: "სინამდვილეში, ნუ.", delayMs: 1600 },
+      { username: "unknown", text: "დატოვა ჩატი", kind: "ghostSystem", delayMs: 1000 },
+    ]);
+    return true;
+  },
+
+  // Countdown foreknowledge — references the next phase transition
+  // (round advancing / vote tallying) as if it's already known.
+  (room) => {
+    const seconds = 10 + Math.floor(Math.random() * 20);
+    imposterSendGhostLine(room, "unknown", `${seconds} წამი.`);
+    setTimeout(() => {
+      const liveRoom = imposterRooms.get(room.id);
+      if (!liveRoom || liveRoom.status !== "playing") return;
+      imposterSendGhostLine(liveRoom, "unknown", "გითხარით.");
+    }, seconds * 1000);
+    return true;
+  },
+
+  // An "old" message with an impossible/unavailable timestamp
+  (room) => {
+    imposterRunGhostSequence(room, [
+      { username: "SYSTEM", text: "შეტყობინება 2017 წლიდან", kind: "ghostSystem", delayMs: 0 },
+      { username: "unknown", text: "თამაში ნუ დაიწყებთ.", delayMs: 1800 },
+      { username: "SYSTEM", text: "დროის შტამპი მიუწვდომელია.", kind: "ghostSystem", delayMs: 1600 },
+    ]);
+    return true;
+  },
+
+  // References a previous match that never happened — no real player was
+  // "not there last time" in any literal sense, that's the point
+  (room) => {
+    imposterRunGhostSequence(room, [
+      { username: "unknown", text: "ჩვენ ეს უკვე ვითამაშეთ.", delayMs: 0 },
+      { username: "unknown", text: "შენ არ იყავი წინა ჯერზე.", delayMs: 3400 },
+      { username: "unknown", text: "დატოვა ჩატი", kind: "ghostSystem", delayMs: 1400 },
+    ]);
+    return true;
+  },
+
+  // Impossible participant count — never actually adds a 6th player, just
+  // a brief, self-correcting system anomaly
+  (room) => {
+    imposterRunGhostSequence(room, [
+      { username: "SYSTEM", text: `${room.players.length + 1} მონაწილე`, kind: "ghostSystem", delayMs: 0 },
+      { username: "unknown", text: "რატომ ვერ ვხედავ საკუთარ თავს?", delayMs: 2400 },
+      { username: "SYSTEM", text: `${room.players.length} მონაწილე`, kind: "ghostSystem", delayMs: 2200 },
+    ]);
+    return true;
+  },
+
+  // Someone who thinks they're in a different, further-along game
+  (room) => {
+    imposterRunGhostSequence(room, [
+      { username: "stranger", text: "ყველა მზადაა?", delayMs: 0 },
+      { username: "stranger", text: "ხმის მისაცემად.", delayMs: 2600 },
+      { username: "stranger", text: "ჯერ არ მიღწევხართ მე-5 რაუნდამდე?", delayMs: 3200 },
+    ]);
+    return true;
+  },
+
+  // Begging not to be voted for, confused about where "here" even is
+  (room) => {
+    imposterRunGhostSequence(room, [
+      { username: "unknown", text: "გთხოვთ ნუ მომცემთ ხმას.", delayMs: 0 },
+      { username: "unknown", text: "არ მახსოვს.", delayMs: 2200 },
+      { username: "unknown", text: "მგონი ერთ-ერთი თქვენგანი ვარ.", delayMs: 1800 },
+      { username: "unknown", text: "მოიცადეთ.", delayMs: 2600 },
+      { username: "unknown", text: `თქვენ მხოლოდ ${room.players.length} ხართ.`, delayMs: 1400 },
+      { username: "unknown", text: "დატოვა ჩატი", kind: "ghostSystem", delayMs: 1200 },
+    ]);
+    return true;
+  },
+
+  // Two unknown accounts talking to each other, not to the players
+  (room) => {
+    imposterRunGhostSequence(room, [
+      { username: "M", text: "ის გაიღვიძა.", delayMs: 0 },
+      { username: "unknown", text: "ვიცი.", delayMs: 1600 },
+      { username: "M", text: "ისინი გვხედავენ.", delayMs: 1800 },
+      { username: "unknown", text: "ნუ ეტყვი მათ.", delayMs: 1600 },
+      { username: "M", text: "...", delayMs: 3000 },
+      { username: "unknown", text: "არ უნდა წაეკითხა.", delayMs: 1800 },
+    ]);
+    imposterGhostLore.mAppearances++;
+    return true;
+  },
+
+  // (The "voted-out player still seems present" echo is handled directly
+  // in imposterGhostTick, capped at once per match — not picked from this
+  // general pool.)
+
+  // The recurring "M" — same fictional character, subtly different line
+  // depending on how many times it's shown up across ALL matches on this
+  // server, never explained to players.
+  (room) => {
+    const lines = [
+      "არ ენდო ლურჯს.",
+      "არ უნდა დაგეწყო ეს.",
+      "მახსოვხარ.",
+      "ეს არ არის პირველი ჯერი.",
+    ];
+    const line = lines[imposterGhostLore.mAppearances % lines.length];
+    imposterSendGhostLine(room, "M", line);
+    imposterGhostLore.mAppearances++;
+    return true;
+  },
+];
+
+// Very rare grab-bag — short, single-line, mostly unexplained. Rolled far
+// less often than the main catalog above.
+const IMPOSTER_GHOST_RARE_EVENTS = [
+  (room) => { imposterRunGhostSequence(room, [
+    { username: "unknown", text: "ეს საქართველოს ოთახია?", delayMs: 0 },
+    { username: "unknown", text: "არასწორი ჩატი.", delayMs: 2400 },
+    { username: "unknown", text: "დატოვა ჩატი", kind: "ghostSystem", delayMs: 1000 },
+  ]); return true; },
+  (room) => { imposterSendGhostLine(room, "unknown", "შემიძლია გავიგონო."); return true; },
+  (room) => { imposterSendGhostLine(room, "unknown", "ნუ გააგებინებთ რომ ვარსებობ."); return true; },
+  (room) => { imposterRunGhostSequence(room, [
+    { username: "unknown", text: `${Math.max(2, room.players.length - 1)} კარგი.`, delayMs: 0 },
+    { username: "unknown", text: "1 ცუდი.", delayMs: 1400 },
+    { username: "unknown", text: "1 რაღაც სხვა.", delayMs: 1400 },
+    { username: "unknown", text: "დატოვა ჩატი", kind: "ghostSystem", delayMs: 1400 },
+  ]); return true; },
+  (room) => { imposterSendGhostLine(room, "unknown", "არ უნდა იყოს ხუთი."); return true; },
+  (room) => { imposterSendGhostLine(room, "unknown", "შენ არასწორ ვერსიას თამაშობ."); return true; },
+  (room) => { imposterSendGhostLine(room, "unknown", "ეს არ არის პირველი ჯერი."); return true; },
+  (room) => { imposterSendGhostLine(room, "unknown", "ჰკითხე მათ, რა მოხდა წუხელ."); return true; },
+];
+
+const IMPOSTER_GHOST_SILENCE_MS = 22_000; // how long nobody speaking counts as "silence"
+const IMPOSTER_GHOST_TICK_MS = 7_000;
+const IMPOSTER_GHOST_AMBIENT_CHANCE = 0.05;   // per tick, per active room
+const IMPOSTER_GHOST_RARE_CHANCE = 0.015;     // per tick, per active room, independent roll
+
+function imposterGhostInitRoom(room) {
+  room.ghost = {
+    lastSpokeAt: new Map(room.players.map(p => [p.lc, Date.now()])),
+    silencedFor: new Set(),   // players already called out for silence this match — avoid repeating on the same person
+    rareUsedThisMatch: false,
+    deadEchoUsedThisMatch: false,
+  };
+}
+
+function imposterGhostNoteActivity(room, lc) {
+  if (room.ghost) room.ghost.lastSpokeAt.set(lc, Date.now());
+}
+
+function imposterCheckSilence(room) {
+  if (!room.ghost) return;
+  const now = Date.now();
+  for (const p of room.players) {
+    if (!p.connected) continue;
+    if (room.ghost.silencedFor.has(p.lc)) continue;
+    const last = room.ghost.lastSpokeAt.get(p.lc) || now;
+    if (now - last < IMPOSTER_GHOST_SILENCE_MS) continue;
+    // Only comment on silence with a small chance even once the threshold
+    // is crossed — otherwise every quiet player gets called out every
+    // match, which stops feeling like an anomaly and starts feeling like
+    // a feature.
+    if (Math.random() > 0.35) continue;
+    room.ghost.silencedFor.add(p.lc);
+    const seconds = Math.round((now - last) / 1000);
+    imposterSendGhostLine(room, "unknown", `${p.username} არაფერს წერს უკვე ${seconds} წამია.`);
+    return; // at most one silence callout per tick
+  }
+}
+
+function imposterGhostTick(room) {
+  if (!room.ghost) imposterGhostInitRoom(room);
+  imposterCheckSilence(room);
+
+  if (room.votedOutLc && !room.ghost.deadEchoUsedThisMatch && Math.random() < 0.12) {
+    room.ghost.deadEchoUsedThisMatch = true;
+    const votedOut = room.players.find(p => p.lc === room.votedOutLc);
+    if (votedOut) imposterSendGhostLine(room, "last_seen_2009", `${votedOut.username}? ჯერ კიდევ იქ ხარ?`);
+  }
+
+  if (!room.ghost.rareUsedThisMatch && Math.random() < IMPOSTER_GHOST_RARE_CHANCE) {
+    room.ghost.rareUsedThisMatch = true;
+    const ev = IMPOSTER_GHOST_RARE_EVENTS[Math.floor(Math.random() * IMPOSTER_GHOST_RARE_EVENTS.length)];
+    ev(room);
+    return;
+  }
+
+  if (Math.random() < IMPOSTER_GHOST_AMBIENT_CHANCE) {
+    const ev = IMPOSTER_GHOST_EVENTS[Math.floor(Math.random() * IMPOSTER_GHOST_EVENTS.length)];
+    ev(room); // events that can't fire right now (missing a target etc.) just quietly return false
+  }
+}
+
+setInterval(() => {
+  for (const room of imposterRooms.values()) {
+    if (room.status !== "playing") continue;
+    imposterGhostTick(room);
+  }
+}, IMPOSTER_GHOST_TICK_MS);
+
 const imposterRooms = new Map();
 const imposterRoomBySocket = new Map();
 const imposterDeclineCooldown = new Map();
@@ -6993,6 +7331,7 @@ function imposterStartGame(room) {
   room.lastVoteTally = null;
   room.votedOutLc = null;
   room.result = null;
+  imposterGhostInitRoom(room);
 
   imposterScheduleClueTimer(room);
   broadcastImposterRoom(room);
@@ -9760,6 +10099,7 @@ io.on("connection", (socket) => {
     if (!clean) { socket.emit("imposter:error", { message: "პასუხი ცარიელია." }); return; }
 
     room.currentAnswers[lc] = clean;
+    imposterGhostNoteActivity(room, lc);
     if (room.players.every(p => room.currentAnswers[p.lc])) imposterFinishClueRound(room);
     else broadcastImposterRoom(room);
   });
@@ -9806,6 +10146,7 @@ io.on("connection", (socket) => {
       return;
     }
 
+    imposterGhostNoteActivity(room, lc);
     const msg = { username: player.username, text: clean, ts: Date.now() };
     for (const p of room.players) {
       const s = io.sockets.sockets.get(p.socketId);

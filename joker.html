@@ -209,6 +209,22 @@
     .jk-hand-card.jk-card-joker .jk-joker-tag { position: absolute; bottom: 5px; font-size: 0.3em; font-weight: 900; background: rgba(255,255,255,0.2); border-radius: 4px; padding: 1px 5px; }
     .jk-hand-card:active.legal { transform: translateY(-16px) scale(1.05); }
 
+    /* ── Trump card shown during bidding — same visual card style as the
+       hand cards, but a plain, non-interactive display (no cursor/hover
+       affordance, since it's not something you can click). ── */
+    .jk-bid-trump-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 4px 0 14px; }
+    .jk-bid-trump-label { font-size: 0.72em; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .jk-trump-card-display {
+      width: 56px; height: 80px; border-radius: 8px; background: #fff; color: #1a1a1a;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 1.05em; box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+      position: relative; user-select: none; border: 2px solid var(--gold);
+    }
+    .jk-trump-card-display.red { color: #d0332f; }
+    .jk-trump-card-display .jk-card-suit { font-size: 1.3em; margin-top: 2px; }
+    .jk-trump-card-display.jk-card-joker { background: linear-gradient(160deg, #6c3fd4, #2f1a5e); color: #fff; font-size: 1.6em; }
+    .jk-trump-card-display.jk-card-joker .jk-joker-tag { position: absolute; bottom: 5px; font-size: 0.3em; font-weight: 900; background: rgba(255,255,255,0.2); border-radius: 4px; padding: 1px 5px; }
+
     /* ── Bidding modal ───────────────────────────────────────────── */
     .jk-modal { position: fixed; inset: 0; z-index: 550; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.65); padding: 20px; }
     .jk-modal.show { display: flex; }
@@ -481,6 +497,10 @@
 <div id="bidModal" class="jk-modal">
   <div class="jk-modal-box">
     <div class="jk-modal-title">რამდენ ხელს აიღებ?</div>
+    <div class="jk-bid-trump-wrap" id="bidTrumpWrap">
+      <div class="jk-bid-trump-label">კოზირი</div>
+      <div id="bidTrumpCardSlot"></div>
+    </div>
     <div class="jk-modal-sub" id="bidSub"></div>
     <div class="jk-bid-grid" id="bidGrid"></div>
   </div>
@@ -1033,6 +1053,16 @@
     const forbidden = isLast ? (room.handSize - priorSum) : null;
 
     $("bidSub").textContent = `ხელში გაქვს ${room.handSize} ბარათი`;
+
+    const trumpSlot = $("bidTrumpCardSlot");
+    trumpSlot.innerHTML = "";
+    if (room.trumpCard) {
+      $("bidTrumpWrap").style.display = "flex";
+      trumpSlot.appendChild(cardEl(room.trumpCard, "jk-trump-card-display"));
+    } else {
+      $("bidTrumpWrap").style.display = "none";
+    }
+
     const grid = $("bidGrid");
     grid.innerHTML = "";
     for (let b = 0; b <= room.handSize; b++) {
