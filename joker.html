@@ -108,8 +108,12 @@
     .jk-game-header { display: flex; align-items: center; gap: 10px; padding: 6px 12px; padding-top: var(--safe-top); background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
     .jk-hand-counter { font-size: 0.8em; font-weight: 700; }
     .jk-set-label { font-size: 0.68em; color: var(--muted); }
-    .jk-trump-chip { margin-left: auto; display: flex; align-items: center; gap: 5px; background: var(--surface-2); border-radius: 16px; padding: 5px 12px; font-weight: 800; font-size: 0.9em; }
-    .jk-trump-chip.no-trump { color: var(--muted); font-size: 0.7em; }
+    .jk-trump-chip { margin-left: auto; display: flex; align-items: center; gap: 7px; background: var(--surface-2); border-radius: 12px; padding: 4px 10px 4px 12px; font-weight: 800; font-size: 0.9em; }
+    .jk-trump-chip.no-trump { color: var(--muted); font-size: 0.7em; padding: 5px 12px; }
+    .jk-trump-chip-label { font-size: 0.62em; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+    .jk-trump-chip-card.jk-card { width: 26px; height: 37px; font-size: 0.55em; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
+    .jk-trump-chip-card.jk-card .jk-card-suit { font-size: 1.1em; margin-top: 1px; }
+    .jk-trump-chip-card.jk-card-joker { font-size: 1.1em; }
 
     .jk-table {
       flex: 1; position: relative; overflow: hidden;
@@ -882,9 +886,17 @@
   function renderTrumpChip(room) {
     const chip = $("trumpChip");
     const isNewHand = prevSnap && prevSnap.handIndex !== room.handIndex;
-    if (room.trumpSuit) {
+    chip.innerHTML = "";
+    if (room.trumpCard) {
+      // Show an actual card, not just the suit symbol — if the trump card
+      // happened to be a joker, cardEl() already renders that correctly,
+      // which itself communicates "no trump suit" better than a text label.
       chip.className = "jk-trump-chip";
-      chip.innerHTML = `<span style="color:${isRedSuit(room.trumpSuit) ? "#e0483a" : "#fff"}">${SUIT_GLYPH[room.trumpSuit]}</span>`;
+      const label = document.createElement("span");
+      label.className = "jk-trump-chip-label";
+      label.textContent = "კოზირი";
+      chip.appendChild(label);
+      chip.appendChild(cardEl(room.trumpCard, "jk-card jk-trump-chip-card"));
     } else {
       chip.className = "jk-trump-chip no-trump";
       chip.textContent = "უკოზირო";
