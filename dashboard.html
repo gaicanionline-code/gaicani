@@ -208,7 +208,9 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 1.35em;
       background: color-mix(in srgb, var(--tile-accent, var(--accent)) 18%, transparent);
+      overflow: hidden;
     }
+    .game-tile-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .game-tile-name { font-size: 0.84em; font-weight: 700; color: var(--text); text-align: center; }
 
     /* Per-game accent (used only for the top stripe + icon tint above —
@@ -853,19 +855,19 @@
 
     <div class="game-grid">
       <a href="/flappy-bird.html" class="game-tile game-tile--flappy">
-        <div class="game-tile-icon">🐦</div>
+        <div class="game-tile-icon"><img src="/icon-flappybird.jpg" alt="მფრინავი ჩიტი" /></div>
         <div class="game-tile-name">მფრინავი ჩიტი</div>
       </a>
       <a href="/draw-guess.html" class="game-tile game-tile--drawguess">
-        <div class="game-tile-icon">🎨</div>
+        <div class="game-tile-icon"><img src="/icon-drawandguess.jpg" alt="დახატე და გამოიცანი" /></div>
         <div class="game-tile-name">დახატე და გამოიცანი</div>
       </a>
       <a href="/poker.html" class="game-tile game-tile--poker">
-        <div class="game-tile-icon">🃏</div>
+        <div class="game-tile-icon"><img src="/icon-poker.jpg" alt="პოკერი" /></div>
         <div class="game-tile-name">პოკერი</div>
       </a>
       <a href="/chess.html" class="game-tile game-tile--chess">
-        <div class="game-tile-icon">♟️</div>
+        <div class="game-tile-icon"><img src="/icon-chess.jpg" alt="ჭადრაკი" /></div>
         <div class="game-tile-name">ჭადრაკი</div>
       </a>
       <a href="/checkers.html" class="game-tile game-tile--checkers">
@@ -873,15 +875,15 @@
         <div class="game-tile-name">დამა</div>
       </a>
       <a href="/joker.html" class="game-tile game-tile--joker">
-        <div class="game-tile-icon">🃏</div>
+        <div class="game-tile-icon"><img src="/icon-joker.jpg" alt="ჯოკერი" /></div>
         <div class="game-tile-name">ჯოკერი</div>
       </a>
       <a href="/imposter.html" class="game-tile game-tile--imposter">
-        <div class="game-tile-icon">🕵️</div>
+        <div class="game-tile-icon"><img src="/icon-imposter.jpg" alt="იმპოსტორი" /></div>
         <div class="game-tile-name">იმპოსტორი</div>
       </a>
       <a href="/blackjack.html" class="game-tile game-tile--blackjack">
-        <div class="game-tile-icon">🂡</div>
+        <div class="game-tile-icon"><img src="/icon-blackjack.jpg" alt="ბლექჯეკი" /></div>
         <div class="game-tile-name">ბლექჯეკი</div>
       </a>
     </div>
