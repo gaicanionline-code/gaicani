@@ -12,11 +12,33 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; }
 
+    :root {
+      --bg:        #17181c;
+      --surface:   #212227;
+      --raised:    #2a2c33;
+      --border:    rgba(255,255,255,0.07);
+      --border-2:  rgba(255,255,255,0.11);
+      --text:      #eceef2;
+      --text-dim:  #c7cad3;
+      --muted:     #8a8d9c;
+      --accent:    #5865f2;
+      --accent-lt: #828ef8;
+      --accent-dk: #4247b0;
+      --success:   #3ba55d;
+      --danger:    #f23f42;
+      --warn:      #f2c94c;
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+    }
+
     html, body {
       margin: 0; padding: 0;
-      font-family: "Segoe UI", Arial, sans-serif;
-      background: #1e1f22;
-      color: #dcddde;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      background-image: radial-gradient(circle at 15% 0%, rgba(88,101,242,0.10), transparent 45%);
+      background-attachment: fixed;
+      color: var(--text);
       min-height: 100%;
       min-height: 100dvh;
       min-height: var(--app-height, 100dvh);
@@ -24,239 +46,326 @@
       -webkit-tap-highlight-color: transparent;
       overscroll-behavior: contain;
       padding-bottom: env(safe-area-inset-bottom);
+      letter-spacing: 0.01em;
     }
-    button, a, [role="button"] { touch-action: manipulation; }
+    button, a, [role="button"] { touch-action: manipulation; font-family: inherit; }
+    a { -webkit-tap-highlight-color: transparent; }
 
     /* ── TOP BAR ── */
     .top-bar {
       position: sticky; top: 0; z-index: 100;
-      background: #2b2d31;
-      border-bottom: 1px solid #1a1b1e;
+      background: rgba(23,24,28,0.86);
+      -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
       padding: 0 20px;
       padding-left: max(20px, env(safe-area-inset-left));
       padding-right: max(20px, env(safe-area-inset-right));
       padding-top: env(safe-area-inset-top);
-      min-height: 52px;
+      min-height: 54px;
       display: flex; align-items: center; justify-content: space-between;
     }
     .site-name {
-      font-weight: 700; font-size: 1.1em;
-      color: #fff; text-decoration: none; letter-spacing: 0.5px;
+      font-weight: 800; font-size: 1.08em;
+      color: #fff; text-decoration: none; letter-spacing: 0.01em;
       cursor: pointer;
     }
     .top-bar-right {
       display: flex; align-items: center; gap: 10px;
     }
     .top-bar-username {
-      font-size: 0.82em; font-weight: 700; color: #a78bfa;
-      background: rgba(88,101,242,0.12);
-      padding: 4px 10px; border-radius: 6px;
+      font-size: 0.8em; font-weight: 700; color: var(--accent-lt);
+      background: rgba(88,101,242,0.13);
+      padding: 5px 11px; border-radius: 20px;
       display: flex; align-items: center; gap: 5px;
     }
     .btn-logout {
-      padding: 5px 12px;
-      background: rgba(242,63,66,0.1);
-      color: #f23f42;
-      border: 1px solid rgba(242,63,66,0.25);
-      border-radius: 7px;
-      font-size: 0.8em; font-weight: 600;
+      padding: 6px 13px;
+      background: rgba(242,63,66,0.08);
+      color: #f56769;
+      border: 1px solid rgba(242,63,66,0.22);
+      border-radius: 20px;
+      font-size: 0.78em; font-weight: 700;
       cursor: pointer;
-      transition: background 0.15s;
+      transition: background 0.15s, border-color 0.15s;
     }
-    .btn-logout:hover { background: rgba(242,63,66,0.2); }
+    .btn-logout:hover { background: rgba(242,63,66,0.18); border-color: rgba(242,63,66,0.4); }
 
     /* ── PAGE ── */
     .page {
-      max-width: 520px;
+      max-width: 540px;
       margin: 0 auto;
-      padding: 28px 16px 60px;
+      padding: 22px 16px 60px;
     }
 
-    /* ── User Card ── */
+    /* ── User Card (hero identity) ── */
     .user-card {
       display: flex;
       align-items: center;
       gap: 16px;
-      background: #2b2d31;
-      border-radius: 14px;
+      background: linear-gradient(165deg, var(--raised), var(--surface));
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
       padding: 20px;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.03) inset, 0 10px 30px rgba(0,0,0,0.22);
     }
     .user-avatar {
-      width: 58px; height: 58px;
+      width: 62px; height: 62px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #5865f2, #7c84f8);
+      background: linear-gradient(135deg, var(--accent), var(--accent-lt));
       display: flex; align-items: center; justify-content: center;
       font-size: 1.6em; font-weight: 700; color: #fff;
       flex-shrink: 0;
-      box-shadow: 0 4px 16px rgba(88,101,242,0.4);
+      box-shadow: 0 0 0 3px rgba(88,101,242,0.16), 0 6px 18px rgba(88,101,242,0.35);
     }
     .user-info { min-width: 0; }
     .user-name {
-      font-size: 1.15em; font-weight: 700;
-      color: #a78bfa;
+      font-size: 1.22em; font-weight: 800;
+      color: #fff; letter-spacing: -0.01em;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .user-meta { font-size: 0.75em; color: #72767d; margin-top: 3px; }
+    .user-meta {
+      font-size: 0.78em; color: var(--muted); margin-top: 4px;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .user-meta::before {
+      content: ""; width: 6px; height: 6px; border-radius: 50%;
+      background: var(--success); flex-shrink: 0;
+      box-shadow: 0 0 0 2px rgba(59,165,93,0.2);
+    }
 
-    /* ── Start Chat Button ── */
+    /* ── Hero CTA — random chat, the single boldest action on the page ── */
     .btn-start-chat {
-      display: block;
+      display: flex; align-items: center; justify-content: center; gap: 9px;
       width: 100%;
-      padding: 13px;
-      background: #5865f2;
+      padding: 16px;
+      background: linear-gradient(135deg, var(--accent), #6f78f5 55%, var(--accent-lt));
       color: #fff;
       border: none;
-      border-radius: 12px;
-      font-size: 0.95em; font-weight: 700;
+      border-radius: var(--radius-md);
+      font-size: 1em; font-weight: 800;
       cursor: pointer;
       text-align: center;
-      transition: background 0.15s, transform 0.1s;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
       text-decoration: none;
-      margin-bottom: 20px;
+      margin-bottom: 12px;
+      box-shadow: 0 10px 26px rgba(88,101,242,0.38);
     }
-    .btn-start-chat:hover { background: #4752c4; }
-    .btn-start-chat:active { transform: scale(0.98); }
+    .btn-start-chat:hover { filter: brightness(1.06); }
+    .btn-start-chat:active { transform: scale(0.985); box-shadow: 0 4px 14px rgba(88,101,242,0.32); }
+
+    /* ── Nav row: Rooms & Forum, side by side, distinct from the game grid ── */
+    .nav-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 22px; }
+    .nav-card {
+      position: relative;
+      display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+      padding: 14px 16px;
+      border-radius: var(--radius-md);
+      text-decoration: none;
+      font-weight: 800; font-size: 0.92em; color: #fff;
+      border: 1px solid var(--border);
+      transition: transform 0.15s ease, filter 0.15s ease;
+      overflow: hidden;
+    }
+    .nav-card:active { transform: scale(0.98); }
+    .nav-card .nav-card-icon { font-size: 1.3em; margin-bottom: 4px; }
+    .nav-card .nav-card-sub { font-size: 0.72em; font-weight: 600; color: rgba(255,255,255,0.75); }
+    .nav-card--rooms { background: linear-gradient(160deg, #4650d6, #2f3699); }
+    .nav-card--forum { background: linear-gradient(160deg, #ff7452, #d43f28); }
+
+    /* ── Games — quiet, systematic grid. One accent stripe + icon badge per
+       game rather than a full loud gradient card; the boldness budget went
+       to the hero CTA above. ── */
+    .games-heading {
+      display: flex; align-items: center; justify-content: space-between;
+      margin: 4px 2px 10px;
+    }
+    .games-heading-label { font-size: 0.86em; font-weight: 800; color: var(--text); }
+    .game-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .game-tile {
+      position: relative;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 18px 10px 14px;
+      text-decoration: none;
+      overflow: hidden;
+      transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    }
+    .game-tile::before {
+      content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: var(--tile-accent, var(--accent));
+    }
+    .game-tile:active { transform: scale(0.97); background: var(--raised); }
+    .game-tile-icon {
+      width: 44px; height: 44px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.35em;
+      background: color-mix(in srgb, var(--tile-accent, var(--accent)) 18%, transparent);
+    }
+    .game-tile-name { font-size: 0.84em; font-weight: 700; color: var(--text); text-align: center; }
+
+    /* Per-game accent (used only for the top stripe + icon tint above —
+       restrained, not applied to the whole card background) */
+    .game-tile--flappy   { --tile-accent: #f2c94c; }
+    .game-tile--drawguess{ --tile-accent: #eb459e; }
+    .game-tile--poker    { --tile-accent: #3ba55d; }
+    .game-tile--chess    { --tile-accent: #b5bac1; }
+    .game-tile--checkers { --tile-accent: #f23f42; }
+    .game-tile--joker    { --tile-accent: #8b5cf6; }
+    .game-tile--imposter { --tile-accent: #7c3aed; }
+    .game-tile--blackjack{ --tile-accent: #2dbd7c; }
+
+    /* ── Active-room lists per game — appear below the grid, only when
+       relevant, kept as their own clearly-labeled area ── */
+    .rooms-browser { margin: 4px 0 14px; }
+    .dg-rooms-label {
+      font-size: 0.76em; font-weight: 700; color: var(--muted);
+      margin-bottom: 8px;
+    }
 
     /* ── Section ── */
     .section {
-      background: #2b2d31;
-      border-radius: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
       overflow: hidden;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }
     .section-label {
       display: flex; align-items: center; gap: 8px;
-      padding: 12px 16px 10px;
-      font-size: 0.72em; font-weight: 700; color: #72767d;
-      text-transform: uppercase; letter-spacing: 0.5px;
-      border-bottom: 1px solid rgba(255,255,255,0.05);
+      padding: 13px 16px 11px;
+      font-size: 0.82em; font-weight: 700; color: var(--text-dim);
+      border-bottom: 1px solid var(--border);
     }
     .section-badge {
-      background: rgba(88,101,242,0.22);
-      color: #a78bfa;
+      background: rgba(88,101,242,0.2);
+      color: var(--accent-lt);
       border-radius: 10px; padding: 1px 7px;
-      font-size: 0.88em; font-weight: 700;
+      font-size: 0.8em; font-weight: 700;
     }
 
     /* ── Draw & Guess — active rooms browser ── */
-    .dg-rooms-label {
-      font-size: 0.72em; font-weight: 700; color: #72767d;
-      text-transform: uppercase; letter-spacing: 0.5px;
-    }
     .dg-room-row {
       display: flex; align-items: center; gap: 10px;
-      background: #2b2d31; border: 1px solid rgba(255,255,255,0.06);
-      border-radius: 12px; padding: 10px 12px;
+      background: var(--raised); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 10px 12px;
     }
     .dg-room-info { flex: 1; min-width: 0; }
     .dg-room-host {
-      font-weight: 600; font-size: 0.9em; color: #fff;
+      font-weight: 700; font-size: 0.9em; color: #fff;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .dg-room-meta { font-size: 0.76em; color: #72767d; margin-top: 2px; }
+    .dg-room-meta { font-size: 0.76em; color: var(--muted); margin-top: 2px; }
     .dg-room-badge {
-      font-size: 0.66em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
-      padding: 2px 8px; border-radius: 20px; flex-shrink: 0; white-space: nowrap;
+      font-size: 0.64em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+      padding: 3px 8px; border-radius: 20px; flex-shrink: 0; white-space: nowrap;
     }
-    .dg-room-badge.lobby   { background: rgba(88,101,242,0.18); color: #a78bfa; }
-    .dg-room-badge.playing { background: rgba(59,165,93,0.18); color: #3ba55d; }
+    .dg-room-badge.lobby   { background: rgba(88,101,242,0.18); color: var(--accent-lt); }
+    .dg-room-badge.playing { background: rgba(59,165,93,0.18); color: var(--success); }
     .dg-room-join-btn {
       background: linear-gradient(135deg,#eb459e,#a855f7); color: #fff; border: none;
-      border-radius: 8px; padding: 8px 14px; font-size: 0.82em; font-weight: 700;
-      cursor: pointer; flex-shrink: 0; transition: opacity 0.15s;
+      border-radius: var(--radius-sm); padding: 8px 14px; font-size: 0.82em; font-weight: 700;
+      cursor: pointer; flex-shrink: 0; transition: filter 0.15s;
     }
-    .dg-room-join-btn:hover { opacity: 0.88; }
-    /* Poker / Chess active-game rows reuse the same row/info/host/meta/badge
-       layout above — only the join button gets each game's own accent. */
+    .dg-room-join-btn:hover { filter: brightness(1.1); }
     .pk-room-join-btn {
-      background: linear-gradient(135deg,#2d6a4f,#1b4332); color: #fff; border: none;
-      border-radius: 8px; padding: 8px 14px; font-size: 0.82em; font-weight: 700;
-      cursor: pointer; flex-shrink: 0; transition: opacity 0.15s;
+      background: linear-gradient(135deg,#3ba55d,#1b4332); color: #fff; border: none;
+      border-radius: var(--radius-sm); padding: 8px 14px; font-size: 0.82em; font-weight: 700;
+      cursor: pointer; flex-shrink: 0; transition: filter 0.15s;
     }
-    .pk-room-join-btn:hover { opacity: 0.88; }
+    .pk-room-join-btn:hover { filter: brightness(1.1); }
     .cs-room-join-btn {
-      background: linear-gradient(135deg,#3a3a3a,#1a1a1a); color: #fff; border: none;
-      border-radius: 8px; padding: 8px 14px; font-size: 0.82em; font-weight: 700;
-      cursor: pointer; flex-shrink: 0; transition: opacity 0.15s;
+      background: linear-gradient(135deg,#54575e,#2a2c31); color: #fff; border: none;
+      border-radius: var(--radius-sm); padding: 8px 14px; font-size: 0.82em; font-weight: 700;
+      cursor: pointer; flex-shrink: 0; transition: filter 0.15s;
     }
-    .cs-room-join-btn:hover { opacity: 0.88; }
+    .cs-room-join-btn:hover { filter: brightness(1.1); }
     .dm-room-join-btn {
-      background: linear-gradient(135deg,#c0392b,#8b291d); color: #fff; border: none;
-      border-radius: 8px; padding: 8px 14px; font-size: 0.82em; font-weight: 700;
-      cursor: pointer; flex-shrink: 0; transition: opacity 0.15s;
+      background: linear-gradient(135deg,#f23f42,#8b291d); color: #fff; border: none;
+      border-radius: var(--radius-sm); padding: 8px 14px; font-size: 0.82em; font-weight: 700;
+      cursor: pointer; flex-shrink: 0; transition: filter 0.15s;
     }
-    .dm-room-join-btn:hover { opacity: 0.88; }
+    .dm-room-join-btn:hover { filter: brightness(1.1); }
     .jk-room-join-btn {
-      background: linear-gradient(135deg,#6c3fd4,#2f1a5e); color: #fff; border: none;
-      border-radius: 8px; padding: 8px 14px; font-size: 0.82em; font-weight: 700;
-      cursor: pointer; flex-shrink: 0; transition: opacity 0.15s;
+      background: linear-gradient(135deg,#8b5cf6,#4c2889); color: #fff; border: none;
+      border-radius: var(--radius-sm); padding: 8px 14px; font-size: 0.82em; font-weight: 700;
+      cursor: pointer; flex-shrink: 0; transition: filter 0.15s;
     }
-    .jk-room-join-btn:hover { opacity: 0.88; }
+    .jk-room-join-btn:hover { filter: brightness(1.1); }
     .im-room-join-btn {
-      background: linear-gradient(135deg,#8b5cf6,#5b21b6); color: #fff; border: none;
-      border-radius: 8px; padding: 8px 14px; font-size: 0.82em; font-weight: 700;
-      cursor: pointer; flex-shrink: 0; transition: opacity 0.15s;
+      background: linear-gradient(135deg,#a78bfa,#5b21b6); color: #fff; border: none;
+      border-radius: var(--radius-sm); padding: 8px 14px; font-size: 0.82em; font-weight: 700;
+      cursor: pointer; flex-shrink: 0; transition: filter 0.15s;
     }
-    .im-room-join-btn:hover { opacity: 0.88; }
+    .im-room-join-btn:hover { filter: brightness(1.1); }
     .bj-room-join-btn {
-      background: linear-gradient(135deg,#1a4d3a,#0d2a1f); color: #fff; border: none;
-      border-radius: 8px; padding: 8px 14px; font-size: 0.82em; font-weight: 700;
-      cursor: pointer; flex-shrink: 0; transition: opacity 0.15s;
+      background: linear-gradient(135deg,#2dbd7c,#0d2a1f); color: #fff; border: none;
+      border-radius: var(--radius-sm); padding: 8px 14px; font-size: 0.82em; font-weight: 700;
+      cursor: pointer; flex-shrink: 0; transition: filter 0.15s;
     }
-    .bj-room-join-btn:hover { opacity: 0.88; }
+    .bj-room-join-btn:hover { filter: brightness(1.1); }
 
     /* ── Friend List ── */
     .friends-list {
-      display: flex; flex-direction: column; gap: 4px;
+      display: flex; flex-direction: column; gap: 5px;
       padding: 8px 10px 10px;
     }
     .empty-state {
-      color: #72767d; font-size: 0.83em;
-      text-align: center; padding: 22px 12px; line-height: 1.7;
+      color: var(--muted); font-size: 0.85em;
+      text-align: center; padding: 26px 12px; line-height: 1.7;
     }
     .friend-item {
-      display: flex; align-items: center; gap: 10px;
-      background: #1e1f22;
-      border-radius: 10px;
+      display: flex; align-items: center; gap: 11px;
+      background: var(--raised);
+      border: 1px solid transparent;
+      border-radius: var(--radius-md);
       padding: 10px 12px;
       cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
     }
+    .friend-item:hover { border-color: var(--border-2); }
     .friend-avatar {
-      width: 34px; height: 34px;
+      width: 36px; height: 36px;
       border-radius: 50%;
-      background: rgba(88,101,242,0.22);
+      background: rgba(88,101,242,0.2);
       display: flex; align-items: center; justify-content: center;
-      font-size: 0.92em; font-weight: 700; color: #a78bfa;
+      font-size: 0.92em; font-weight: 700; color: var(--accent-lt);
       flex-shrink: 0;
       overflow: hidden;
     }
     .friend-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .friend-name {
-      flex: 1; font-size: 0.88em; color: #dcddde;
-      font-weight: 500; overflow: hidden;
+      flex: 1; font-size: 0.89em; color: var(--text);
+      font-weight: 600; overflow: hidden;
       text-overflow: ellipsis; white-space: nowrap; min-width: 0;
     }
     .friend-streak {
       display: flex; align-items: center; gap: 2px;
       font-size: 0.82em; font-weight: 700;
-      color: #faa61a;
+      color: var(--warn);
       flex-shrink: 0;
       padding: 0 2px;
     }
-    .friend-streak.at-risk { color: #f23f42; }
+    .friend-streak.at-risk { color: var(--danger); }
     .friend-actions { display: flex; gap: 5px; flex-shrink: 0; }
     .act-btn {
-      background: rgba(255,255,255,0.07);
-      border: none; border-radius: 7px;
-      padding: 5px 9px; font-size: 0.8em;
-      cursor: pointer; color: #b5bac1;
+      background: rgba(255,255,255,0.06);
+      border: none; border-radius: var(--radius-sm);
+      padding: 6px 10px; font-size: 0.8em;
+      cursor: pointer; color: var(--text-dim);
       transition: background 0.14s, color 0.14s;
     }
-    .act-btn:hover { background: rgba(255,255,255,0.14); color: #fff; }
-    .act-chat:hover { background: rgba(88,101,242,0.28); color: #a78bfa; }
-    .act-remove:hover { background: rgba(242,63,66,0.2); color: #f23f42; }
-    .act-block:hover { background: rgba(250,166,26,0.15); color: #faa61a; }
+    .act-btn:hover { background: rgba(255,255,255,0.13); color: #fff; }
+    .act-chat:hover { background: rgba(88,101,242,0.28); color: var(--accent-lt); }
+    .act-remove:hover { background: rgba(242,63,66,0.2); color: var(--danger); }
+    .act-block:hover { background: rgba(250,166,26,0.15); color: var(--warn); }
 
     /* ── Unread message badge on 💬 chat button ── */
     .act-chat { position: relative; }
@@ -266,9 +375,9 @@
       right: -5px;
       width: 10px;
       height: 10px;
-      background: #f23f42;
+      background: var(--danger);
       border-radius: 50%;
-      border: 2px solid #1e1f22;
+      border: 2px solid var(--raised);
       pointer-events: none;
       animation: unreadPulse 1.4s ease-in-out infinite;
     }
@@ -280,13 +389,13 @@
     /* ── Unread badge on the Rooms / Forum nav buttons ── */
     .nav-unread-dot {
       position: absolute;
-      top: -4px;
-      right: -4px;
+      top: 10px;
+      right: 10px;
       width: 12px;
       height: 12px;
-      background: #f23f42;
+      background: var(--danger);
       border-radius: 50%;
-      border: 2px solid #1e1f22;
+      border: 2px solid rgba(255,255,255,0.9);
       pointer-events: none;
       animation: unreadPulse 1.4s ease-in-out infinite;
     }
@@ -294,40 +403,40 @@
     /* ── Blocked section ── */
     .blocked-avatar {
       background: rgba(242,63,66,0.15) !important;
-      color: #f23f42 !important;
+      color: var(--danger) !important;
     }
-    .blocked-name { color: #f23f42 !important; }
-    .act-unblock:hover { background: rgba(59,165,93,0.2); color: #3ba55d; }
+    .blocked-name { color: var(--danger) !important; }
+    .act-unblock:hover { background: rgba(59,165,93,0.2); color: var(--success); }
 
     /* ── Online users list ── */
     .online-dot {
       width: 9px; height: 9px; border-radius: 50%;
-      background: #3ba55d;
-      border: 2px solid #1e1f22;
+      background: var(--success);
+      border: 2px solid var(--raised);
       position: absolute; bottom: -1px; right: -1px;
       box-shadow: 0 0 0 1px rgba(59,165,93,0.4);
     }
     .friend-avatar-wrap { position: relative; flex-shrink: 0; }
     .act-add {
-      background: rgba(59,165,93,0.14);
-      color: #3ba55d;
+      background: rgba(59,165,93,0.16);
+      color: var(--success);
       font-weight: 700;
     }
-    .act-add:hover { background: rgba(59,165,93,0.26); }
+    .act-add:hover { background: rgba(59,165,93,0.28); }
     .act-add:disabled {
       opacity: 0.55; cursor: default;
-      background: rgba(255,255,255,0.06); color: #72767d;
+      background: rgba(255,255,255,0.06); color: var(--muted);
     }
     .already-friend-badge {
-      font-size: 0.72em; color: #72767d;
+      font-size: 0.72em; color: var(--muted);
       padding: 5px 9px; flex-shrink: 0;
     }
 
     /* ── Pending friend requests ── */
-    .act-accept:hover { background: rgba(59,165,93,0.2); color: #3ba55d; }
-    .act-reject:hover { background: rgba(242,63,66,0.2); color: #f23f42; }
+    .act-accept:hover { background: rgba(59,165,93,0.2); color: var(--success); }
+    .act-reject:hover { background: rgba(242,63,66,0.2); color: var(--danger); }
     .pending-badge-alert {
-      background: #f23f42 !important; color: #fff !important;
+      background: var(--danger) !important; color: #fff !important;
     }
 
     /* ── Toast ── */
@@ -339,10 +448,10 @@
       pointer-events: none;
     }
     .toast {
-      background: #2b2d31; border: 1px solid rgba(88,101,242,0.4);
-      color: #dcddde; border-radius: 10px;
+      background: var(--raised); border: 1px solid rgba(88,101,242,0.4);
+      color: var(--text); border-radius: var(--radius-md);
       padding: 10px 18px; font-size: 0.88em;
-      box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.45);
       animation: toastIn 0.25s ease;
       max-width: 300px; text-align: center;
     }
@@ -353,27 +462,27 @@
 
     .dg-invite-bar {
       position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 80;
-      background: #2b2d31; border: 1px solid #5865f2; border-radius: 12px;
+      background: var(--raised); border: 1px solid var(--accent); border-radius: var(--radius-md);
       padding: 12px 14px; display: none; align-items: center; gap: 10px;
       box-shadow: 0 8px 30px rgba(0,0,0,0.45);
     }
     .dg-invite-bar.show { display: flex; }
-    .dg-invite-bar span { flex: 1; font-size: 0.88em; color: #dcddde; }
+    .dg-invite-bar span { flex: 1; font-size: 0.88em; color: var(--text); }
     .dg-invite-bar button {
-      border: none; border-radius: 8px; padding: 7px 12px; font-weight: 700; font-size: 0.85em; cursor: pointer;
+      border: none; border-radius: var(--radius-sm); padding: 7px 12px; font-weight: 700; font-size: 0.85em; cursor: pointer;
     }
-    .dg-invite-accept { background: #3ba55d; color: #fff; }
-    .dg-invite-decline { background: #40444b; color: #dcddde; }
+    .dg-invite-accept { background: var(--success); color: #fff; }
+    .dg-invite-decline { background: #40444b; color: var(--text); }
 
     /* ── Loading state ── */
     #loading-screen {
       display: flex; align-items: center; justify-content: center;
-      min-height: calc(100vh - 52px); min-height: calc(var(--app-height, 100dvh) - 52px);
+      min-height: calc(100vh - 54px); min-height: calc(var(--app-height, 100dvh) - 54px);
     }
     .spinner {
       width: 36px; height: 36px;
       border: 3px solid rgba(88,101,242,0.2);
-      border-top-color: #5865f2;
+      border-top-color: var(--accent);
       border-radius: 50%;
       animation: spin 0.7s linear infinite;
     }
@@ -383,25 +492,25 @@
     #auth-screen {
       display: none;
       align-items: center; justify-content: center;
-      min-height: calc(100vh - 52px); min-height: calc(var(--app-height, 100dvh) - 52px);
+      min-height: calc(100vh - 54px); min-height: calc(var(--app-height, 100dvh) - 54px);
       flex-direction: column; gap: 14px; padding: 24px;
     }
     .auth-message {
-      color: #72767d; font-size: 0.9em; text-align: center;
+      color: var(--muted); font-size: 0.9em; text-align: center;
     }
     .btn-go-home {
       display: inline-block;
-      padding: 10px 22px;
-      background: #5865f2; color: #fff;
-      border-radius: 10px; text-decoration: none;
+      padding: 11px 24px;
+      background: var(--accent); color: #fff;
+      border-radius: var(--radius-md); text-decoration: none;
       font-weight: 700; font-size: 0.9em;
       transition: background 0.15s;
     }
-    .btn-go-home:hover { background: #4752c4; }
+    .btn-go-home:hover { background: var(--accent-dk); }
 
     @media (max-width: 480px) {
       .page {
-        padding: 20px 12px 60px;
+        padding: 16px 12px 60px;
         padding-left: max(12px, env(safe-area-inset-left));
         padding-right: max(12px, env(safe-area-inset-right));
       }
@@ -414,18 +523,18 @@
       display: block;
     }
     .btn-change-avatar {
-      margin-top: 8px;
-      padding: 4px 10px;
-      background: rgba(88,101,242,0.12);
+      margin-top: 9px;
+      padding: 5px 11px;
+      background: rgba(88,101,242,0.13);
       border: 1px solid rgba(88,101,242,0.3);
-      color: #a78bfa;
-      border-radius: 7px;
-      font-size: 0.72em;
-      font-weight: 600;
+      color: var(--accent-lt);
+      border-radius: var(--radius-sm);
+      font-size: 0.73em;
+      font-weight: 700;
       cursor: pointer;
       transition: background 0.15s;
     }
-    .btn-change-avatar:hover { background: rgba(88,101,242,0.22); }
+    .btn-change-avatar:hover { background: rgba(88,101,242,0.24); }
     .avatar-picker-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -446,95 +555,96 @@
     .avatar-picker-option img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .avatar-picker-option:hover { transform: scale(1.05); }
     .avatar-picker-option.selected {
-      border-color: #5865f2;
+      border-color: var(--accent);
       box-shadow: 0 0 0 2px rgba(88,101,242,0.35);
     }
 
     /* ── Interests / bio ── */
     .user-bio-display {
-      font-size: 0.82em; color: #a78bfa;
-      margin-top: 4px; font-style: italic;
+      font-size: 0.83em; color: var(--accent-lt);
+      margin-top: 5px; font-style: italic;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px;
     }
     .btn-change-bio {
-      margin-top: 6px; margin-left: 6px;
-      padding: 4px 10px;
-      background: rgba(88,101,242,0.12);
+      margin-top: 7px; margin-left: 7px;
+      padding: 5px 11px;
+      background: rgba(88,101,242,0.13);
       border: 1px solid rgba(88,101,242,0.3);
-      color: #a78bfa;
-      border-radius: 7px;
-      font-size: 0.72em;
-      font-weight: 600;
+      color: var(--accent-lt);
+      border-radius: var(--radius-sm);
+      font-size: 0.73em;
+      font-weight: 700;
       cursor: pointer;
       transition: background 0.15s;
     }
     .btn-change-name-guest {
-      margin-top: 8px;
-      padding: 4px 10px;
-      background: rgba(88,101,242,0.12);
+      margin-top: 9px;
+      padding: 5px 11px;
+      background: rgba(88,101,242,0.13);
       border: 1px solid rgba(88,101,242,0.3);
-      color: #a78bfa;
-      border-radius: 7px;
-      font-size: 0.72em;
-      font-weight: 600;
+      color: var(--accent-lt);
+      border-radius: var(--radius-sm);
+      font-size: 0.73em;
+      font-weight: 700;
       cursor: pointer;
       transition: background 0.15s;
     }
-    .btn-change-name-guest:hover { background: rgba(88,101,242,0.22); }
+    .btn-change-name-guest:hover { background: rgba(88,101,242,0.24); }
 
     /* ── Guest rename modal ──────────────────────────────────────── */
     .rename-modal-backdrop {
-      position: fixed; inset: 0; z-index: 950; background: rgba(0,0,0,0.55);
+      position: fixed; inset: 0; z-index: 950; background: rgba(0,0,0,0.6);
+      -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
       display: flex; align-items: center; justify-content: center;
       opacity: 0; pointer-events: none; transition: opacity 0.18s ease;
       padding: 20px;
     }
     .rename-modal-backdrop.show { opacity: 1; pointer-events: auto; }
     .rename-modal {
-      background: #2b2d31; border-radius: 16px; width: 100%; max-width: 320px;
-      padding: 22px 20px; transform: scale(0.92) translateY(8px); transition: transform 0.18s ease;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      background: var(--raised); border: 1px solid var(--border-2); border-radius: var(--radius-lg); width: 100%; max-width: 320px;
+      padding: 22px 20px; transform: scale(0.94) translateY(8px); transition: transform 0.18s ease;
+      box-shadow: 0 24px 70px rgba(0,0,0,0.55);
     }
     .rename-modal-backdrop.show .rename-modal { transform: scale(1) translateY(0); }
-    .rename-modal-title { font-weight: 800; font-size: 1.02em; margin-bottom: 4px; color: #fff; }
-    .rename-modal-sub { font-size: 0.78em; color: #96989d; margin-bottom: 14px; line-height: 1.4; }
+    .rename-modal-title { font-weight: 800; font-size: 1.04em; margin-bottom: 4px; color: #fff; }
+    .rename-modal-sub { font-size: 0.78em; color: var(--muted); margin-bottom: 14px; line-height: 1.45; }
     .rename-modal-input {
-      width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12);
-      background: #1e1f22; color: #fff; font-size: 0.95em; margin-bottom: 6px;
+      width: 100%; padding: 11px 13px; border-radius: var(--radius-sm); border: 1px solid var(--border-2);
+      background: var(--bg); color: #fff; font-size: 0.95em; margin-bottom: 6px;
     }
-    .rename-modal-input:focus { outline: none; border-color: #5865f2; }
-    .rename-modal-error { font-size: 0.76em; color: #f23f42; min-height: 16px; margin-bottom: 8px; }
+    .rename-modal-input:focus { outline: none; border-color: var(--accent); }
+    .rename-modal-error { font-size: 0.76em; color: var(--danger); min-height: 16px; margin-bottom: 8px; }
     .rename-modal-actions { display: flex; gap: 8px; }
     .rename-modal-btn {
-      flex: 1; border: none; border-radius: 8px; padding: 10px; font-weight: 700;
+      flex: 1; border: none; border-radius: var(--radius-sm); padding: 11px; font-weight: 700;
       font-size: 0.86em; cursor: pointer;
     }
-    .rename-modal-cancel { background: #40444b; color: #dcddde; }
-    .rename-modal-save { background: #5865f2; color: #fff; }
-    .rename-modal-save:hover { background: #4752c4; }
-    .btn-change-bio:hover { background: rgba(88,101,242,0.22); }
+    .rename-modal-cancel { background: #40444b; color: var(--text); }
+    .rename-modal-save { background: var(--accent); color: #fff; }
+    .rename-modal-save:hover { background: var(--accent-dk); }
+    .btn-change-bio:hover { background: rgba(88,101,242,0.24); }
     .bio-editor-row { display: flex; gap: 8px; padding: 12px 14px 16px; align-items: center; }
     .bio-editor-input {
       flex: 1; min-width: 0;
-      background: #1e1f22; border: 1px solid rgba(255,255,255,0.08);
-      color: #dcddde; border-radius: 8px;
-      padding: 9px 12px; font-size: 0.88em; font-family: inherit;
+      background: var(--bg); border: 1px solid var(--border-2);
+      color: var(--text); border-radius: var(--radius-sm);
+      padding: 10px 12px; font-size: 0.88em; font-family: inherit;
     }
-    .bio-editor-input:focus { outline: none; border-color: #5865f2; }
-    .bio-char-count { font-size: 0.7em; color: #72767d; flex-shrink: 0; }
+    .bio-editor-input:focus { outline: none; border-color: var(--accent); }
+    .bio-char-count { font-size: 0.7em; color: var(--muted); flex-shrink: 0; }
     .bio-editor-actions { display: flex; gap: 6px; padding: 0 14px 14px; }
     .bio-save-btn, .bio-clear-btn {
-      border: none; border-radius: 7px; padding: 7px 14px;
-      font-size: 0.8em; font-weight: 600; cursor: pointer;
+      border: none; border-radius: var(--radius-sm); padding: 8px 15px;
+      font-size: 0.8em; font-weight: 700; cursor: pointer;
     }
-    .bio-save-btn { background: #5865f2; color: #fff; }
-    .bio-save-btn:hover { background: #4752c4; }
-    .bio-clear-btn { background: rgba(255,255,255,0.07); color: #b5bac1; }
+    .bio-save-btn { background: var(--accent); color: #fff; }
+    .bio-save-btn:hover { background: var(--accent-dk); }
+    .bio-clear-btn { background: rgba(255,255,255,0.07); color: var(--text-dim); }
     .bio-clear-btn:hover { background: rgba(255,255,255,0.14); color: #fff; }
 
     /* ── Interests shown next to online-user names ── */
     .online-user-bio {
-      font-size: 0.76em; color: #72767d; font-style: italic;
+      font-size: 0.76em; color: var(--muted); font-style: italic;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       max-width: 130px; flex-shrink: 0; margin-right: 4px;
     }
@@ -542,64 +652,66 @@
     /* ── Tap-to-preview profile card — a small "mini profile page" for a
        friend or online user: picture, name, online/offline, and bio ── */
     .profile-card-backdrop {
-      position: fixed; inset: 0; z-index: 900; background: rgba(0,0,0,0.55);
+      position: fixed; inset: 0; z-index: 900; background: rgba(0,0,0,0.6);
+      -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
       display: flex; align-items: center; justify-content: center;
       opacity: 0; pointer-events: none; transition: opacity 0.18s ease;
       padding: 20px;
     }
     .profile-card-backdrop.show { opacity: 1; pointer-events: auto; }
     .profile-card-modal {
-      background: #2b2d31; border-radius: 16px; width: 100%; max-width: 340px;
-      padding: 24px 20px 20px; text-align: center; position: relative;
-      transform: scale(0.92) translateY(8px); transition: transform 0.18s ease;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      background: var(--raised); border: 1px solid var(--border-2); border-radius: var(--radius-lg); width: 100%; max-width: 340px;
+      padding: 26px 20px 20px; text-align: center; position: relative;
+      transform: scale(0.94) translateY(8px); transition: transform 0.18s ease;
+      box-shadow: 0 24px 70px rgba(0,0,0,0.55);
     }
     .profile-card-backdrop.show .profile-card-modal { transform: scale(1) translateY(0); }
     .profile-card-close {
       position: absolute; top: 10px; right: 10px; width: 30px; height: 30px;
-      border-radius: 50%; border: none; background: rgba(255,255,255,0.08);
-      color: #b5bac1; font-size: 1em; cursor: pointer;
+      border-radius: 50%; border: none; background: rgba(255,255,255,0.09);
+      color: var(--text-dim); font-size: 1em; cursor: pointer;
     }
     .profile-card-avatar {
-      width: 84px; height: 84px; border-radius: 50%; margin: 0 auto 12px;
-      background: #1e1f22; display: flex; align-items: center; justify-content: center;
-      font-size: 2em; font-weight: 700; color: #b5bac1; overflow: hidden;
-      border: 3px solid #35373c;
+      width: 86px; height: 86px; border-radius: 50%; margin: 0 auto 12px;
+      background: var(--bg); display: flex; align-items: center; justify-content: center;
+      font-size: 2em; font-weight: 700; color: var(--text-dim); overflow: hidden;
+      border: 3px solid var(--border-2);
+      box-shadow: 0 0 0 4px rgba(88,101,242,0.1);
     }
     .profile-card-avatar img { width: 100%; height: 100%; object-fit: cover; }
-    .profile-card-name { font-size: 1.15em; font-weight: 800; color: #fff; margin-bottom: 6px; }
+    .profile-card-name { font-size: 1.18em; font-weight: 800; color: #fff; margin-bottom: 7px; letter-spacing: -0.01em; }
     .profile-card-status {
       display: inline-flex; align-items: center; gap: 6px; font-size: 0.82em;
-      font-weight: 600; padding: 4px 12px; border-radius: 20px; margin-bottom: 14px;
+      font-weight: 700; padding: 4px 13px; border-radius: 20px; margin-bottom: 14px;
     }
-    .profile-card-status.online { background: rgba(59,165,93,0.16); color: #3ba55d; }
-    .profile-card-status.offline { background: rgba(255,255,255,0.06); color: #72767d; }
+    .profile-card-status.online { background: rgba(59,165,93,0.16); color: var(--success); }
+    .profile-card-status.offline { background: rgba(255,255,255,0.06); color: var(--muted); }
     .profile-card-status-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
     .profile-card-bio {
-      background: #1e1f22; border-radius: 10px; padding: 12px 14px;
-      color: #dcddde; font-size: 0.88em; line-height: 1.5; text-align: left;
+      background: var(--bg); border-radius: var(--radius-sm); padding: 13px 14px;
+      color: var(--text); font-size: 0.88em; line-height: 1.55; text-align: left;
       margin-bottom: 16px; word-break: break-word;
     }
-    .profile-card-bio.empty { color: #72767d; font-style: italic; text-align: center; }
+    .profile-card-bio.empty { color: var(--muted); font-style: italic; text-align: center; }
     .profile-card-actions { display: flex; gap: 8px; }
     .profile-card-msg-btn {
-      flex: 1; border: none; border-radius: 8px; padding: 10px; font-weight: 700;
-      font-size: 0.88em; cursor: pointer; background: #5865f2; color: #fff;
+      flex: 1; border: none; border-radius: var(--radius-sm); padding: 11px; font-weight: 700;
+      font-size: 0.88em; cursor: pointer; background: var(--accent); color: #fff;
     }
-    .profile-card-msg-btn:hover { background: #4752c4; }
+    .profile-card-msg-btn:hover { background: var(--accent-dk); }
     .profile-card-block-btn {
-      flex: 1; border: none; border-radius: 8px; padding: 10px; font-weight: 700;
-      font-size: 0.88em; cursor: pointer; background: #40444b; color: #f23f42;
+      flex: 1; border: none; border-radius: var(--radius-sm); padding: 11px; font-weight: 700;
+      font-size: 0.88em; cursor: pointer; background: #40444b; color: #f56769;
     }
     .profile-card-block-btn:hover { background: #4a4e56; }
-    .profile-card-block-btn.blocked { background: rgba(242,63,66,0.15); color: #f23f42; }
+    .profile-card-block-btn.blocked { background: rgba(242,63,66,0.15); color: var(--danger); }
     .profile-card-report-btn {
-      width: 100%; margin-top: 8px; border: none; border-radius: 8px; padding: 9px;
+      width: 100%; margin-top: 8px; border: none; border-radius: var(--radius-sm); padding: 9px;
       font-weight: 600; font-size: 0.8em; cursor: pointer; background: none;
-      color: #72767d; text-decoration: underline;
+      color: var(--muted); text-decoration: underline;
     }
-    .profile-card-report-btn:hover { color: #f23f42; }
-    .profile-card-loading { color: #72767d; font-size: 0.9em; padding: 20px 0; }
+    .profile-card-report-btn:hover { color: var(--danger); }
+    .profile-card-loading { color: var(--muted); font-size: 0.9em; padding: 20px 0; }
 
     /* ── Do-not-disturb toggle switch ──────────────────────────────── */
     .dnd-toggle-switch { position: relative; display: inline-block; width: 44px; height: 26px; }
@@ -612,13 +724,13 @@
       content: ""; position: absolute; width: 20px; height: 20px; left: 3px; bottom: 3px;
       background: #fff; border-radius: 50%; transition: transform 0.2s ease;
     }
-    .dnd-toggle-switch input:checked + .dnd-toggle-slider { background: #3ba55d; }
+    .dnd-toggle-switch input:checked + .dnd-toggle-slider { background: var(--success); }
     .dnd-toggle-switch input:checked + .dnd-toggle-slider::before { transform: translateX(18px); }
 
     /* ── Temporary (guest) users section ─────────────────────────────── */
-    .temp-user-tag { font-size: 0.78em; color: #72767d; font-weight: 500; }
+    .temp-user-tag { font-size: 0.78em; color: var(--muted); font-weight: 500; }
     .temp-user-badge {
-      font-size: 0.72em; font-weight: 700; color: #b5bac1;
+      font-size: 0.72em; font-weight: 700; color: var(--text-dim);
       background: rgba(255,255,255,0.06); padding: 4px 9px; border-radius: 12px;
     }
   </style>
@@ -685,10 +797,10 @@
     <!-- Notification settings — turn chat-time invite notifications back on
          after having muted them from the invite bar's "🔕" link -->
     <div class="section">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:#2b2d31;border-radius:12px;padding:14px 16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--raised);border-radius:var(--radius-md);padding:14px 16px;">
         <div style="min-width:0;">
           <div style="font-weight:700;font-size:0.92em;">🔔 შეტყობინებები ჩატის დროს</div>
-          <div style="font-size:0.78em;color:#96989d;margin-top:2px;line-height:1.4;">
+          <div style="font-size:0.78em;color:var(--muted);margin-top:2px;line-height:1.4;">
             თამაშის მოწვევები კერძო და შემთხვევით ჩატში
           </div>
         </div>
@@ -718,68 +830,96 @@
       </div>
     </div>
 
-    <!-- Start Chat -->
-    <a href="/" class="btn-start-chat">🔎 შემთხვევითი ჩატის დაწყება</a>
+    <!-- Start Chat — the single boldest action on the page -->
+    <a href="/" class="btn-start-chat">🔎&nbsp; შემთხვევითი ჩატის დაწყება</a>
 
-    <!-- Rooms -->
-    <a href="/rooms.html" id="roomsNavBtn" class="btn-start-chat" style="background:linear-gradient(135deg,#5865f2,#3b44c0);position:relative;">🗨️ ოთახები &amp; დებატები</a>
+    <!-- Rooms & Forum — side by side, distinct from the game grid below -->
+    <div class="nav-row">
+      <a href="/rooms.html" id="roomsNavBtn" class="nav-card nav-card--rooms">
+        <span class="nav-card-icon">🗨️</span>
+        ოთახები
+        <span class="nav-card-sub">& დებატები</span>
+      </a>
+      <a href="/forum.html" id="forumNavBtn" class="nav-card nav-card--forum">
+        <span class="nav-card-icon">💬</span>
+        ფორუმი
+        <span class="nav-card-sub">დისკუსიები</span>
+      </a>
+    </div>
 
-    <!-- Forum -->
-    <a href="/forum.html" id="forumNavBtn" class="btn-start-chat" style="background:linear-gradient(135deg,#ff6b4a,#e0483a);margin-bottom:14px;position:relative;">💬 ფორუმი</a>
+    <div class="games-heading">
+      <div class="games-heading-label">🎮 თამაშები</div>
+    </div>
 
-    <div class="section-label" style="margin:0 0 10px;">🎮 თამაშები</div>
+    <div class="game-grid">
+      <a href="/flappy-bird.html" class="game-tile game-tile--flappy">
+        <div class="game-tile-icon">🐦</div>
+        <div class="game-tile-name">მფრინავი ჩიტი</div>
+      </a>
+      <a href="/draw-guess.html" class="game-tile game-tile--drawguess">
+        <div class="game-tile-icon">🎨</div>
+        <div class="game-tile-name">დახატე და გამოიცანი</div>
+      </a>
+      <a href="/poker.html" class="game-tile game-tile--poker">
+        <div class="game-tile-icon">🃏</div>
+        <div class="game-tile-name">პოკერი</div>
+      </a>
+      <a href="/chess.html" class="game-tile game-tile--chess">
+        <div class="game-tile-icon">♟️</div>
+        <div class="game-tile-name">ჭადრაკი</div>
+      </a>
+      <a href="/checkers.html" class="game-tile game-tile--checkers">
+        <div class="game-tile-icon">⚪</div>
+        <div class="game-tile-name">დამა</div>
+      </a>
+      <a href="/joker.html" class="game-tile game-tile--joker">
+        <div class="game-tile-icon">🃏</div>
+        <div class="game-tile-name">ჯოკერი</div>
+      </a>
+      <a href="/imposter.html" class="game-tile game-tile--imposter">
+        <div class="game-tile-icon">🕵️</div>
+        <div class="game-tile-name">იმპოსტორი</div>
+      </a>
+      <a href="/blackjack.html" class="game-tile game-tile--blackjack">
+        <div class="game-tile-icon">🂡</div>
+        <div class="game-tile-name">ბლექჯეკი</div>
+      </a>
+    </div>
 
-    <!-- Flappy Bird -->
-    <a href="/flappy-bird.html" class="btn-start-chat" style="background:linear-gradient(135deg,#f2c94c,#e0ad2c);color:#1e1f22;">🐦 მფრინავი ჩიტი</a>
-
-    <!-- Draw & Guess -->
-    <a href="/draw-guess.html" class="btn-start-chat" style="background:linear-gradient(135deg,#eb459e,#a855f7);margin-top:14px;">🎨 დახატე და გამოიცანი</a>
-
-    <!-- Poker -->
-    <a href="/poker.html" class="btn-start-chat" style="background:linear-gradient(135deg,#2d6a4f,#1b4332);margin-top:14px;">🃏 პოკერი</a>
-    <div id="pkRoomsSection" style="display:none;margin:8px 0 14px;">
-      <div class="dg-rooms-label" style="margin-bottom:8px;">მაგიდები — შემოუერთდი</div>
+    <!-- Active tables/rooms you can join — appear below the grid, per game,
+         only when there's actually something to show -->
+    <div id="pkRoomsSection" class="rooms-browser" style="display:none">
+      <div class="dg-rooms-label">🃏 პოკერის მაგიდები — შემოუერთდი</div>
       <div id="pkRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>
 
-    <!-- Chess -->
-    <a href="/chess.html" class="btn-start-chat" style="background:linear-gradient(135deg,#3a3a3a,#1a1a1a);margin-top:14px;">♟️ ჭადრაკი</a>
-    <div id="csRoomsSection" style="display:none;margin:8px 0 14px;">
-      <div class="dg-rooms-label" style="margin-bottom:8px;">თამაშები — შემოუერთდი</div>
+    <div id="csRoomsSection" class="rooms-browser" style="display:none">
+      <div class="dg-rooms-label">♟️ ჭადრაკის თამაშები — შემოუერთდი</div>
       <div id="csRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>
 
-    <!-- Checkers -->
-    <a href="/checkers.html" class="btn-start-chat" style="background:linear-gradient(135deg,#c0392b,#8b291d);margin-top:14px;">⚪ დამა</a>
-    <div id="dmRoomsSection" style="display:none;margin:8px 0 14px;">
-      <div class="dg-rooms-label" style="margin-bottom:8px;">თამაშები — შემოუერთდი</div>
+    <div id="dmRoomsSection" class="rooms-browser" style="display:none">
+      <div class="dg-rooms-label">⚪ დამის თამაშები — შემოუერთდი</div>
       <div id="dmRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>
 
-    <!-- Joker -->
-    <a href="/joker.html" class="btn-start-chat" style="background:linear-gradient(135deg,#6c3fd4,#2f1a5e);margin-top:14px;">🃏 ჯოკერი</a>
-    <div id="jkRoomsSection" style="display:none;margin:8px 0 14px;">
-      <div class="dg-rooms-label" style="margin-bottom:8px;">მაგიდები — შემოუერთდი</div>
+    <div id="jkRoomsSection" class="rooms-browser" style="display:none">
+      <div class="dg-rooms-label">🃏 ჯოკერის მაგიდები — შემოუერთდი</div>
       <div id="jkRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>
 
-    <!-- Imposter -->
-    <a href="/imposter.html" class="btn-start-chat" style="background:linear-gradient(135deg,#8b5cf6,#5b21b6);margin-top:14px;">🕵️ იმპოსტორი</a>
-    <div id="imRoomsSection" style="display:none;margin:8px 0 14px;">
-      <div class="dg-rooms-label" style="margin-bottom:8px;">თამაშები — შემოუერთდი</div>
+    <div id="imRoomsSection" class="rooms-browser" style="display:none">
+      <div class="dg-rooms-label">🕵️ იმპოსტორის თამაშები — შემოუერთდი</div>
       <div id="imRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>
 
-    <!-- Blackjack -->
-    <a href="/blackjack.html" class="btn-start-chat" style="background:linear-gradient(135deg,#1a4d3a,#0d2a1f);margin-top:14px;">🂡 ბლექჯეკი</a>
-    <div id="bjRoomsSection" style="display:none;margin:8px 0 14px;">
-      <div class="dg-rooms-label" style="margin-bottom:8px;">მაგიდები — შემოუერთდი</div>
+    <div id="bjRoomsSection" class="rooms-browser" style="display:none">
+      <div class="dg-rooms-label">🂡 ბლექჯეკის მაგიდები — შემოუერთდი</div>
       <div id="bjRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>
 
-    <!-- Active Draw & Guess rooms — join one already in progress -->
-    <div id="dgRoomsSection" style="display:none;margin:8px 0 14px;">
-      <div class="dg-rooms-label" style="margin-bottom:8px;">ოთახები — შემოუერთდი</div>
+    <div id="dgRoomsSection" class="rooms-browser" style="display:none">
+      <div class="dg-rooms-label">🎨 დახატე და გამოიცანი — შემოუერთდი</div>
       <div id="dgRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>
 
