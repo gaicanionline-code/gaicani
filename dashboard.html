@@ -4,10 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ჩემი გვერდი – GAICANI</title>
-  <meta name="theme-color" content="#2b2d31" />
+  <meta name="theme-color" content="#17181c" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="GAICANI" />
   <link rel="icon" type="image/png" href="/logo.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="manifest" href="/manifest.json" />
   <style>
     *, *::before, *::after { box-sizing: border-box; }
@@ -176,6 +179,44 @@
     /* ── Games — quiet, systematic grid. One accent stripe + icon badge per
        game rather than a full loud gradient card; the boldness budget went
        to the hero CTA above. ── */
+    /* ── Install-as-app section ── */
+    .install-section { padding: 16px; margin-bottom: 22px; }
+    .install-header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+    .install-icon {
+      width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
+      background: rgba(88,101,242,0.16); display: flex; align-items: center; justify-content: center;
+      font-size: 1.3em;
+    }
+    .install-title { font-weight: 800; font-size: 0.95em; color: #fff; }
+    .install-sub { font-size: 0.76em; color: var(--muted); margin-top: 2px; }
+    .install-tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+    .install-tab {
+      flex: 1; background: var(--raised); border: 1px solid var(--border);
+      color: var(--text-dim); border-radius: var(--radius-sm); padding: 8px 6px;
+      font-size: 0.78em; font-weight: 700; cursor: pointer; transition: background 0.15s, border-color 0.15s;
+    }
+    .install-tab.active { background: rgba(88,101,242,0.18); border-color: var(--accent); color: var(--accent-lt); }
+    .install-panel { background: var(--raised); border-radius: var(--radius-md); padding: 14px 16px; }
+    .install-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+    .install-steps li { font-size: 0.84em; color: var(--text-dim); line-height: 1.5; }
+    .install-steps b { color: #fff; }
+    .install-glyph {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 20px; height: 20px; border-radius: 5px; background: rgba(255,255,255,0.1);
+      font-size: 0.9em; margin: 0 1px;
+    }
+    .install-native-btn {
+      width: 100%; border: none; border-radius: var(--radius-sm); padding: 11px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-lt)); color: #fff;
+      font-weight: 800; font-size: 0.88em; cursor: pointer; margin-bottom: 12px;
+      box-shadow: 0 6px 18px rgba(88,101,242,0.32);
+    }
+    .install-native-btn:hover { filter: brightness(1.06); }
+    .install-already {
+      background: rgba(59,165,93,0.14); color: var(--success); border-radius: var(--radius-md);
+      padding: 12px 14px; font-size: 0.86em; font-weight: 700; text-align: center;
+    }
+
     .games-heading {
       display: flex; align-items: center; justify-content: space-between;
       margin: 4px 2px 10px;
@@ -847,6 +888,56 @@
         ფორუმი
         <span class="nav-card-sub">დისკუსიები</span>
       </a>
+    </div>
+
+    <!-- Install-as-app section — "ჩაიწერე გაიცანი" -->
+    <div class="section install-section" id="installSection">
+      <div class="install-header">
+        <div class="install-icon">📲</div>
+        <div>
+          <div class="install-title">ჩაიწერე გაიცანი აპლიკაციად</div>
+          <div class="install-sub">სწრაფი წვდომა მთავარი ეკრანიდან — ბრაუზერის გარეშე</div>
+        </div>
+      </div>
+
+      <div class="install-tabs" id="installTabs">
+        <button class="install-tab" data-platform="android">🤖 Android</button>
+        <button class="install-tab" data-platform="ios">🍎 iPhone</button>
+        <button class="install-tab" data-platform="desktop">💻 კომპიუტერი</button>
+      </div>
+
+      <div class="install-panel" id="installPanelAndroid">
+        <button class="install-native-btn" id="installNativeBtnAndroid" style="display:none">⬇️ დააინსტალირე ახლავე</button>
+        <ol class="install-steps" id="installStepsAndroid">
+          <li>გახსენით საიტი <b>Chrome</b>-ში</li>
+          <li>დააჭირეთ ზედა მარჯვენა კუთხეში ⋮ ღილაკს</li>
+          <li>აირჩიეთ <b>„აპის ინსტალაცია"</b> ან <b>„მთავარ ეკრანზე დამატება"</b></li>
+          <li>დაადასტურეთ — მზადაა! 🎉</li>
+        </ol>
+      </div>
+
+      <div class="install-panel" id="installPanelIos" style="display:none">
+        <ol class="install-steps">
+          <li>გახსენით საიტი <b>Safari</b>-ში (სხვა ბრაუზერში არ მუშაობს)</li>
+          <li>დააჭირეთ გაზიარების ღილაკს <span class="install-glyph">⎋</span> ქვედა ზოლში</li>
+          <li>ჩამოსქროლეთ და აირჩიეთ <b>„მთავარ ეკრანზე დამატება"</b> (Add to Home Screen)</li>
+          <li>დააჭირეთ <b>„დამატება"</b> ზედა მარჯვენა კუთხეში — მზადაა! 🎉</li>
+        </ol>
+      </div>
+
+      <div class="install-panel" id="installPanelDesktop" style="display:none">
+        <button class="install-native-btn" id="installNativeBtnDesktop" style="display:none">⬇️ დააინსტალირე ახლავე</button>
+        <ol class="install-steps" id="installStepsDesktop">
+          <li>გახსენით საიტი <b>Chrome</b>-ში ან <b>Edge</b>-ში</li>
+          <li>მისამართის ველის ბოლოში იხილავთ ⊕ ხატულას — დააჭირეთ მას</li>
+          <li>აირჩიეთ <b>„Install"</b></li>
+          <li>გაიხსნება ცალკე ფანჯარაში, საკუთარი ხატულით — მზადაა! 🎉</li>
+        </ol>
+      </div>
+
+      <div class="install-already" id="installAlready" style="display:none">
+        ✅ გაიცანი უკვე დაინსტალირებულია შენს მოწყობილობაზე
+      </div>
     </div>
 
     <div class="games-heading">
@@ -2336,6 +2427,86 @@
 
     document.addEventListener("DOMContentLoaded", init);
   })();
+  </script>
+
+  <!-- PWA install support — separate, self-contained script; see the
+       "დააინსტალირე აპლიკაცია" section in the page above for the UI
+       this powers. -->
+  <script>
+    (function () {
+      const tabs = document.querySelectorAll(".install-tab");
+      const panels = {
+        android: document.getElementById("installPanelAndroid"),
+        ios: document.getElementById("installPanelIos"),
+        desktop: document.getElementById("installPanelDesktop"),
+      };
+      const alreadyBox = document.getElementById("installAlready");
+      const tabsBox = document.getElementById("installTabs");
+
+      function showPlatform(platform) {
+        tabs.forEach((t) => t.classList.toggle("active", t.dataset.platform === platform));
+        Object.entries(panels).forEach(([key, el]) => { el.style.display = key === platform ? "" : "none"; });
+      }
+
+      tabs.forEach((t) => t.addEventListener("click", () => showPlatform(t.dataset.platform)));
+
+      // Detect the visitor's actual platform to pre-select the right tab —
+      // they can still tap another tab (useful for showing a friend on a
+      // different device how to do it).
+      const ua = navigator.userAgent || "";
+      const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      const isAndroid = /Android/.test(ua);
+      showPlatform(isIOS ? "ios" : isAndroid ? "android" : "desktop");
+
+      // Already installed? (standalone display mode, or iOS's own flag)
+      const isStandalone =
+        window.matchMedia("(display-mode: standalone)").matches ||
+        window.navigator.standalone === true;
+      if (isStandalone) {
+        tabsBox.style.display = "none";
+        Object.values(panels).forEach((el) => { el.style.display = "none"; });
+        alreadyBox.style.display = "block";
+      }
+
+      // Real native install prompt — only fires on Chrome/Edge/Android
+      // when the browser itself decides the site qualifies. Nothing shows
+      // on iOS (Apple doesn't offer this API at all) or unsupported
+      // browsers — they just see the manual steps, which is why those
+      // stay visible regardless.
+      let deferredPrompt = null;
+      const nativeBtns = [
+        document.getElementById("installNativeBtnAndroid"),
+        document.getElementById("installNativeBtnDesktop"),
+      ].filter(Boolean);
+
+      window.addEventListener("beforeinstallprompt", (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        nativeBtns.forEach((btn) => { btn.style.display = "block"; });
+      });
+
+      nativeBtns.forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (!deferredPrompt) return;
+          deferredPrompt.prompt();
+          await deferredPrompt.userChoice;
+          deferredPrompt = null;
+          nativeBtns.forEach((b) => { b.style.display = "none"; });
+        });
+      });
+
+      window.addEventListener("appinstalled", () => {
+        nativeBtns.forEach((b) => { b.style.display = "none"; });
+      });
+    })();
+  </script>
+
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js").catch(() => {});
+      });
+    }
   </script>
 </body>
 </html>

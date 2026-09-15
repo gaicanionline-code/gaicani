@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ka">
 
 
 
@@ -11,29 +11,48 @@
    
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>GAICANI — ანონიმური ჩათი უცნობებთან</title>
-  <meta name="description" content="GAICANI — უფასო ანონიმური ჩათი საქართველოში. გაიცანით შემთხვევით შერჩეული უცნობი ადამიანები, ესაუბრეთ ტექსტში, გააზიარეთ საერთო ინტერესები და იპოვეთ ახალი მეგობრები ანონიმურად, რეგისტრაციის გარეშე." />
-  <meta name="keywords" content="ანონიმური ჩათი, ჩათი უცნობებთან, GAICANI, გაიცანი, random chat, omegle georgia, ქართული ჩათი" />
+  <title>GAICANI — გაცნობის საიტი და ანონიმური ჩათი საქართველოში</title>
+  <meta name="description" content="GAICANI — უფასო გაცნობის საიტი და ანონიმური ჩათი საქართველოში. გაიცანით ახალი ადამიანები ონლაინ, ესაუბრეთ ტექსტში, ითამაშეთ თამაშები მეგობრებთან ერთად, დაწერეთ ფორუმზე და იპოვეთ ახალი მეგობრები — რეგისტრაციის გარეშეც." />
+  <meta name="keywords" content="გაცნობის საიტი, გაცნობა ონლაინ, გაიცანი ონლაინ, ანონიმური ჩათი, ჩათი უცნობებთან, GAICANI, გაიცანი, random chat georgia, omegle georgia, ქართული ჩათი, ონლაინ თამაშები საქართველოში" />
 
   <!-- Open Graph / link previews (Facebook, Messenger, WhatsApp, Discord, etc.) -->
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="GAICANI — ანონიმური ჩათი უცნობებთან" />
-  <meta property="og:description" content="გაიცანით შემთხვევით შერჩეული უცნობი ადამიანები და ესაუბრეთ ანონიმურად, სრულიად უფასოდ." />
+  <meta property="og:title" content="GAICANI — გაცნობის საიტი და ანონიმური ჩათი საქართველოში" />
+  <meta property="og:description" content="გაიცანით ახალი ადამიანები ონლაინ, ესაუბრეთ ანონიმურად და ითამაშეთ თამაშები მეგობრებთან ერთად — სრულიად უფასოდ." />
   <meta property="og:image" content="/Logo2.png" />
   <meta property="og:url" content="https://gaicani.ge/" />
+  <meta property="og:locale" content="ka_GE" />
 
   <!-- Twitter/X card -->
   <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content="GAICANI — ანონიმური ჩათი უცნობებთან" />
-  <meta name="twitter:description" content="გაიცანით შემთხვევით შერჩეული უცნობი ადამიანები და ესაუბრეთ ანონიმურად, სრულიად უფასოდ." />
+  <meta name="twitter:title" content="GAICANI — გაცნობის საიტი და ანონიმური ჩათი საქართველოში" />
+  <meta name="twitter:description" content="გაიცანით ახალი ადამიანები ონლაინ, ესაუბრეთ ანონიმურად და ითამაშეთ თამაშები მეგობრებთან ერთად — სრულიად უფასოდ." />
+
+  <!-- Canonical + sitemap hint -->
+  <link rel="canonical" href="https://gaicani.ge/" />
+
+  <!-- Structured data — helps Google understand what this site actually
+       is and who it's for, separate from just the visible text -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "GAICANI",
+    "alternateName": "გაიცანი",
+    "url": "https://gaicani.ge/",
+    "description": "უფასო გაცნობის საიტი და ანონიმური ჩათი საქართველოში — გაიცანით ახალი ადამიანები ონლაინ, ითამაშეთ თამაშები და დაწერეთ ფორუმზე.",
+    "inLanguage": "ka"
+  }
+  </script>
 
   <!-- PWA / mobile chrome -->
-  <meta name="theme-color" content="#2b2d31" />
+  <meta name="theme-color" content="#1e1f22" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="GAICANI" />
   <link rel="icon" type="image/png" href="/logo.png" />
-  <link rel="apple-touch-icon" href="/logo.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="manifest" href="/manifest.json" />
 
   <!-- Preconnect to Tenor CDN so GIF images load faster -->
@@ -505,6 +524,14 @@
 
 
 <script src="/keyboard-handler.js"></script>
+
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    });
+  }
+</script>
 
 </body>
 </html>
