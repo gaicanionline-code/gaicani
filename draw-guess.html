@@ -578,6 +578,9 @@
   let myActions = [];
   let currentStrokeId = 0;
   let fillModeOn = false;
+  // Network send buffer for drawing segments — see emitStroke()/flushStrokes()
+  let strokeBuffer = [];
+  let strokeFlushTimer = null;
 
   let drawingNow = false, lastX = 0, lastY = 0;
   canvas.addEventListener("pointerdown", (e) => {
@@ -614,11 +617,38 @@
     emitStroke(seg);
     lastX = p.x; lastY = p.y;
   });
-  ["pointerup", "pointercancel", "pointerleave"].forEach(ev => canvas.addEventListener(ev, () => { drawingNow = false; }));
+  ["pointerup", "pointercancel", "pointerleave"].forEach(ev => canvas.addEventListener(ev, () => {
+    drawingNow = false;
+    flushStrokes(); // send the tail of the stroke right away, don't wait on the timer
+  }));
 
   function emitStroke(stroke) {
     if (!socket || !currentRoomId) return;
-    socket.emit("drawGuess:stroke", { roomId: currentRoomId, stroke });
+    // The local canvas is already drawn synchronously by the caller, so the
+    // drawer sees no delay. Only the NETWORK send is batched: pointermove
+    // fires 60-120x/second, and sending each one as its own socket message
+    // (then fanning it out to every other player) was the heaviest traffic
+    // in the app. Buffering into ~40ms batches cuts that by several times
+    // with no visible difference to viewers.
+    strokeBuffer.push(stroke);
+    if (strokeBuffer.length >= 64) { flushStrokes(); return; } // don't let a fast drag grow it unbounded
+    if (strokeFlushTimer === null) {
+      strokeFlushTimer = setTimeout(flushStrokes, 40);
+    }
+  }
+
+  function flushStrokes() {
+    if (strokeFlushTimer !== null) { clearTimeout(strokeFlushTimer); strokeFlushTimer = null; }
+    if (!strokeBuffer.length) return;
+    const batch = strokeBuffer;
+    strokeBuffer = [];
+    if (!socket || !currentRoomId) return;
+    socket.emit("drawGuess:stroke", { roomId: currentRoomId, strokes: batch });
+  }
+
+  function discardStrokeBuffer() {
+    if (strokeFlushTimer !== null) { clearTimeout(strokeFlushTimer); strokeFlushTimer = null; }
+    strokeBuffer = [];
   }
 
   function updateUndoBtnState() {
@@ -632,6 +662,9 @@
     myActions = myActions.filter(a => a.strokeId !== lastId);
     replayStrokes(myActions);
     updateUndoBtnState();
+    // Send any buffered segments FIRST. Otherwise they'd arrive after the
+    // undo and re-add the strokes we just removed.
+    flushStrokes();
     socket.emit("drawGuess:undo", { roomId: currentRoomId });
   }
 
@@ -654,6 +687,9 @@
     clearCanvasLocal();
     myActions = [];
     updateUndoBtnState();
+    // Drop anything still buffered — if it were sent after the clear it would
+    // reappear on an otherwise blank canvas for everyone else.
+    discardStrokeBuffer();
     socket.emit("drawGuess:clear", { roomId: currentRoomId });
   });
   $("undoBtn").addEventListener("click", undoLastAction);
@@ -814,6 +850,7 @@
     $("roundEndOverlay").style.display = "none";
     clearCanvasLocal();
     myActions = [];
+    discardStrokeBuffer(); // don't let last round's tail segments leak into this one
     fillModeOn = false;
     $("fillToolBtn")?.classList.remove("active");
     updateUndoBtnState();
@@ -991,9 +1028,15 @@
       if (payload.strokes && payload.strokes.length) replayStrokes(payload.strokes);
     });
 
-    socket.on("drawGuess:stroke", ({ stroke }) => {
-      if (stroke.type === "fill") floodFillAt(stroke.x, stroke.y, stroke.color);
-      else drawSegment(stroke.x1, stroke.y1, stroke.x2, stroke.y2, stroke.color, stroke.size);
+    socket.on("drawGuess:stroke", ({ stroke, strokes }) => {
+      // Strokes now arrive in small batches (see emitStroke on the drawer
+      // side). A lone `stroke` is still handled so nothing depends on shape.
+      const list = Array.isArray(strokes) ? strokes : (stroke ? [stroke] : []);
+      for (const s of list) {
+        if (!s) continue;
+        if (s.type === "fill") floodFillAt(s.x, s.y, s.color);
+        else drawSegment(s.x1, s.y1, s.x2, s.y2, s.color, s.size);
+      }
     });
     socket.on("drawGuess:clear", () => clearCanvasLocal());
     socket.on("drawGuess:undo", ({ strokes }) => replayStrokes(strokes));
