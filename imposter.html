@@ -555,7 +555,16 @@
       r.answers.forEach(a => {
         const chip = document.createElement("div");
         chip.className = "im-answer-chip";
-        chip.innerHTML = `<span class="name">${a.username}</span>${a.word}`;
+        // Built with DOM nodes + textContent rather than innerHTML: the clue
+        // word is free text typed by a player, so interpolating it into HTML
+        // makes it executable markup. The server strips tag-looking patterns,
+        // but that's a blacklist and blacklists get bypassed — escaping at
+        // the point of output is the part that actually holds.
+        const nameEl = document.createElement("span");
+        nameEl.className = "name";
+        nameEl.textContent = a.username;
+        chip.appendChild(nameEl);
+        chip.appendChild(document.createTextNode(a.word));
         grid.appendChild(chip);
       });
       block.appendChild(title); block.appendChild(grid);

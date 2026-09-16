@@ -44,6 +44,43 @@ const server = http.createServer(app);
 // accidentally reject that internal check and cause exactly the kind of
 // crash-loop this server had before — a narrow "block onrender.com
 // specifically" rule avoids that risk entirely.
+// ── Security headers ─────────────────────────────────────────────────────────
+// Registered FIRST so these apply to every response, including errors and
+// static files. None of these change behaviour for legitimate users — they
+// only close off attacks the browser can help prevent.
+app.use((req, res, next) => {
+  // Stop the browser from second-guessing declared Content-Types. Without
+  // this, a file served as text/plain can be sniffed and executed as JS.
+  res.setHeader("X-Content-Type-Options", "nosniff");
+
+  // Clickjacking: nothing here is meant to be embedded in someone else's
+  // page. Both headers are set because older browsers only honour the
+  // first and modern ones prefer the CSP form.
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("Content-Security-Policy", "frame-ancestors 'self'");
+
+  // Don't leak full URLs (which can contain room IDs) to third-party sites
+  // via the Referer header.
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+
+  // Turn off powerful browser APIs the site doesn't use, so injected code
+  // can't reach for them either.
+  // NOTE: if voice rooms are ever added, "microphone" must come out of this
+  // list or getUserMedia will fail with a confusing, silent permissions error.
+  res.setHeader(
+    "Permissions-Policy",
+    "geolocation=(), camera=(), microphone=(), payment=(), usb=(), magnetometer=()"
+  );
+
+  // HSTS only makes sense (and is only honoured) over HTTPS. Guarded on the
+  // proxy's protocol header so local HTTP development is unaffected.
+  if (req.headers["x-forwarded-proto"] === "https") {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+
+  next();
+});
+
 app.use((req, res, next) => {
   // Temporary escape hatch for testing a fresh deploy on its raw .onrender.com
   // URL before Cloudflare/DNS is pointed at it (e.g. during a Render account
@@ -265,7 +302,7 @@ function enqueueForVT(ip) {
       queue.push(ip);
       // Cap queue size
       if (queue.length > VT_QUEUE_MAX) queue = queue.slice(-VT_QUEUE_MAX);
-      fs.writeFileSync(VT_QUEUE_FILE, JSON.stringify(queue, null, 2), "utf8");
+      fs.writeFileSync(VT_QUEUE_FILE, JSON.stringify(queue), "utf8");
     }
   } catch (e) {
     console.error("[VT] Failed to write queue:", e.message);
@@ -351,7 +388,23 @@ function ownerOnly(req, res, next) {
 // adds a key-gated login screen in front of it instead of the previous
 // hard IP allow-list. Sessions are simple random tokens kept in memory
 // (server restart logs everyone out, which is fine for this use case).
-const ADMIN_KEY = process.env.ADMIN_KEY || "Paroli123kp04501017!";
+// SECURITY: this used to fall back to a fixed password written directly in
+// this file. Anyone who read the source (or a copy of it) had the admin
+// panel key. It now fails SAFE instead of failing OPEN: with no ADMIN_KEY
+// set, a fresh random key is generated each boot and printed to the server
+// log, so the panel is never protected by a publicly-known password.
+//
+// Set the ADMIN_KEY environment variable to get a stable key that survives
+// restarts. Until you do, check the startup log for the generated one.
+const ADMIN_KEY = process.env.ADMIN_KEY || crypto.randomBytes(24).toString("base64url");
+if (!process.env.ADMIN_KEY) {
+  console.warn("─".repeat(72));
+  console.warn("[SECURITY] ADMIN_KEY environment variable is not set.");
+  console.warn("[SECURITY] Generated a temporary admin key for this boot only:");
+  console.warn(`[SECURITY]     ${ADMIN_KEY}`);
+  console.warn("[SECURITY] It changes on every restart. Set ADMIN_KEY to make it permanent.");
+  console.warn("─".repeat(72));
+}
 const ADMIN_SESSION_COOKIE = "gaicani_admin";
 const adminSessions = new Map(); // token → { createdAt }
 const ADMIN_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -382,11 +435,20 @@ function hasValidAdminSession(req) {
   return true;
 }
 
-function createAdminSession(res) {
+// Adds "; Secure" only when the request actually arrived over HTTPS, so
+// cookies are protected in production without breaking local HTTP testing
+// (a Secure cookie is silently dropped by the browser over plain HTTP,
+// which would make admin login appear to "work" but never stay logged in).
+// req.secure is trustworthy here because app.set("trust proxy", 1) is on.
+function secureCookieFlag(req) {
+  return (req && (req.secure || req.headers["x-forwarded-proto"] === "https")) ? "; Secure" : "";
+}
+
+function createAdminSession(res, req) {
   const token = crypto.randomBytes(32).toString("hex");
   adminSessions.set(token, { createdAt: Date.now() });
   res.setHeader("Set-Cookie",
-    `${ADMIN_SESSION_COOKIE}=${token}; Max-Age=${Math.floor(ADMIN_SESSION_MAX_AGE_MS / 1000)}; Path=/; HttpOnly; SameSite=Lax`
+    `${ADMIN_SESSION_COOKIE}=${token}; Max-Age=${Math.floor(ADMIN_SESSION_MAX_AGE_MS / 1000)}; Path=/; HttpOnly; SameSite=Lax${secureCookieFlag(req)}`
   );
 }
 
@@ -788,9 +850,13 @@ let QUESTIONS = loadLines("questions.txt");
 function randomItem(arr) {
   if (!arr.length) return null;
   return arr[Math.floor(Math.random() * arr.length)];
-
+}
 
 // ── Fisher-Yates shuffle (PATCH: correct uniform randomization O(n)) ───────────
+// NOTE: this was previously nested *inside* randomItem() because that function
+// was missing its closing brace. Since randomItem returns before reaching it,
+// shuffle() was never in scope anywhere — every call threw
+// "ReferenceError: shuffle is not defined", which broke captcha generation.
 function shuffle(arr) {
   const copy = [...arr];
   for (let i = copy.length - 1; i > 0; i--) {
@@ -798,8 +864,6 @@ function shuffle(arr) {
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
   return copy;
-}
-
 }
 
 // ── Captcha / Geo gate ───────────────────────────────────────────────────────
@@ -859,10 +923,10 @@ function hasCaptchaCookie(req) {
   return verifyCaptchaToken(ip, token);
 }
 
-function setCaptchaCookie(res, ip) {
+function setCaptchaCookie(res, ip, req) {
   const token = makeCaptchaToken(ip);
   res.setHeader("Set-Cookie",
-    `${CAPTCHA_COOKIE}=${token}; Max-Age=${CAPTCHA_MAX_AGE / 1000}; Path=/; HttpOnly; SameSite=Lax`
+    `${CAPTCHA_COOKIE}=${token}; Max-Age=${CAPTCHA_MAX_AGE / 1000}; Path=/; HttpOnly; SameSite=Lax${secureCookieFlag(req)}`
   );
 }
 
@@ -1238,7 +1302,7 @@ app.use(async (req, res, next) => {
     return;
   }
 
-  setCaptchaCookie(res, ip);
+  setCaptchaCookie(res, ip, req);
   return next();
 });
 
@@ -1272,7 +1336,7 @@ app.post("/captcha-verify", (req, res) => {
   }
 
   captchaChallenges.delete(ip);
-  setCaptchaCookie(res, ip);
+  setCaptchaCookie(res, ip, req);
   res.redirect(302, "/");
 });
 
@@ -1652,7 +1716,7 @@ app.post(ROUTE.panel, (req, res) => {
     res.status(401).send(adminLoginPageHtml("Incorrect key — try again"));
     return;
   }
-  createAdminSession(res);
+  createAdminSession(res, req);
   console.log(`[ADMIN-LOGIN] Successful login from IP ${getClientIP(req)}`);
   res.send(renderAdminPanelHtml());
 });
@@ -3950,7 +4014,7 @@ function _saveAuthUsersToDisk() {
     };
   }
   try {
-    fs.writeFileSync(USERS_FILE, JSON.stringify(obj, null, 2), "utf8");
+    fs.writeFileSync(USERS_FILE, JSON.stringify(obj), "utf8");
     authUsersDirty = false;
   } catch (e) {
     console.error("[AUTH] save failed:", e.message);
@@ -3962,7 +4026,7 @@ function _saveChatRoomsToDisk() {
   const obj = {};
   for (const [id, r] of chatRooms) obj[id] = r;
   try {
-    fs.writeFileSync(ROOMS_FILE, JSON.stringify(obj, null, 2), "utf8");
+    fs.writeFileSync(ROOMS_FILE, JSON.stringify(obj), "utf8");
     roomsDirty = false;
   } catch (e) {
     console.error("[ROOMS] save failed:", e.message);
@@ -3974,7 +4038,7 @@ function _saveForumToDisk() {
   const obj = {};
   for (const [id, p] of forumPosts) obj[id] = p;
   try {
-    fs.writeFileSync(FORUM_FILE, JSON.stringify(obj, null, 2), "utf8");
+    fs.writeFileSync(FORUM_FILE, JSON.stringify(obj), "utf8");
     forumDirty = false;
   } catch (e) {
     console.error("[FORUM] save failed:", e.message);
@@ -3986,7 +4050,7 @@ function _savePrivateMsgsToDisk() {
   const obj = {};
   for (const [id, r] of privateRooms) obj[id] = r;
   try {
-    fs.writeFileSync(PRIV_MSGS_FILE, JSON.stringify(obj, null, 2), "utf8");
+    fs.writeFileSync(PRIV_MSGS_FILE, JSON.stringify(obj), "utf8");
     privMsgsDirty = false;
   } catch (e) {
     console.error("[PRIV] save failed:", e.message);
@@ -3998,7 +4062,7 @@ function _saveStreaksToDisk() {
   const obj = {};
   for (const [id, s] of friendStreaks) obj[id] = s;
   try {
-    fs.writeFileSync(STREAKS_FILE, JSON.stringify(obj, null, 2), "utf8");
+    fs.writeFileSync(STREAKS_FILE, JSON.stringify(obj), "utf8");
     streaksDirty = false;
   } catch (e) {
     console.error("[STREAKS] save failed:", e.message);
@@ -4086,8 +4150,13 @@ function saveForum() {
 // on a restart) its password is left untouched — only the isAdmin flag is
 // guaranteed to be set. Override via env vars if you'd rather not keep the
 // default password in source.
+// SECURITY: like ADMIN_KEY above, this no longer falls back to a password
+// written in the source. Note this only affects a FIRST-EVER boot with no
+// existing admin account — seedAdminAccount() below returns early if the
+// account already exists, so an already-deployed server keeps whatever
+// password it has and nothing breaks on upgrade.
 const ADMIN_SEED_USERNAME = process.env.ADMIN_USERNAME || "ADMINISTRATOR1121";
-const ADMIN_SEED_PASSWORD = process.env.ADMIN_PASSWORD || "Paroli1121";
+const ADMIN_SEED_PASSWORD = process.env.ADMIN_PASSWORD || crypto.randomBytes(18).toString("base64url");
 
 async function seedAdminAccount() {
   const lc = ADMIN_SEED_USERNAME.toLowerCase();
@@ -4110,6 +4179,15 @@ async function seedAdminAccount() {
   authReservedNames.add(lc);
   saveAuthUsers();
   console.log(`[ADMIN] Seeded administrator account: ${ADMIN_SEED_USERNAME}`);
+  if (!process.env.ADMIN_PASSWORD) {
+    console.warn("─".repeat(72));
+    console.warn("[SECURITY] ADMIN_PASSWORD was not set, so a random one was generated");
+    console.warn("[SECURITY] for this brand-new admin account. Save it now — it is shown");
+    console.warn("[SECURITY] only this once and is not recoverable from the data file:");
+    console.warn(`[SECURITY]     username: ${ADMIN_SEED_USERNAME}`);
+    console.warn(`[SECURITY]     password: ${ADMIN_SEED_PASSWORD}`);
+    console.warn("─".repeat(72));
+  }
 }
 
 loadAuthUsers();
@@ -8285,6 +8363,12 @@ io.on("connection", (socket) => {
   socket.on("friend:request", ({ toUsername }) => {
     if (!socket._regUser) return;
     if (socket._regUser.isGuest) { socket.emit("guest:registerRequired", { feature: "addFriend" }); return; }
+    // Unlimited friend requests are a harassment vector (mass-spamming every
+    // user) and each pending request is stored on the target's account.
+    if (mediaRateLimited(socket, "friendRequest", 10, 60_000)) {
+      socket.emit("friend:error", { message: "ძალიან ბევრი მოთხოვნა — ცოტა დაელოდე.", targetUsername: String(toUsername || "") });
+      return;
+    }
     const targetLc = String(toUsername).toLowerCase().trim();
     const targetUser = registeredUsers.get(targetLc);
     if (!targetUser) return;
@@ -8531,6 +8615,13 @@ io.on("connection", (socket) => {
   // acted on automatically like the anonymous IP-based system is.
   socket.on("user:report", ({ targetUsername, reason }) => {
     if (!socket._regUser || socket._regUser.isGuest) return;
+    // Rate limited because accountReportLog grows in memory with every entry.
+    // Without this, one client could spam reports in a loop and exhaust the
+    // server's memory. 5 per minute is far above any legitimate use.
+    if (mediaRateLimited(socket, "userReport", 5, 60_000)) {
+      socket.emit("user:reportResult", { success: false, error: "ძალიან ბევრი რეპორტი — ცოტა დაელოდე." });
+      return;
+    }
     const myLc = socket._regUser.usernameLower;
     const targetLc = String(targetUsername || "").toLowerCase().trim();
     if (!targetLc || targetLc === myLc) return;
@@ -8541,11 +8632,17 @@ io.on("connection", (socket) => {
     if (!cleanReason) { socket.emit("user:reportResult", { success: false, error: "მიუთითეთ მიზეზი" }); return; }
 
     if (!accountReportLog.has(targetLc)) accountReportLog.set(targetLc, []);
-    accountReportLog.get(targetLc).push({
+    const entries = accountReportLog.get(targetLc);
+    entries.push({
       reason: cleanReason,
       reportedBy: socket._regUser.username,
       timestamp: new Date().toISOString(),
     });
+    // Hard cap per target so this can never grow without bound. The admin
+    // view only ever shows the 20 most recent anyway, and the total count
+    // is tracked separately so the number stays truthful after trimming.
+    const MAX_KEPT_REPORTS = 50;
+    if (entries.length > MAX_KEPT_REPORTS) entries.splice(0, entries.length - MAX_KEPT_REPORTS);
 
     console.log(`[PROFILE REPORT] ${socket._regUser.username} reported ${targetUser.username}: ${cleanReason}`);
     socket.emit("user:reportResult", { success: true });
@@ -8555,6 +8652,13 @@ io.on("connection", (socket) => {
   socket.on("privateMsg:send", ({ toUsername, message, messageId, replyTo }) => {
     if (!socket._regUser || !toUsername || !message) return;
     if (socket._regUser.isGuest) { socket.emit("guest:registerRequired", { feature: "privateChat" }); return; }
+    // Private messages are persisted to disk, so unlimited sending is both a
+    // harassment vector and a way to grow the stored message file without
+    // bound. 15 per 10s is well above normal typing speed.
+    if (mediaRateLimited(socket, "privateMsg", 15, 10_000)) {
+      socket.emit("privateMsg:sent", { success: false, messageId });
+      return;
+    }
     const toLc = String(toUsername).toLowerCase().trim();
 
     // A permanent block (either direction) blocks private messages too —
@@ -8929,18 +9033,28 @@ io.on("connection", (socket) => {
   });
 
   // Drawer's live strokes, relayed to everyone else in the room.
-  socket.on("drawGuess:stroke", ({ roomId, stroke }) => {
+  socket.on("drawGuess:stroke", ({ roomId, stroke, strokes }) => {
     if (!socket._regUser) return;
     const room = drawRooms.get(roomId);
-    if (!room || !room.round || !stroke || typeof stroke !== "object") return;
+    if (!room || !room.round) return;
     if (room.round.drawerLc !== socket._regUser.usernameLower) return;
 
-    room.round.strokes.push(stroke);
-    if (room.round.strokes.length > 3000) room.round.strokes.shift();
+    // Drawing used to send one socket message per pointermove event, which is
+    // 60-120 messages/second per drawer, each re-broadcast to every other
+    // player. The client now buffers segments and sends them in small batches;
+    // a single `stroke` is still accepted so nothing depends on the new shape.
+    const incoming = Array.isArray(strokes) ? strokes : (stroke ? [stroke] : []);
+    const valid = incoming.filter(s => s && typeof s === "object").slice(0, 200);
+    if (!valid.length) return;
+
+    for (const s of valid) {
+      room.round.strokes.push(s);
+      if (room.round.strokes.length > 3000) room.round.strokes.shift();
+    }
 
     for (const p of room.players) {
       if (p.lc === room.round.drawerLc) continue;
-      io.sockets.sockets.get(p.socketId)?.emit("drawGuess:stroke", { stroke });
+      io.sockets.sockets.get(p.socketId)?.emit("drawGuess:stroke", { strokes: valid });
     }
   });
 
