@@ -218,10 +218,22 @@
       nativeBtns.forEach((btn) => {
         btn.addEventListener("click", async () => {
           if (!deferredPrompt) return;
-          deferredPrompt.prompt();
-          await deferredPrompt.userChoice;
+          // Claim the prompt BEFORE awaiting. Nulling it only after the await
+          // left a window where a second tap (easy to do on mobile) passed the
+          // guard above and called prompt() a second time, which throws
+          // "The prompt() method may only be called once".
+          const promptEvent = deferredPrompt;
           deferredPrompt = null;
           nativeBtns.forEach((b) => { b.style.display = "none"; });
+          try {
+            promptEvent.prompt();
+            await promptEvent.userChoice;
+          } catch {
+            // If the browser refused the prompt, put the button back so the
+            // user isn't left with no way to install.
+            deferredPrompt = promptEvent;
+            nativeBtns.forEach((b) => { b.style.display = "block"; });
+          }
         });
       });
 

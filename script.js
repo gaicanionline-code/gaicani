@@ -690,20 +690,29 @@ const TENOR_PROXY = "/api/gifs"; // key stays on the server
 
 async function fetchGifs(query) {
   if (gifFetchController) gifFetchController.abort();
-  gifFetchController = new AbortController();
+  // Hold our own reference: gifFetchController is shared state and a newer
+  // search may replace it while this one is still awaiting.
+  const myController = new AbortController();
+  gifFetchController = myController;
   gifResults.innerHTML = '<div class="gif-placeholder">Loading...</div>';
 
   try {
     const url  = query ? `${TENOR_PROXY}?q=${encodeURIComponent(query)}` : TENOR_PROXY;
-    const res  = await fetch(url, { signal: gifFetchController.signal });
+    const res  = await fetch(url, { signal: myController.signal });
     const data = await res.json();
+    // Ignore results from a search that has since been superseded, so a
+    // slow older response can't overwrite newer results.
+    if (gifFetchController !== myController) return;
     renderGifResults(data.results || []);
   } catch (err) {
-    if (err.name !== "AbortError") {
+    if (err.name !== "AbortError" && gifFetchController === myController) {
       gifResults.innerHTML = '<div class="gif-placeholder">Failed to load GIFs 😢</div>';
     }
   } finally {
-    gifFetchController = null;
+    // Only clear it if we're still the current request. Clearing
+    // unconditionally wiped the reference to a NEWER in-flight controller,
+    // so the next search couldn't abort it and two responses would race.
+    if (gifFetchController === myController) gifFetchController = null;
   }
 }
 
