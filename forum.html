@@ -200,6 +200,17 @@
     #foToast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
     @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+  
+    /* ── iOS input zoom fix ──────────────────────────────────────────────
+       Safari on iPhone zooms the page in when an input under 16px gets
+       focus, and leaves you zoomed. Scoped to touch devices so desktop
+       sizing is unchanged. */
+    @media (pointer: coarse) {
+      #postTitleInput,
+      #postBodyInput {
+        font-size: 16px;
+      }
+    }
   </style>
 </head>
 <body>

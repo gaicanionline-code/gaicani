@@ -2840,3 +2840,20 @@ body.rc-theme-light .reply-preview-bar { background: #f0f1f5; border-bottom-colo
 body.rc-theme-light .reply-preview-text { color: #4b4f5a; }
 body.rc-theme-light .reply-preview-close { color: #6b7080; }
 body.rc-theme-light .reply-preview-close:hover { color: #1a1b1e; background: rgba(0,0,0,0.06); }
+
+/* ── iOS input zoom fix ────────────────────────────────────────────────────
+   Safari on iPhone zooms the whole page in when you focus an input whose
+   font-size is below 16px, then leaves you zoomed — jarring, and it happens
+   on the most-used control on the site (the chat box). Bumping these to 16px
+   on touch devices stops it. Scoped to `pointer: coarse` so desktop keeps its
+   existing sizing; selectors are spelled out to match the specificity of the
+   rules above rather than resorting to !important.                        */
+@media (pointer: coarse) {
+  .chat-input textarea,
+  .gif-picker-header textarea,
+  .report-reason-textarea,
+  .modal-content textarea#nameInput,
+  .bio-textarea {
+    font-size: 16px;
+  }
+}
