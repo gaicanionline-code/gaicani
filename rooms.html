@@ -139,7 +139,7 @@
     }
     .rm-msg { display: flex; flex-direction: column; gap: 2px; animation: rmMsgIn 0.15s ease-out both; }
     @keyframes rmMsgIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-    .rm-msg-meta { display: flex; align-items: baseline; gap: 8px; }
+    .rm-msg-meta { display: flex; align-items: center; gap: 8px; }
     .rm-msg-name { font-weight: 700; font-size: 0.86em; color: var(--accent-lt); }
     .rm-msg--me .rm-msg-name { color: var(--good); }
     .rm-msg-time { font-size: 0.7em; color: var(--muted); }
@@ -250,6 +250,98 @@
         font-size: 16px;
       }
     }
+  
+    /* ── Tap-a-user profile card ──────────────────────────────────────────
+       Opened by tapping a message author's avatar or name in room chat.
+       Mirrors the dashboard's card so it feels like the same component. */
+    .profile-card-backdrop {
+      position: fixed; inset: 0; z-index: 900; background: rgba(0,0,0,0.6);
+      -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.18s ease; padding: 20px;
+    }
+    .profile-card-backdrop.show { opacity: 1; pointer-events: auto; }
+    .profile-card-modal {
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 16px;
+      width: 100%; max-width: 340px; padding: 26px 20px 20px; text-align: center; position: relative;
+      transform: scale(0.94) translateY(8px); transition: transform 0.18s ease;
+      box-shadow: 0 24px 70px rgba(0,0,0,0.55);
+    }
+    .profile-card-backdrop.show .profile-card-modal { transform: scale(1) translateY(0); }
+    .profile-card-close {
+      position: absolute; top: 10px; right: 10px; width: 30px; height: 30px;
+      border-radius: 50%; border: none; background: rgba(255,255,255,0.09);
+      color: var(--text); font-size: 1em; cursor: pointer;
+    }
+    .profile-card-avatar {
+      width: 86px; height: 86px; border-radius: 50%; margin: 0 auto 12px;
+      background: var(--bg); display: flex; align-items: center; justify-content: center;
+      font-size: 2em; font-weight: 700; color: var(--muted); overflow: hidden;
+      border: 3px solid var(--border);
+    }
+    .profile-card-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .profile-card-name { font-size: 1.18em; font-weight: 800; color: #fff; margin-bottom: 7px; }
+    .profile-card-status {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 0.82em;
+      font-weight: 700; padding: 4px 13px; border-radius: 20px; margin-bottom: 14px;
+    }
+    .profile-card-status.online  { background: rgba(59,165,93,0.16); color: var(--good); }
+    .profile-card-status.offline { background: rgba(255,255,255,0.06); color: var(--muted); }
+    .profile-card-status-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    .profile-card-bio {
+      background: var(--bg); border-radius: 8px; padding: 13px 14px; color: var(--text);
+      font-size: 0.88em; line-height: 1.55; text-align: left; margin-bottom: 16px; word-break: break-word;
+    }
+    .profile-card-bio.empty { color: var(--muted); font-style: italic; text-align: center; }
+    .profile-card-msg-btn {
+      width: 100%; border: none; border-radius: 8px; padding: 11px; font-weight: 700;
+      font-size: 0.88em; cursor: pointer; background: var(--accent); color: #fff;
+    }
+    .profile-card-msg-btn:hover { background: var(--accent-dk); }
+    .profile-card-report-btn {
+      width: 100%; margin-top: 8px; border: none; border-radius: 8px; padding: 9px;
+      font-weight: 600; font-size: 0.8em; cursor: pointer; background: none;
+      color: var(--muted); text-decoration: underline;
+    }
+    .profile-card-report-btn:hover { color: var(--danger); }
+    .profile-card-loading { color: var(--muted); font-size: 0.9em; padding: 20px 0; }
+
+    /* Tappable author avatar + name in chat */
+    .rm-msg-avatar {
+      width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; overflow: hidden;
+      background: rgba(88,101,242,0.22); display: flex; align-items: center; justify-content: center;
+      font-size: 0.62em; font-weight: 700; color: var(--accent-lt); cursor: pointer;
+    }
+    .rm-msg-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .rm-msg-name { cursor: pointer; }
+
+    /* Report reason modal */
+    .rm-report-backdrop {
+      position: fixed; inset: 0; z-index: 950; background: rgba(0,0,0,0.6);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.18s ease; padding: 20px;
+    }
+    .rm-report-backdrop.show { opacity: 1; pointer-events: auto; }
+    .rm-report-modal {
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 16px;
+      width: 100%; max-width: 330px; padding: 22px 20px;
+    }
+    .rm-report-title { font-weight: 800; font-size: 1.04em; margin-bottom: 4px; color: #fff; }
+    .rm-report-sub { font-size: 0.78em; color: var(--muted); margin-bottom: 14px; line-height: 1.45; }
+    .rm-report-input {
+      width: 100%; padding: 11px 13px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg); color: #fff; font-size: 16px; min-height: 80px;
+      resize: vertical; font-family: inherit; margin-bottom: 6px;
+    }
+    .rm-report-input:focus { outline: none; border-color: var(--accent); }
+    .rm-report-error { font-size: 0.76em; color: var(--danger); min-height: 16px; margin-bottom: 8px; }
+    .rm-report-actions { display: flex; gap: 8px; }
+    .rm-report-btn {
+      flex: 1; border: none; border-radius: 8px; padding: 11px; font-weight: 700;
+      font-size: 0.86em; cursor: pointer;
+    }
+    .rm-report-cancel { background: #40444b; color: var(--text); }
+    .rm-report-send { background: var(--danger); color: #fff; }
   </style>
 </head>
 <body>
@@ -323,6 +415,28 @@
   </div>
 </div>
 
+<!-- Tap-a-user profile card — opened from a message author's avatar/name -->
+<div id="profileCardBackdrop" class="profile-card-backdrop">
+  <div class="profile-card-modal">
+    <button class="profile-card-close" id="profileCardCloseBtn">✕</button>
+    <div id="profileCardBody"><div class="profile-card-loading">იტვირთება...</div></div>
+  </div>
+</div>
+
+<!-- Report reason modal -->
+<div id="rmReportBackdrop" class="rm-report-backdrop">
+  <div class="rm-report-modal">
+    <div class="rm-report-title">🚩 მომხმარებლის დარეპორტება</div>
+    <div class="rm-report-sub" id="rmReportSub"></div>
+    <textarea id="rmReportInput" class="rm-report-input" maxlength="300" placeholder="მიუთითეთ მიზეზი (სავალდებულოა)..."></textarea>
+    <div class="rm-report-error" id="rmReportError"></div>
+    <div class="rm-report-actions">
+      <button class="rm-report-btn rm-report-cancel" id="rmReportCancel">გაუქმება</button>
+      <button class="rm-report-btn rm-report-send" id="rmReportSend">🚩 გაგზავნა</button>
+    </div>
+  </div>
+</div>
+
 <script src="/socket.io/socket.io.js"></script>
 <script>
   (function () {
@@ -381,6 +495,7 @@
   let { token, username } = loadAuth();
   let myUsernameLower = (username || "").toLowerCase();
   let isAdminGlobal = false;
+  let amGuest = false; // guests cannot report — server rejects them, so we hide the button
 
   const elLoading = $("rmLoading");
   const elAuth    = $("rmAuthScreen");
@@ -486,12 +601,31 @@
 
     const meta = document.createElement("div");
     meta.className = "rm-msg-meta";
+
+    // Tappable author icon — opens the profile card. Built with DOM nodes so
+    // the username is never interpolated into HTML.
+    const av = document.createElement("div");
+    av.className = "rm-msg-avatar";
+    av.title = m.fromUsername;
+    if (m.avatar) {
+      const img = document.createElement("img");
+      img.src = "/" + m.avatar;
+      img.alt = m.fromUsername;
+      av.appendChild(img);
+    } else {
+      av.textContent = (m.fromUsername || "?").charAt(0).toUpperCase();
+    }
+    av.addEventListener("click", () => openProfileCard(m.fromUsername));
+
     const nameSpan = document.createElement("span");
     nameSpan.className = "rm-msg-name";
     nameSpan.textContent = m.fromUsername; // textContent — auto-escapes
+    nameSpan.addEventListener("click", () => openProfileCard(m.fromUsername));
+
     const timeSpan = document.createElement("span");
     timeSpan.className = "rm-msg-time";
     timeSpan.textContent = fmtTime(m.ts);
+    meta.appendChild(av);
     meta.appendChild(nameSpan);
     meta.appendChild(timeSpan);
 
@@ -515,6 +649,111 @@
     wrap.appendChild(meta);
     wrap.appendChild(body);
     $("chatMessages").appendChild(wrap);
+  }
+
+  /* ── Tap-a-user profile card ──────────────────────────────────────────
+     Opened from a message author's avatar or name. Fetches the live profile
+     so the picture/bio/online state are current, rather than whatever was
+     true when the message was sent. */
+  async function openProfileCard(username) {
+    if (!username) return;
+    const backdrop = $("profileCardBackdrop");
+    const body = $("profileCardBody");
+    body.innerHTML = '<div class="profile-card-loading">იტვირთება...</div>';
+    backdrop.classList.add("show");
+    try {
+      const res = await fetch("/api/users/profile?username=" + encodeURIComponent(username), {
+        headers: { Authorization: "Bearer " + token },
+      });
+      if (!res.ok) throw new Error("not ok");
+      const d = await res.json();
+
+      body.innerHTML = "";
+
+      const av = document.createElement("div");
+      av.className = "profile-card-avatar";
+      if (d.avatar) {
+        const img = document.createElement("img");
+        img.src = "/" + d.avatar; img.alt = d.username;
+        av.appendChild(img);
+      } else {
+        av.textContent = (d.username || "?").charAt(0).toUpperCase();
+      }
+
+      const nameEl = document.createElement("div");
+      nameEl.className = "profile-card-name";
+      nameEl.textContent = d.username;
+
+      const status = document.createElement("div");
+      status.className = "profile-card-status " + (d.isOnline ? "online" : "offline");
+      const dot = document.createElement("span");
+      dot.className = "profile-card-status-dot";
+      status.appendChild(dot);
+      status.appendChild(document.createTextNode(d.isOnline ? "ონლაინ" : "ოფლაინ"));
+
+      const bio = document.createElement("div");
+      bio.className = "profile-card-bio" + (d.bio ? "" : " empty");
+      bio.textContent = d.bio || "ბიოგრაფია ჯერ არ დაუწერია";
+
+      body.appendChild(av); body.appendChild(nameEl);
+      body.appendChild(status); body.appendChild(bio);
+
+      const isMe = (d.username || "").toLowerCase() === myUsernameLower;
+      if (!isMe) {
+        const msgBtn = document.createElement("button");
+        msgBtn.className = "profile-card-msg-btn";
+        msgBtn.textContent = "💬 პირადი მიწერა";
+        msgBtn.addEventListener("click", () => {
+          window.location.href = "/friend-chat.html?friend=" + encodeURIComponent(d.username);
+        });
+        body.appendChild(msgBtn);
+
+        // Guests aren't reportable — their names are temporary and get reused,
+        // so a report could later point at an unrelated person. A guest also
+        // can't file one (the server rejects it silently), so hide the button
+        // in that case rather than leave it hanging with no response.
+        if (!d.isGuest && !amGuest) {
+          const repBtn = document.createElement("button");
+          repBtn.className = "profile-card-report-btn";
+          repBtn.textContent = "🚩 რეპორტი";
+          repBtn.addEventListener("click", () => openReportModal(d.username));
+          body.appendChild(repBtn);
+        }
+      }
+    } catch {
+      body.innerHTML = '<div class="profile-card-loading">პროფილის ჩატვირთვა ვერ მოხერხდა</div>';
+    }
+  }
+  function closeProfileCard() { $("profileCardBackdrop").classList.remove("show"); }
+
+  /* ── Report modal ─────────────────────────────────────────────────── */
+  let reportTarget = null;
+  function openReportModal(username) {
+    reportTarget = username;
+    $("rmReportSub").textContent = 'რატომ დარეპორტებთ "' + username + '"-ს?';
+    $("rmReportInput").value = "";
+    $("rmReportError").textContent = "";
+    closeProfileCard();
+    $("rmReportBackdrop").classList.add("show");
+  }
+  function closeReportModal() { $("rmReportBackdrop").classList.remove("show"); }
+
+  function bindProfileCardUI() {
+    $("profileCardCloseBtn").addEventListener("click", closeProfileCard);
+    $("profileCardBackdrop").addEventListener("click", (e) => {
+      if (e.target.id === "profileCardBackdrop") closeProfileCard();
+    });
+    $("rmReportCancel").addEventListener("click", closeReportModal);
+    $("rmReportBackdrop").addEventListener("click", (e) => {
+      if (e.target.id === "rmReportBackdrop") closeReportModal();
+    });
+    $("rmReportSend").addEventListener("click", () => {
+      const reason = $("rmReportInput").value.trim();
+      if (reason.length < 3) { $("rmReportError").textContent = "გთხოვთ, მიუთითოთ მიზეზი"; return; }
+      $("rmReportError").textContent = "";
+      $("rmReportSend").disabled = true;
+      socket.emit("user:report", { targetUsername: reportTarget, reason });
+    });
   }
 
   function scrollChatToBottom() {
@@ -613,6 +852,7 @@
     });
 
     socket.on("auth:authenticated", ({ username: authedName, isAdmin, isGuest, guestToken }) => {
+      amGuest = !!isGuest;
       if (isGuest && authedName) {
         myUsernameLower = authedName.toLowerCase();
         token = guestToken; // needed for the REST fetches below — reading is allowed as a guest
@@ -628,6 +868,13 @@
       } else {
         showScreen("list");
       }
+    });
+
+    socket.on("user:reportResult", ({ success, error }) => {
+      $("rmReportSend").disabled = false;
+      if (!success) { $("rmReportError").textContent = error || "ვერ მოხერხდა"; return; }
+      closeReportModal();
+      showToast("🚩 რეპორტი გაიგზავნა — მადლობა!");
     });
 
     socket.on("auth:invalid", () => { window.location.href = "/"; });
@@ -774,6 +1021,7 @@
       this.style.height = "auto";
       this.style.height = Math.min(this.scrollHeight, 110) + "px";
     });
+    bindProfileCardUI();
   }
 
   init();

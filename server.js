@@ -3713,6 +3713,97 @@ function getOnlineRegisteredUsers(excludeLc) {
   return list;
 }
 
+// ── Banned-word filter (room names, room chat, forum posts & comments) ───────
+// Matching rules, and why they're built this way:
+//
+//  * Unicode-aware WORD BOUNDARIES, not plain substring search. This matters:
+//    "სირი" is on the list, and "სირია" (Syria) contains it. A substring
+//    match would block anyone discussing Syria. The lookarounds below require
+//    a non-letter on both sides, so only the standalone word is caught.
+//  * Separators are allowed BETWEEN the letters of a term, so "ყ.ლ.ე",
+//    "y l e" and "y-l-e" are caught as well as "ყლე".
+//  * Each letter may repeat ("ყყყლეე"), a very common way to slip past filters.
+//  * Digits/symbols commonly swapped for letters are normalised first
+//    (0→o, 1→i, 3→e, 4→a, 5→s, 7→t, @→a, $→s).
+//
+// The list is intentionally kept as data so it's easy to extend later.
+const ABUSE_WORDS = [
+  // Georgian
+  "მოგტყნა","მოგიტყნა","მოგეტყნა","მოტყნა","მოგიტყნავ",
+  "მოტყნული","მოტყნულო","ტყნვა","ტყნაური",
+  "დედამოტყნული","დედამოტყნულო",
+  "ამიდგა","ამიდგება","ამიდგი","ამოგიდგა","ამოგიდგება",
+  "ყლე","ყლეო","ყლეობა","ყლევ",
+  "სირი","სირო","სირობა",
+  "ბოზი","ბოზო","ბოზიშვილი","ბოზისშვილი",
+  "ნაბიჭვარი","ნაბიჭვარო","ნაბოზარი","ნაბოზარო",
+  "ტრაკი","ტრაკო","ტრაკში","ტრაკიდან",
+  "პიდარასტი","პიდარასტო",
+  "ჩათლახი","ჩათლახო",
+  "დებილი","დებილო","იდიოტი","იდიოტო",
+  "გოიმი","გოიმო","შტერი","შტერო","ჩლუნგი",
+  "ნაძირალა","ნაძირალო","არამზადა","არამზადავ",
+  "დამპალი","დამპალო","ნაგავი","ნაგავო",
+  "დედაშენი","შენი დედა","შენს დედას","შენი მამა","შენს მამას",
+  // Latin transliterations
+  "mogtyna","mogityna","mogetyna","motqna","motkna","motyna",
+  "mogitynav","mogitknav","motynuli","motknuli","motynuly",
+  "motynulo","motknulo","tynva","tknva","tynauri","tknauri",
+  "dedamotynuli","dedamotknuli","dedamotynulo","dedamotknulo",
+  "amidga","amidgeba","amidgi","amogidga","amogidgeba",
+  "yle","qle","yleo","qleo","yleoba","qleoba","ylev","qlev",
+  "siri","syri","siro","syro","siroba","syroba",
+  "bozi","bozy","bozo","bozishvili","bozishvily","bozisshvili",
+  "nabichvari","nabichvary","nabichvaro","nabozari","nabozaro",
+  "traki","traky","trako","trakshi","trakidan",
+  "pidarasti","pidarasty","pidarasto",
+  "chatlaxi","chatlakhi","chatlaxo",
+  "debili","debily","debilo","idioti","idioty","idioto",
+  "goimi","goimy","goimo","shteri","shtery","shtero",
+  "chlungi","chlungy",
+  "nadzirala","nadziralo","nadzilala",
+  "aramzada","aramzadav","dampali","dampaly","dampalo",
+  "nagavi","nagavy","nagavo",
+  "dedasheni","dedasheny","sheni deda","shens dedas","sheni mama","shens mamas",
+];
+
+const LEET_MAP = { "0":"o","1":"i","3":"e","4":"a","5":"s","7":"t","@":"a","$":"s","!":"i" };
+
+function normalizeForFilter(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[013457@$!]/g, c => LEET_MAP[c] || c)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, ""); // strip combining accents
+}
+
+// Build one regex per term. Letters may repeat and may be separated by
+// spaces/punctuation; the whole thing must sit on word boundaries.
+const ABUSE_PATTERNS = ABUSE_WORDS.map(word => {
+  const norm = normalizeForFilter(word);
+  const body = [...norm]
+    .filter(ch => ch !== " ")
+    .map(ch => ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "+")
+    .join("[\\s._\\-*'\"~]*");
+  try {
+    return new RegExp(`(?<![\\p{L}\\p{N}])${body}(?![\\p{L}\\p{N}])`, "iu");
+  } catch {
+    return null; // engine without lookbehind — term simply won't be enforced
+  }
+}).filter(Boolean);
+
+// Returns the offending word, or null when the text is clean.
+function findBannedWord(text) {
+  const norm = normalizeForFilter(text);
+  if (!norm) return null;
+  for (let i = 0; i < ABUSE_PATTERNS.length; i++) {
+    if (ABUSE_PATTERNS[i].test(norm)) return ABUSE_WORDS[i];
+  }
+  return null;
+}
+
+const ABUSE_WORD_MESSAGE = "ამ სიტყვის გამოყენება აკრძალულია — გთხოვთ, შეცვალოთ ტექსტი.";
+
 // ── Rooms helpers ─────────────────────────────────────────────────────────────
 function isRoomAdmin(usernameLower) {
   const u = registeredUsers.get(usernameLower);
@@ -3788,7 +3879,17 @@ function roomPublicSummary(room, forLc) {
 }
 
 function roomMessagePublic(m) {
-  return { id: m.id, fromUsername: m.fromUsername, text: m.text, ts: m.ts };
+  // Avatar is looked up live from the account rather than stored on the
+  // message, so it stays correct for old messages after someone changes
+  // their picture (and so historical messages get one at all).
+  const author = registeredUsers.get(m.fromLc);
+  return {
+    id: m.id,
+    fromUsername: m.fromUsername,
+    text: m.text,
+    ts: m.ts,
+    avatar: author?.avatar || null,
+  };
 }
 
 // Everyone currently online under this username, kicked out of a room's live
@@ -4163,6 +4264,20 @@ async function seedAdminAccount() {
   const existing = registeredUsers.get(lc);
   if (existing) {
     if (!existing.isAdmin) { existing.isAdmin = true; saveAuthUsers(); }
+    // If ADMIN_PASSWORD is explicitly set, treat it as the source of truth.
+    // Without this, seeding just returned early on any server that already
+    // had an admin account, so setting the env var silently did nothing and
+    // there was no way to change or recover the admin password at all.
+    // The hash is only rewritten when it actually differs, so a normal
+    // restart does no extra work.
+    if (process.env.ADMIN_PASSWORD) {
+      const alreadyMatches = await authVerifyPassword(process.env.ADMIN_PASSWORD, existing.passwordHash);
+      if (!alreadyMatches) {
+        existing.passwordHash = await authHashPassword(process.env.ADMIN_PASSWORD);
+        saveAuthUsers();
+        console.log(`[ADMIN] Password for ${existing.username} updated from the ADMIN_PASSWORD environment variable.`);
+      }
+    }
     return;
   }
   const user = {
@@ -10534,6 +10649,7 @@ io.on("connection", (socket) => {
 
     const clean = text.slice(0, MSG_MAX).replace(/<[^>]*>/g, "").trim();
     if (!clean) return;
+    if (findBannedWord(clean)) { socket.emit("rooms:error", { message: ABUSE_WORD_MESSAGE }); return; }
     if (mediaRateLimited(socket, "roomMsg", 10, 10_000)) {
       socket.emit("rooms:error", { message: "ძალიან ბევრი შეტყობინება — ცოტა დაელოდე." });
       return;
@@ -10573,6 +10689,7 @@ io.on("connection", (socket) => {
     }
     const clean = cleanRoomName(name);
     if (!clean) { socket.emit("rooms:error", { message: "ოთახის სახელი სავალდებულოა" }); return; }
+    if (findBannedWord(clean)) { socket.emit("rooms:error", { message: ABUSE_WORD_MESSAGE }); return; }
 
     const room = {
       id: makeRoomId(),
@@ -10599,6 +10716,7 @@ io.on("connection", (socket) => {
     if (!room) { socket.emit("rooms:error", { message: "ოთახი ვერ მოიძებნა" }); return; }
     const clean = cleanRoomName(name);
     if (!clean) { socket.emit("rooms:error", { message: "ოთახის სახელი სავალდებულოა" }); return; }
+    if (findBannedWord(clean)) { socket.emit("rooms:error", { message: ABUSE_WORD_MESSAGE }); return; }
 
     room.name = clean;
     saveChatRooms();
@@ -10698,6 +10816,9 @@ io.on("connection", (socket) => {
     const cleanTitle = cleanForumText(title, FORUM_TITLE_MAX);
     const cleanBody = cleanForumText(body, FORUM_BODY_MAX);
     if (!cleanTitle) { socket.emit("forum:error", { message: "სათაური სავალდებულოა" }); return; }
+    if (findBannedWord(cleanTitle) || findBannedWord(cleanBody)) {
+      socket.emit("forum:error", { message: ABUSE_WORD_MESSAGE }); return;
+    }
     if (mediaRateLimited(socket, "forumPost", 5, 60_000)) {
       socket.emit("forum:error", { message: "ძალიან ბევრი პოსტი — ცოტა დაელოდე." });
       return;
@@ -10738,6 +10859,7 @@ io.on("connection", (socket) => {
     if (!post) { socket.emit("forum:error", { message: "პოსტი ვერ მოიძებნა" }); return; }
     const cleanBody = cleanForumText(body, FORUM_COMMENT_MAX);
     if (!cleanBody) return;
+    if (findBannedWord(cleanBody)) { socket.emit("forum:error", { message: ABUSE_WORD_MESSAGE }); return; }
 
     if (mediaRateLimited(socket, "forumComment", 10, 10_000)) {
       socket.emit("forum:error", { message: "ძალიან ბევრი კომენტარი — ცოტა დაელოდე." });
