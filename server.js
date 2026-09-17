@@ -223,6 +223,23 @@ loadBannedUserAgents(); // restore UA bans immediately at startup
 // vt-checker.js writes confirmed malicious IPs to vt-bans.json.
 // We watch that file and load new bans automatically — no restart needed.
 
+// ── Automatic banning: DISABLED ──────────────────────────────────────────────
+// Every self-inflicted ban path is gated on this flag, which is OFF by default.
+// It was turned off because the flood auto-ban in particular could (and did)
+// lock out a legitimate user: reloading the site quickly during normal use or
+// development looks like a flood, and that ban was written straight into
+// banned_ips.json, so it survived restarts.
+//
+// What this changes:
+//   * Flood: still rate-limited with a 429 response, but never banned.
+//   * Link spam / user reports: still counted, still visible in the admin
+//     panel, but they no longer ban anyone on their own.
+//   * VirusTotal list: no longer auto-applied.
+// Manual admin bans from the panel are UNAFFECTED and work exactly as before.
+//
+// Set AUTO_BAN_ENABLED=true in the environment to restore the old behaviour.
+const AUTO_BAN_ENABLED = process.env.AUTO_BAN_ENABLED === "true";
+
 const VT_QUEUE_FILE = path.join(DATA_PATH, "vt-queue.json");
 const VT_BANS_FILE  = path.join(DATA_PATH, "vt-bans.json");
 const STATS_FILE     = path.join(DATA_PATH, "stats.json");
@@ -234,6 +251,10 @@ const vtQueued = new Set();
 
 // Load existing VT bans on startup
 function loadVTBans() {
+  // Another automatic ban source — an external checker writes IPs here and
+  // they get merged into the permanent ban list. Off unless auto-banning is
+  // explicitly enabled.
+  if (!AUTO_BAN_ENABLED) return;
   try {
     const arr = JSON.parse(fs.readFileSync(VT_BANS_FILE, "utf8"));
     if (Array.isArray(arr)) {
@@ -712,6 +733,12 @@ function recordLinkStrike(ip) {
   if (entry.bannedUntil && now < entry.bannedUntil) return 'banned'; // already banned
   entry.count++;
   if (entry.count >= 2) {
+    if (!AUTO_BAN_ENABLED) {
+      // Still counted and logged, but no ban is applied.
+      console.warn(`[LINK-STRIKE] IP ${ip} — strike ${entry.count} (auto-ban disabled, not banned)`);
+      linkStrikes.set(ip, entry);
+      return 'warning';
+    }
     entry.bannedUntil = now + LINK_BAN_DURATION_MS;
     console.warn(`[LINK-BAN] IP ${ip} auto-banned 24h after ${entry.count} violations`);
     linkStrikes.set(ip, entry);
@@ -780,6 +807,14 @@ function recordReport(reporterSocketId, targetIP, reason, reporterName, targetNa
     timestamp: new Date().toISOString(),
   });
   if (entry.count >= REPORT_THRESHOLD) {
+    if (!AUTO_BAN_ENABLED) {
+      // Reports are still recorded and shown in the admin panel, but they no
+      // longer ban on their own — a coordinated group could otherwise remove
+      // anyone they wanted.
+      console.warn(`[REPORT] IP ${targetIP} hit ${entry.count} reports — logged, NOT banned (auto-ban disabled)`);
+      reportStrikes.set(targetIP, entry);
+      return false;
+    }
     entry.bannedUntil = now + REPORT_BAN_DURATION_MS;
     console.warn(`[REPORT-BAN] IP ${targetIP} auto-banned 24h after ${entry.count} reports`);
     reportStrikes.set(targetIP, entry);
@@ -1210,9 +1245,15 @@ app.use((req, res, next) => {
     const streak = (floodOffenseStreak.get(ip) || 0) + 1;
     floodOffenseStreak.set(ip, streak);
     if (streak >= FLOOD_AUTOBAN_STREAK) {
-      bannedIPs.add(ip);
-      saveBannedIPs();
-      console.warn(`[FLOOD-AUTOBAN] ${ip} banned after ${streak} consecutive flood windows`);
+      if (AUTO_BAN_ENABLED) {
+        bannedIPs.add(ip);
+        saveBannedIPs();
+        console.warn(`[FLOOD-AUTOBAN] ${ip} banned after ${streak} consecutive flood windows`);
+      } else {
+        // Auto-banning is off: log it, keep rejecting with 429, but never
+        // write this IP into the permanent ban list.
+        console.warn(`[FLOOD] ${ip} over limit (${streak} windows) — throttled, NOT banned (auto-ban disabled)`);
+      }
     }
     // Cheap rejection — no route handler, no DB/socket work, just enough to
     // keep the event loop free for the health check.
@@ -2652,10 +2693,17 @@ io.on("connection", (socket) => {
     text = text.slice(0, MSG_MAX).replace(/<[^>]*>/g, "").trim();
     if (!text) return;
 
-    // ── Blocked-phrase filter — exact match → permanent IP ban + kick ────────────
+    // ── Blocked-phrase filter ───────────────────────────────────────────────
+    // The message is still blocked and the sender still kicked. The permanent
+    // IP ban that used to come with it is gated behind AUTO_BAN_ENABLED, so
+    // nothing bans an IP by itself any more.
     if (BLOCKED_PHRASE_RE.test(text)) {
-      console.warn(`[PHRASE-BAN] "${text.slice(0,80)}" matched blocked phrase — banning ${socket.clientIP}`);
-      bannedIPs.add(socket.clientIP);
+      if (AUTO_BAN_ENABLED) {
+        console.warn(`[PHRASE-BAN] "${text.slice(0,80)}" matched blocked phrase — banning ${socket.clientIP}`);
+        bannedIPs.add(socket.clientIP);
+      } else {
+        console.warn(`[PHRASE] "${text.slice(0,80)}" matched blocked phrase — kicked, NOT banned (auto-ban disabled)`);
+      }
       const bp = socket.partner;
       if (bp) {
         bp.partner = null;
