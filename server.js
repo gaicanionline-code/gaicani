@@ -2458,6 +2458,12 @@ io.on("connection", (socket) => {
     const trimmed = name.trim();
     if (trimmed.length < NAME_MIN || trimmed.length > NAME_MAX) return;
 
+    // Banned-word check on the display name itself.
+    if (findBannedWord(trimmed)) {
+      socket.emit("nameRejected", { message: ABUSE_WORD_MESSAGE });
+      return;
+    }
+
     if (socket.userName.toLowerCase() === trimmed.toLowerCase()) {
       socket.emit("nameAccepted", socket.userName);
       tryRestorePartnership(socket, trimmed.toLowerCase());
@@ -4454,6 +4460,8 @@ app.post("/api/auth/register", authLimiter, express.json({ limit: "5kb" }), asyn
     return res.status(400).json({ error: "სახელი: 2–20 სიმბოლო" });
   if (!/^[\w\u10D0-\u10FF\s\-.]+$/.test(clean))
     return res.status(400).json({ error: "სახელი შეიცავს დაუშვებელ სიმბოლოებს" });
+  if (findBannedWord(clean))
+    return res.status(400).json({ error: ABUSE_WORD_MESSAGE });
   if (password.length < 6 || password.length > 100)
     return res.status(400).json({ error: "პაროლი: 6–100 სიმბოლო" });
 
@@ -8378,6 +8386,7 @@ io.on("connection", (socket) => {
     const preferredValid = preferred
       && preferred.length >= NAME_MIN && preferred.length <= NAME_MAX
       && /^[\w\u10D0-\u10FF\s\-.]+$/.test(preferred)
+      && !findBannedWord(preferred)   // a banned name just falls back to "სტუმარი####"
       && (!existingHolder || existingHolder.isGuest);
 
     let username, lc, guestUser;
@@ -8443,6 +8452,10 @@ io.on("connection", (socket) => {
 
     if (!newName || newName.length < NAME_MIN || newName.length > NAME_MAX || !/^[\w\u10D0-\u10FF\s\-.]+$/.test(newName)) {
       socket.emit("auth:guest:renameResult", { success: false, error: "სახელი უნდა იყოს 2-20 სიმბოლო" });
+      return;
+    }
+    if (findBannedWord(newName)) {
+      socket.emit("auth:guest:renameResult", { success: false, error: ABUSE_WORD_MESSAGE });
       return;
     }
     if (newLc === oldLc) {

@@ -1365,6 +1365,19 @@ socket.on("nameTaken", () => {
   nameInput.select();
 });
 
+// Name refused because it contains a banned word. Distinct from nameTaken:
+// retrying the same name will never work, so don't run the reconnect retry
+// logic — just tell them and let them pick something else.
+socket.on("nameRejected", ({ message }) => {
+  saveNameBtn.disabled    = false;
+  saveNameBtn.textContent = isFirstLogin ? "საუბრის დაწყება" : "Save Name";
+  _reconnectNameRetries = 0;
+  isReconnecting = false;
+  showNameError(message || "ეს სახელი დაუშვებელია. სხვა აირჩიეთ.");
+  nameInput.focus();
+  nameInput.select();
+});
+
 socket.on("onlineCount", (count) => updateOnlineCount(count));
 
 socket.on("queuePosition", ({ position, total }) => {
