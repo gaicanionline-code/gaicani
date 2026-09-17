@@ -4585,6 +4585,112 @@ app.post("/api/auth/login", authLimiter, express.json({ limit: "5kb" }), async (
 });
 
 // POST /api/auth/logout
+// POST /api/auth/delete-account — permanently delete the caller's own account.
+//
+// Requires the account password again, even though a valid token was already
+// supplied: a token is enough to read and post, but not enough to destroy an
+// account. If someone walks up to an unlocked phone or steals a session, the
+// password is the thing standing between them and irreversible deletion.
+//
+// What happens to the user's content:
+//   * Personal data (private messages, friendships, streaks, blocks, reports)
+//     is DELETED outright.
+//   * Forum posts/comments and room messages are ANONYMISED, not deleted, so
+//     conversations other people took part in don't get holes punched in them.
+//     The author becomes "წაშლილი მომხმარებელი" and authorLc is set to a
+//     sentinel that no real account can ever match.
+//   * The username is released, so it can be registered again later.
+app.post("/api/auth/delete-account", authLimiter, express.json({ limit: "2kb" }), async (req, res) => {
+  const token = req.headers.authorization?.replace("Bearer ", "") || req.body?.token;
+  const { password } = req.body || {};
+
+  if (!token) return res.status(401).json({ error: "No token" });
+  const entry = authTokens.get(token);
+  if (!entry || Date.now() >= entry.expiry) {
+    authTokens.delete(token);
+    return res.status(401).json({ error: "Token expired" });
+  }
+  const lc = entry.usernameLower;
+  const user = registeredUsers.get(lc);
+  if (!user) return res.status(401).json({ error: "User not found" });
+  if (user.isGuest) return res.status(400).json({ error: "სტუმრის ანგარიში არ საჭიროებს წაშლას" });
+
+  if (typeof password !== "string" || !password)
+    return res.status(400).json({ error: "პაროლი სავალდებულოა" });
+  if (!(await authVerifyPassword(password, user.passwordHash)))
+    return res.status(403).json({ error: "პაროლი არასწორია" });
+
+  const displayName = user.username;
+  const DELETED_LABEL = "წაშლილი მომხმარებელი";
+  const DELETED_LC = "\u0000deleted";  // can never collide with a real username
+
+  // 1. Other people's friend lists, pending requests and block lists
+  for (const [, other] of registeredUsers) {
+    if (Array.isArray(other.friends))        other.friends        = other.friends.filter(f => f !== lc);
+    if (Array.isArray(other.pendingRequests))other.pendingRequests = other.pendingRequests.filter(r => r !== lc);
+    if (Array.isArray(other.blockedUsers))   other.blockedUsers   = other.blockedUsers.filter(b => b !== lc);
+  }
+
+  // 2. Private conversations involving this user, and their streaks
+  for (const [roomId] of privateRooms) {
+    if (roomId.split("::").includes(lc)) privateRooms.delete(roomId);
+  }
+  for (const [roomId] of friendStreaks) {
+    if (roomId.split("::").includes(lc)) friendStreaks.delete(roomId);
+  }
+
+  // 3. Chat rooms: drop membership, anonymise anything they wrote
+  for (const [, room] of chatRooms) {
+    if (Array.isArray(room.members)) room.members = room.members.filter(m => m !== lc);
+    if (Array.isArray(room.bannedUsers)) room.bannedUsers = room.bannedUsers.filter(b => b !== lc);
+    if (Array.isArray(room.messages)) {
+      for (const m of room.messages) {
+        if (m.fromLc === lc) { m.fromLc = DELETED_LC; m.fromUsername = DELETED_LABEL; }
+      }
+    }
+    if (room.lastRead) delete room.lastRead[lc];
+  }
+
+  // 4. Forum: anonymise posts and comments, strip their votes
+  for (const [, post] of forumPosts) {
+    if (post.authorLc === lc) { post.authorLc = DELETED_LC; post.authorUsername = DELETED_LABEL; }
+    if (post.votes) delete post.votes[lc];
+    if (post.lastRead) delete post.lastRead[lc];
+    if (Array.isArray(post.comments)) {
+      for (const c of post.comments) {
+        if (c.authorLc === lc) { c.authorLc = DELETED_LC; c.authorUsername = DELETED_LABEL; }
+        if (c.votes) delete c.votes[lc];
+      }
+    }
+  }
+
+  // 5. Moderation records tied to the account
+  if (typeof accountReportLog !== "undefined") accountReportLog.delete(lc);
+
+  // 6. Kill every session, then remove the account itself
+  for (const [t, e] of authTokens) if (e.usernameLower === lc) authTokens.delete(t);
+  const sockets = onlineRegSockets.get(lc);
+  if (sockets) {
+    for (const sid of sockets) {
+      const s = io.sockets.sockets.get(sid);
+      if (s) { s.emit("auth:accountDeleted"); setTimeout(() => s.disconnect(true), 300); }
+    }
+  }
+  onlineRegSockets.delete(lc);
+  registeredUsers.delete(lc);
+  authReservedNames.delete(lc);   // username becomes available again
+  activeUsernames.delete(lc);
+
+  saveAuthUsers();
+  savePrivateMsgs();
+  saveStreaks();
+  saveChatRooms();
+  saveForum();
+
+  console.log(`[ACCOUNT] "${displayName}" deleted their own account`);
+  res.json({ success: true });
+});
+
 app.post("/api/auth/logout", express.json({ limit: "1kb" }), (req, res) => {
   const { token } = req.body || {};
   if (token) authTokens.delete(token);

@@ -196,6 +196,19 @@
     .install-cta-sub { font-size: 0.76em; color: var(--muted); margin-top: 2px; }
     .install-cta-arrow { font-size: 1.4em; color: var(--muted); flex-shrink: 0; }
 
+    /* ── Danger zone (account deletion) ── */
+    .danger-zone { border-color: rgba(242,63,66,0.3); }
+    .danger-zone .section-label { color: #f56769; border-bottom-color: rgba(242,63,66,0.2); }
+    .danger-zone-body { padding: 14px 16px 16px; }
+    .danger-zone-text { font-size: 0.8em; color: var(--muted); line-height: 1.6; margin-bottom: 12px; }
+    .btn-delete-account {
+      width: 100%; padding: 11px; border-radius: var(--radius-sm);
+      background: rgba(242,63,66,0.1); border: 1px solid rgba(242,63,66,0.35);
+      color: #f56769; font-weight: 700; font-size: 0.86em; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-delete-account:hover { background: rgba(242,63,66,0.2); }
+
     .games-heading {
       display: flex; align-items: center; justify-content: space-between;
       margin: 4px 2px 10px;
@@ -766,6 +779,22 @@
         font-size: 16px;
       }
     }
+  
+    /* ── Touch target size ────────────────────────────────────────────────
+       These close/back buttons are 22-34px, below the ~44px minimum that's
+       comfortable to hit with a thumb. Rather than making them visually
+       bigger (which would change the design), an invisible centred ::after
+       extends only the TAPPABLE area to 44x44. Touch devices only.
+       Deliberately limited to isolated buttons — the same trick on things
+       like the colour swatches or vote arrows would overlap neighbouring
+       hit areas and cause mis-taps.                                     */
+    @media (pointer: coarse) {
+      .profile-card-close::after {
+        content: ""; position: absolute;
+        top: 50%; left: 50%; transform: translate(-50%, -50%);
+        width: 44px; height: 44px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1015,6 +1044,34 @@
       <div class="friends-list" id="blockedList"></div>
     </div>
 
+    <!-- Danger zone — placed last, away from everyday controls -->
+    <div class="section danger-zone" id="dangerZone" style="display:none">
+      <div class="section-label">⚠️ საშიში ზონა</div>
+      <div class="danger-zone-body">
+        <div class="danger-zone-text">
+          ანგარიშის წაშლა საბოლოოა. წაიშლება შენი პირადი მიმოწერა, მეგობრები და პროგრესი.
+          ფორუმსა და ოთახებში დაწერილი ტექსტი დარჩება, მაგრამ ავტორის სახელის გარეშე.
+        </div>
+        <button class="btn-delete-account" id="deleteAccountBtn">ანგარიშის წაშლა</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Delete-account confirmation — requires the password again -->
+  <div id="deleteAccountBackdrop" class="rename-modal-backdrop">
+    <div class="rename-modal">
+      <div class="rename-modal-title">⚠️ ნამდვილად წაშალო ანგარიში?</div>
+      <div class="rename-modal-sub">
+        ეს მოქმედება <b>შეუქცევადია</b>. დასადასტურებლად შეიყვანე პაროლი.
+      </div>
+      <input type="password" id="deleteAccountPassword" class="rename-modal-input" placeholder="პაროლი" autocomplete="current-password" />
+      <div class="rename-modal-error" id="deleteAccountError"></div>
+      <div class="rename-modal-actions">
+        <button class="rename-modal-btn rename-modal-cancel" id="deleteAccountCancel">გაუქმება</button>
+        <button class="rename-modal-btn" id="deleteAccountConfirm" style="background:#f23f42;color:#fff;">სამუდამოდ წაშლა</button>
+      </div>
+    </div>
   </div>
 
   <div id="toast-container"></div>
@@ -1370,6 +1427,11 @@
           authUser = { username, token: guestToken || null, friends: [], pendingRequests: [], avatar: avatar || AVAILABLE_AVATARS[0], bio: bio || "", isGuest: true };
           enterGuestMode();
           if (typeof window._bindGuestRenameListener === "function") window._bindGuestRenameListener(socket);
+        } else {
+          // Real account — account deletion only makes sense here. Guests have
+          // nothing persisted to delete.
+          const dz = document.getElementById("dangerZone");
+          if (dz) dz.style.display = "";
         }
         if (authUser) {
           authUser.friends = friends || [];
@@ -2372,6 +2434,65 @@
           else localStorage.setItem(DND_KEY, "1");
         } catch (_) {}
         showToast(input.checked ? "🔔 შეტყობინებები ჩართულია" : "🔕 შეტყობინებები გამორთულია ჩატის დროს");
+      });
+    })();
+
+    /* ── Delete account ───────────────────────────────────────────────────
+       Two gates before anything irreversible happens: the danger-zone button
+       only opens a modal, and the modal requires the account password. */
+    (function initDeleteAccount() {
+      const backdrop = document.getElementById("deleteAccountBackdrop");
+      const btn = document.getElementById("deleteAccountBtn");
+      const pwd = document.getElementById("deleteAccountPassword");
+      const errEl = document.getElementById("deleteAccountError");
+      const cancel = document.getElementById("deleteAccountCancel");
+      const confirm = document.getElementById("deleteAccountConfirm");
+      if (!backdrop || !btn) return;
+
+      function close() { backdrop.classList.remove("show"); }
+
+      btn.addEventListener("click", () => {
+        pwd.value = "";
+        errEl.textContent = "";
+        confirm.disabled = false;
+        confirm.textContent = "სამუდამოდ წაშლა";
+        backdrop.classList.add("show");
+        setTimeout(() => pwd.focus(), 50);
+      });
+      cancel.addEventListener("click", close);
+      backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
+
+      confirm.addEventListener("click", async () => {
+        const password = pwd.value;
+        if (!password) { errEl.textContent = "შეიყვანე პაროლი"; return; }
+        errEl.textContent = "";
+        confirm.disabled = true;
+        confirm.textContent = "იშლება...";
+        try {
+          const res = await fetch("/api/auth/delete-account", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + (authUser?.token || "") },
+            body: JSON.stringify({ password }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            errEl.textContent = data.error || "წაშლა ვერ მოხერხდა";
+            confirm.disabled = false;
+            confirm.textContent = "სამუდამოდ წაშლა";
+            return;
+          }
+          // Gone — clear every local trace and send them to the front page.
+          try {
+            localStorage.removeItem("gaicani_auth_token");
+            localStorage.removeItem("gaicani_auth_user");
+            sessionStorage.clear();
+          } catch (_) {}
+          window.location.href = "/";
+        } catch {
+          errEl.textContent = "ქსელის შეცდომა — სცადე თავიდან";
+          confirm.disabled = false;
+          confirm.textContent = "სამუდამოდ წაშლა";
+        }
       });
     })();
 
