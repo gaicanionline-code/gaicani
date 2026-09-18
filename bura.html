@@ -121,6 +121,46 @@
     .pick-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .pick-tag{font-size:.68em;color:var(--muted);flex-shrink:0}
     .pick-check{font-size:.9em;color:var(--accent-lt);flex-shrink:0}
+
+    /* ── Face-down dealing ────────────────────────────────────────────────
+       The server never sends another player's hidden cards (verified), so
+       nothing can be revealed early by inspecting traffic. This is the
+       matching VISUAL behaviour: a new card arrives back-side up, travels,
+       and only then flips — and only in your own hand. Opponents' incoming
+       cards never flip at all. */
+    .bu-dealwrap { perspective: 700px; display: inline-block; }
+    .bu-flip {
+      position: relative; width: 42px; height: 60px;
+      transform-style: preserve-3d;
+      animation: buDealIn .5s cubic-bezier(.2,.7,.3,1) both, buFlip .45s ease-in .42s both;
+    }
+    .bu-flip .face, .bu-flip .back {
+      position: absolute; inset: 0; backface-visibility: hidden;
+      -webkit-backface-visibility: hidden; border-radius: 6px;
+    }
+    .bu-flip .back {
+      background: linear-gradient(135deg,#3b4a8c,#243063);
+      border: 1px solid rgba(255,255,255,.25);
+      box-shadow: 0 2px 6px rgba(0,0,0,.4);
+    }
+    .bu-flip .face { transform: rotateY(180deg); }
+    /* Cards that are NOT yours only ever do the travel — never the flip. */
+    .bu-flip.nopeek { animation: buDealIn .5s cubic-bezier(.2,.7,.3,1) both; }
+
+    @keyframes buDealIn {
+      from { transform: translate(-40px,-120px) rotate(-18deg) scale(.7); opacity: 0; }
+      to   { transform: translate(0,0) rotate(0) scale(1); opacity: 1; }
+    }
+    @keyframes buFlip {
+      from { transform: rotateY(0deg); }
+      to   { transform: rotateY(180deg); }
+    }
+    /* A card being handed to an opponent: travels away, stays face down. */
+    .bu-back.dealing { animation: buDealIn .5s cubic-bezier(.2,.7,.3,1) both; }
+    @media (prefers-reduced-motion: reduce) {
+      .bu-flip, .bu-flip.nopeek, .bu-back.dealing { animation: none !important; }
+      .bu-flip { transform: rotateY(180deg); }
+    }
   </style>
 </head>
 <body>
@@ -226,6 +266,8 @@
   const isRed = s => s === "h" || s === "d";
 
   let socket = null, roomId = null, state = null, selected = [];
+  let prevHand = [];          // to detect newly dealt cards
+  let prevCounts = [];        // same, for opponents
   let cfg = { mode:"classic", target:6, malutkaAnySuit:false };
 
   function toast(msg){
@@ -386,6 +428,8 @@
   }
 
   /* ── game render ── */
+  let suppressDealAnim = false;
+
   function render(s){
     state=s;
     if(s.status==="lobby"){ showScreen("lobby"); renderLobby(s); return; }
@@ -428,10 +472,18 @@
       const n=document.createElement("div"); n.textContent=p.username;
       const c=document.createElement("div"); c.className="bu-opp-cards";
       const cnt=(s.handCounts&&s.handCounts[p.seat])||0;
-      for(let i=0;i<cnt;i++){ const b=document.createElement("div"); b.className="bu-back"; c.appendChild(b); }
+      const prev=prevCounts[p.seat]||0;
+      for(let i=0;i<cnt;i++){
+        const b=document.createElement("div");
+        // Cards dealt to someone else animate in face down and stay that way.
+        b.className="bu-back"+(!suppressDealAnim && i>=prev ? " dealing" : "");
+        c.appendChild(b);
+      }
       d.appendChild(n); d.appendChild(c);
       opps.appendChild(d);
     });
+
+    prevCounts = (s.handCounts||[]).slice();
 
     // trick
     const ta=$("trickArea"); ta.innerHTML="";
@@ -456,16 +508,34 @@
 
     // my hand
     const hand=$("myHand"); hand.innerHTML="";
-    (s.myHand||[]).forEach(c=>{
+    const nowHand=s.myHand||[];
+    // Anything in my hand that wasn't there last render was just dealt.
+    const freshlyDealt=new Set(nowHand.filter(c=>!prevHand.includes(c)));
+    nowHand.forEach(c=>{
       const el=cardEl(c);
       if(selected.includes(c)) el.classList.add("sel");
       el.addEventListener("click",()=>{
         const i=selected.indexOf(c);
         if(i>=0) selected.splice(i,1); else selected.push(c);
-        render(state);
+        suppressDealAnim = true; render(state); suppressDealAnim = false;
       });
-      hand.appendChild(el);
+      if(freshlyDealt.has(c) && !suppressDealAnim){
+        // Arrives back-side up, travels, then flips — only for me.
+        const wrap=document.createElement("div"); wrap.className="bu-dealwrap";
+        const flip=document.createElement("div"); flip.className="bu-flip";
+        const back=document.createElement("div"); back.className="back";
+        const face=document.createElement("div"); face.className="face";
+        face.appendChild(el);
+        flip.appendChild(back); flip.appendChild(face);
+        wrap.appendChild(flip);
+        hand.appendChild(wrap);
+        // Once the flip finishes, drop the wrapper so clicking/selecting is normal.
+        setTimeout(()=>{ if(wrap.parentNode){ wrap.replaceWith(el); } }, 900);
+      } else {
+        hand.appendChild(el);
+      }
     });
+    prevHand=[...nowHand];
 
     renderActions(s);
   }
