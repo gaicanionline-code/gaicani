@@ -10636,9 +10636,9 @@ io.on("connection", (socket) => {
 
   /* ── ბურა ──────────────────────────────────────────────────────────── */
   socket.on("bura:invite", ({ toUsernames, mode, target, malutkaAnySuit }) => {
-    if (!socket._regUser || socket._regUser.isGuest) {
-      socket.emit("guest:registerRequired", { feature: "bura" }); return;
-    }
+    // Guests may play — they carry a _regUser record too (isGuest: true),
+    // so every lookup below works the same for them.
+    if (!socket._regUser) return;
     const hostLc = socket._regUser.usernameLower;
     const hostUser = registeredUsers.get(hostLc);
     if (!hostUser) return;
@@ -10693,9 +10693,9 @@ io.on("connection", (socket) => {
   });
 
   socket.on("bura:join", ({ roomId }) => {
-    if (!socket._regUser || socket._regUser.isGuest) {
-      socket.emit("guest:registerRequired", { feature: "bura" }); return;
-    }
+    // Guests may play — they carry a _regUser record too (isGuest: true),
+    // so every lookup below works the same for them.
+    if (!socket._regUser) return;
     const room = buraRooms.get(roomId);
     if (!room) { socket.emit("bura:error", { message: "ოთახი აღარ არსებობს" }); return; }
     const lc = socket._regUser.usernameLower;
