@@ -834,6 +834,22 @@
         font-size: 16px;
       }
     }
+  
+    /* ── Touch target size ────────────────────────────────────────────────
+       These close/back buttons are 22-34px, below the ~44px minimum that's
+       comfortable to hit with a thumb. Rather than making them visually
+       bigger (which would change the design), an invisible centred ::after
+       extends only the TAPPABLE area to 44x44. Touch devices only.
+       Deliberately limited to isolated buttons — the same trick on things
+       like the colour swatches or vote arrows would overlap neighbouring
+       hit areas and cause mis-taps.                                     */
+    @media (pointer: coarse) {
+      .profile-card-close::after {
+        content: ""; position: absolute;
+        top: 50%; left: 50%; transform: translate(-50%, -50%);
+        width: 44px; height: 44px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1904,6 +1920,22 @@
         onAccept: () => { window.location.href = "/blackjack.html?room=" + encodeURIComponent(roomId); },
         onDecline: () => socket.emit("blackjack:declineInvite", { roomId }),
       });
+
+    socket.on("bura:invited", ({ roomId, fromUsername }) => {
+      renderChatInviteBar({
+        icon: "\u{1F0A1}", messageHtml: `<strong>${esc(fromUsername)}</strong>-\u10db\u10d0 \u10db\u10dd\u10d2\u10d8\u10ec\u10d5\u10d8\u10d0 \u10d1\u10e3\u10e0\u10d0\u10e8\u10d8`,
+        onAccept: () => { window.location.href = "/bura.html?room=" + encodeURIComponent(roomId); },
+        onDecline: () => {},
+      });
+    });
+
+    socket.on("horror:invited", ({ roomId, fromUsername }) => {
+      renderChatInviteBar({
+        icon: "\u{1F56F}\uFE0F", messageHtml: `<strong>${esc(fromUsername)}</strong>-\u10db\u10d0 \u10db\u10dd\u10d2\u10d8\u10ec\u10d5\u10d8\u10d0 Horror-\u10e8\u10d8`,
+        onAccept: () => { window.location.href = "/horror.html?room=" + encodeURIComponent(roomId); },
+        onDecline: () => {},
+      });
+    });
     });
 
     socket.on("auth:error", () => {
