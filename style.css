@@ -2857,3 +2857,42 @@ body.rc-theme-light .reply-preview-close:hover { color: #1a1b1e; background: rgb
     font-size: 16px;
   }
 }
+
+/* ── Touch target size ────────────────────────────────────────────────
+   These close/back buttons are 22-34px, below the ~44px minimum that's
+   comfortable to hit with a thumb. Rather than making them visually
+   bigger (which would change the design), an invisible centred ::after
+   extends only the TAPPABLE area to 44x44. Touch devices only.
+   Deliberately limited to isolated buttons — the same trick on things
+   like the colour swatches or vote arrows would overlap neighbouring
+   hit areas and cause mis-taps.                                     */
+@media (pointer: coarse) {
+  .modal-close-btn::after {
+    content: ""; position: absolute;
+    top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 44px; height: 44px;
+  }
+  .bio-popup-close::after {
+    content: ""; position: absolute;
+    top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 44px; height: 44px;
+  }
+}
+
+/* ── Donation card (pre-chat modal) ──────────────────────────────────────── */
+.donate-card {
+  background: linear-gradient(160deg, rgba(168,85,247,.14), rgba(88,101,242,.10));
+  border: 1px solid rgba(168,85,247,.32);
+  border-radius: 14px;
+  padding: 16px 14px;
+  text-align: center;
+  margin-top: 18px;
+}
+.donate-text { font-size: .82em; line-height: 1.65; color: #c7cad3; margin-bottom: 13px; }
+.donate-btn {
+  display: inline-block; text-decoration: none;
+  background: linear-gradient(135deg,#a855f7,#7c3aed); color: #fff;
+  font-weight: 800; font-size: .85em; padding: 11px 24px; border-radius: 11px;
+  box-shadow: 0 8px 22px rgba(168,85,247,.32);
+}
+.donate-btn:hover { filter: brightness(1.07); }
