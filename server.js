@@ -1975,15 +1975,25 @@ async function banIP(ip) {
 }
 
 async function deleteUser(username) {
-  if (!confirm("Delete the account \"" + username + "\"?\n\nThis permanently removes the account, deletes their forum posts, comments and room messages, and bans their last known IP.\n\nThis cannot be undone.")) return;
+  const warn = [
+    'Delete the account: ' + username,
+    '',
+    'This permanently removes the account, deletes their forum posts,',
+    'comments and room messages, and bans their last known IP.',
+    '',
+    'This cannot be undone.'
+  ].join(String.fromCharCode(10));
+  if (!confirm(warn)) return;
   try {
-    const r = await api("POST", R.deleteUser + "?username=" + encodeURIComponent(username));
-    alert("Deleted " + username + "\n\nposts: " + r.removedPosts +
-          "\ncomments: " + r.removedComments +
-          "\nroom messages: " + r.removedRoomMsgs +
-          "\nIP banned: " + (r.bannedIp || "none on file"));
+    const r = await api('POST', R.deleteUser + '?username=' + encodeURIComponent(username));
+    const nl = String.fromCharCode(10);
+    alert('Deleted ' + username + nl + nl +
+          'posts: ' + r.removedPosts + nl +
+          'comments: ' + r.removedComments + nl +
+          'room messages: ' + r.removedRoomMsgs + nl +
+          'IP banned: ' + (r.bannedIp || 'none on file'));
     load();
-  } catch (e) { alert("Failed: " + e.message); }
+  } catch (e) { alert('Failed: ' + e.message); }
 }
 
 async function unbanIP(ip) {
