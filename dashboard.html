@@ -209,6 +209,23 @@
     }
     .btn-delete-account:hover { background: rgba(242,63,66,0.2); }
 
+
+    /* ── Donation card ── */
+    .donate-card {
+      background: linear-gradient(160deg, rgba(168,85,247,.14), rgba(88,101,242,.10));
+      border: 1px solid rgba(168,85,247,.32);
+      border-radius: var(--radius-lg);
+      padding: 18px 16px; text-align: center; margin-bottom: 14px;
+    }
+    .donate-text { font-size: .84em; line-height: 1.65; color: var(--text-dim); margin-bottom: 14px; }
+    .donate-btn {
+      display: inline-block; text-decoration: none;
+      background: linear-gradient(135deg,#a855f7,#7c3aed); color: #fff;
+      font-weight: 800; font-size: .86em; padding: 11px 24px; border-radius: var(--radius-md);
+      box-shadow: 0 8px 22px rgba(168,85,247,.32);
+    }
+    .donate-btn:hover { filter: brightness(1.07); }
+
     .games-heading {
       display: flex; align-items: center; justify-content: space-between;
       margin: 4px 2px 10px;
@@ -256,6 +273,8 @@
     .game-tile--joker    { --tile-accent: #8b5cf6; }
     .game-tile--imposter { --tile-accent: #7c3aed; }
     .game-tile--blackjack{ --tile-accent: #2dbd7c; }
+    .game-tile--bura     { --tile-accent: #e0a458; }
+    .game-tile--horror   { --tile-accent: #7c3aed; }
 
     /* ── Active-room lists per game — appear below the grid, only when
        relevant, kept as their own clearly-labeled area ── */
@@ -850,9 +869,20 @@
       <div style="background:linear-gradient(135deg,#5865f2,#4752c4);border-radius:12px;padding:16px;">
         <div style="font-weight:800;font-size:1.02em;margin-bottom:6px;">✨ სტუმრის რეჟიმში ხარ</div>
         <div style="font-size:0.86em;line-height:1.6;opacity:0.95;margin-bottom:12px;">
-          შეგიძლია ითამაშო ყველა თამაში და ნახო ოთახები & ფორუმი. დარეგისტრირდით რომ დაამატოთ მეგობრები, გქონდეთ პირადი ჩატი, დაწეროთ ფორუმზე და ოთახებში, და შეინახოთ თქვენი პროგრესი სამუდამოდ.
+          დარეგისტრირდი და მიიღე: მეგობრები, პირადი ჩატი, ფორუმი და ოთახები — პროგრესი კი სამუდამოდ შენახული.
         </div>
         <a href="/" style="display:inline-block;background:#fff;color:#4752c4;font-weight:800;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.86em;">დარეგისტრირდი უფასოდ →</a>
+      </div>
+
+      <!-- Donation, shown under the register pitch for guests -->
+      <div class="donate-card" style="margin:14px 0 0;">
+        <div class="donate-text">
+          თუ მოგწონს Gaicani.online და გინდა, რომ კიდევ უფრო გავაუმჯობესოთ, შეგიძლია მხარი დაგვიჭირო მცირე შემოწირულობით 💜<br>
+          შენი მხარდაჭერა ჩვენთვის ძალიან ბევრს ნიშნავს.
+        </div>
+        <a class="donate-btn" href="https://www.kisa.ge/donate/8fvhi1xii0" target="_blank" rel="noopener noreferrer">
+          მხარდაჭერა 💜
+        </a>
       </div>
     </div>
 
@@ -956,6 +986,14 @@
         <div class="game-tile-icon"><img src="/icon-blackjack.jpg" alt="ბლექჯეკი" /></div>
         <div class="game-tile-name">ბლექჯეკი</div>
       </a>
+      <a href="/bura.html" class="game-tile game-tile--bura">
+        <div class="game-tile-icon">🂡</div>
+        <div class="game-tile-name">ბურა</div>
+      </a>
+      <a href="/horror.html" class="game-tile game-tile--horror">
+        <div class="game-tile-icon">🕯️</div>
+        <div class="game-tile-name">Horror</div>
+      </a>
     </div>
 
     <!-- Active tables/rooms you can join — appear below the grid, per game,
@@ -1042,6 +1080,17 @@
         <span class="section-badge" id="blockedCount">0</span>
       </div>
       <div class="friends-list" id="blockedList"></div>
+    </div>
+
+    <!-- Donation — shown to everyone, near the bottom of the page -->
+    <div class="donate-card">
+      <div class="donate-text">
+        თუ მოგწონს Gaicani.online და გინდა, რომ კიდევ უფრო გავაუმჯობესოთ, შეგიძლია მხარი დაგვიჭირო მცირე შემოწირულობით 💜<br>
+        შენი მხარდაჭერა ჩვენთვის ძალიან ბევრს ნიშნავს.
+      </div>
+      <a class="donate-btn" href="https://www.kisa.ge/donate/8fvhi1xii0" target="_blank" rel="noopener noreferrer">
+        მხარდაჭერა 💜
+      </a>
     </div>
 
     <!-- Danger zone — placed last, away from everyday controls -->
