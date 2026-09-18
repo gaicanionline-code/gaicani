@@ -70,6 +70,17 @@
       border:1px solid var(--accent);border-radius:10px;padding:9px 16px;font-size:.85em;z-index:950;
       opacity:0;pointer-events:none;transition:opacity .2s}
     .hr-toast.show{opacity:1}
+
+    .pick-list{display:flex;flex-direction:column;gap:6px;max-height:230px;overflow-y:auto;margin-bottom:10px}
+    .pick-row{display:flex;align-items:center;gap:9px;background:var(--surface-2);border:1px solid transparent;
+      border-radius:10px;padding:8px 10px;cursor:pointer;font-size:.85em}
+    .pick-row.sel{border-color:var(--accent);background:rgba(124,58,237,.18)}
+    .pick-av{width:28px;height:28px;border-radius:50%;flex-shrink:0;overflow:hidden;background:rgba(124,58,237,.25);
+      display:flex;align-items:center;justify-content:center;font-size:.7em;font-weight:800;color:var(--accent-lt)}
+    .pick-av img{width:100%;height:100%;object-fit:cover;display:block}
+    .pick-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pick-tag{font-size:.68em;color:var(--muted);flex-shrink:0}
+    .pick-check{font-size:.9em;color:var(--accent-lt);flex-shrink:0}
   </style>
 </head>
 <body>
@@ -92,6 +103,12 @@
     <div class="hr-card hidden" id="roomCard">
       <h3>მონაწილეები</h3>
       <div id="playerList"></div>
+      <button class="hr-btn secondary" id="inviteBtn" style="margin-top:10px">მოთამაშის მოწვევა</button>
+      <div id="invitePanel" class="hidden" style="margin-top:12px">
+        <div class="hr-sub" style="margin-bottom:6px">ონლაინ მომხმარებლები</div>
+        <div class="pick-list" id="pickList"><div class="hr-empty">იტვირთება...</div></div>
+        <button class="hr-btn" id="sendInviteBtn" disabled>მოწვევის გაგზავნა</button>
+      </div>
       <button class="hr-btn" id="startBtn" style="margin-top:10px" disabled>დაწყება</button>
     </div>
 
@@ -150,7 +167,7 @@
   }
 
   function renderRoom(s){
-    roomId=s.roomId; isHost=s.isHost;
+    roomId=s.roomId; isHost=s.isHost; lastRoom=s;
     if(s.status==="lobby"){
       show("lobby");
       $("roomCard").classList.remove("hidden");
@@ -192,6 +209,47 @@
     socket.emit("horror:chat",{roomId,text:v});
     el.value=""; el.style.height="auto";
   }
+
+  // Invite picker — everyone online, registered accounts first then guests.
+  let onlineUsers=[], picked=new Set(), lastRoom=null;
+
+  $("inviteBtn").addEventListener("click",()=>{
+    const p=$("invitePanel"); p.classList.toggle("hidden");
+    if(!p.classList.contains("hidden")) socket.emit("users:listOnline");
+  });
+
+  function renderPickList(){
+    const box=$("pickList"); box.innerHTML="";
+    const inRoom=new Set((lastRoom&&lastRoom.players?lastRoom.players:[]).map(p=>p.username.toLowerCase()));
+    const avail=onlineUsers.filter(u=>!inRoom.has(u.username.toLowerCase()));
+    if(!avail.length){ box.innerHTML='<div class="hr-empty">ახლა არავინაა ონლაინ</div>';
+      $("sendInviteBtn").disabled=true; return; }
+    avail.forEach(u=>{
+      const lc=u.username.toLowerCase();
+      const row=document.createElement("div");
+      row.className="pick-row"+(picked.has(lc)?" sel":"");
+      const av=document.createElement("div"); av.className="pick-av";
+      if(u.avatar){ const im=document.createElement("img"); im.src="/"+u.avatar; im.alt=u.username; av.appendChild(im); }
+      else av.textContent=(u.username||"?").charAt(0).toUpperCase();
+      const nm=document.createElement("div"); nm.className="pick-name"; nm.textContent=u.username;
+      const tg=document.createElement("div"); tg.className="pick-tag"; tg.textContent=u.isGuest?"სტუმარი":"";
+      const ck=document.createElement("div"); ck.className="pick-check"; ck.textContent=picked.has(lc)?"✓":"";
+      row.appendChild(av); row.appendChild(nm); row.appendChild(tg); row.appendChild(ck);
+      row.addEventListener("click",()=>{ picked.has(lc)?picked.delete(lc):picked.add(lc); renderPickList(); });
+      box.appendChild(row);
+    });
+    $("sendInviteBtn").disabled=picked.size===0;
+    $("sendInviteBtn").textContent=picked.size?`მოწვევის გაგზავნა (${picked.size})`:"მოწვევის გაგზავნა";
+  }
+
+  $("sendInviteBtn").addEventListener("click",()=>{
+    const names=onlineUsers.filter(u=>picked.has(u.username.toLowerCase())).map(u=>u.username);
+    if(!names.length||!roomId) return;
+    socket.emit("horror:invite",{roomId,toUsernames:names});
+    picked.clear(); renderPickList();
+    $("invitePanel").classList.add("hidden");
+    toast("მოწვევა გაიგზავნა");
+  });
 
   $("createBtn").addEventListener("click",()=>socket.emit("horror:create"));
   $("startBtn").addEventListener("click",()=>{if(roomId)socket.emit("horror:start",{roomId});});
@@ -252,6 +310,13 @@
       renderRoom(s);
     });
     socket.on("horror:rooms",({rooms})=>renderRooms(rooms));
+    socket.on("users:onlineList",({users})=>{ onlineUsers=users||[]; renderPickList(); });
+    socket.on("users:onlineChanged",()=>{
+      if(!$("invitePanel").classList.contains("hidden")) socket.emit("users:listOnline");
+    });
+    socket.on("horror:invited",({roomId:rid,fromUsername})=>{
+      if(confirm(`${fromUsername} გეპატიჟება Horror-ში. შეხვალ?`)) socket.emit("horror:join",{roomId:rid});
+    });
     socket.on("horror:message",m=>addMessage(m));
     socket.on("horror:error",({message})=>toast(message));
     socket.on("horror:ended",()=>{ toast("ოთახი დაიხურა"); setTimeout(()=>location.href="/dashboard.html",1400); });

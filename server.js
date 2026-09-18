@@ -10894,6 +10894,25 @@ io.on("connection", (socket) => {
     horrorRooms.delete(room.id);
   });
 
+  socket.on("horror:invite", ({ roomId, toUsernames }) => {
+    if (!socket._regUser) return;
+    const room = horrorRooms.get(roomId);
+    if (!room) return;
+    if (!room.players.some(p => p.socketId === socket.id)) return;
+    const from = socket._regUser.username;
+    const list = Array.isArray(toUsernames) ? toUsernames.filter(u => typeof u === "string").slice(0, 20) : [];
+    for (const uname of list) {
+      const lc = String(uname).toLowerCase();
+      if (room.players.some(p => p.lc === lc)) continue;
+      // onlineRegSockets holds guests too, so guests can be invited as well.
+      const sockets = onlineRegSockets.get(lc);
+      if (!sockets) continue;
+      for (const sid of sockets) {
+        io.sockets.sockets.get(sid)?.emit("horror:invited", { roomId: room.id, fromUsername: from });
+      }
+    }
+  });
+
   socket.on("horror:leave", () => cleanupHorrorForSocket(socket.id));
 
   socket.on("joker:leave", () => cleanupJokerForSocket(socket.id));
