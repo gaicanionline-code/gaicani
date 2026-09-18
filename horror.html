@@ -124,6 +124,8 @@
     <button class="hr-icon-btn" id="leaveBtn">←</button>
     <div><div class="hr-title">HORROR</div><div class="hr-sub" id="hostLabel"></div></div>
     <div class="hr-count" id="countLabel"></div>
+    <button class="hr-icon-btn hidden" id="endBtn" title="სესიის დასრულება"
+            style="background:rgba(242,63,66,.16);color:#f56769">⏹</button>
   </div>
   <div class="hr-feed" id="feed"></div>
   <div class="hr-inputbar">
@@ -185,6 +187,8 @@
       show("game");
       $("hostLabel").textContent="ჰოსტი: "+s.hostUsername;
       $("countLabel").textContent=s.players.filter(p=>p.connected).length+" მონაწილე";
+      // Only the host can close the session — everyone else just leaves.
+      $("endBtn").classList.toggle("hidden", !s.isHost);
     }
   }
 
@@ -255,6 +259,10 @@
   $("startBtn").addEventListener("click",()=>{if(roomId)socket.emit("horror:start",{roomId});});
   $("leaveBtn").addEventListener("click",()=>{
     if(confirm("დატოვებ ოთახს?")){socket.emit("horror:leave");location.href="/dashboard.html";}
+  });
+  $("endBtn").addEventListener("click",()=>{
+    if(!roomId) return;
+    if(confirm("დაასრულებ სესიას ყველასთვის?")) socket.emit("horror:end",{roomId});
   });
   $("sendBtn").addEventListener("click",send);
   $("chatInput").addEventListener("keydown",e=>{
