@@ -225,6 +225,34 @@ function addSystemBigMessage(text)         { _appendInfoMessage(text, "system-me
 //    "დააჭირეთ ღილაკს" hint, before their first search. Skipped entirely
 //    for already-registered users (window.gaicaniAuthUser is set by
 //    auth-client.js once a token is confirmed).
+
+// ── Donation card — shown in the chat feed right after the "press the button
+//    to search" hint. Unlike the register promo this is shown to EVERYONE,
+//    registered users included. Built with DOM nodes rather than innerHTML.
+function addDonationCard() {
+  const card = document.createElement("div");
+  card.className = "chat-donate-card";
+
+  const txt = document.createElement("div");
+  txt.className = "chat-donate-text";
+  txt.appendChild(document.createTextNode(
+    "თუ მოგწონს Gaicani.online და გინდა, რომ კიდევ უფრო გავაუმჯობესოთ, შეგიძლია მხარი დაგვიჭირო მცირე შემოწირულობით 💜"));
+  txt.appendChild(document.createElement("br"));
+  txt.appendChild(document.createTextNode("შენი მხარდაჭერა ჩვენთვის ძალიან ბევრს ნიშნავს."));
+
+  const btn = document.createElement("a");
+  btn.className = "chat-donate-btn";
+  btn.href = "https://www.kisa.ge/donate/8fvhi1xii0";
+  btn.target = "_blank";
+  btn.rel = "noopener noreferrer";
+  btn.textContent = "მხარდაჭერა 💜";
+
+  card.appendChild(txt);
+  card.appendChild(btn);
+  chat.appendChild(card);
+  scheduleScroll();
+}
+
 function addRegisterPromoCard() {
   if (window.gaicaniAuthUser) return;
 
@@ -1304,6 +1332,7 @@ socket.on("nameAccepted", (acceptedName) => {
     // Do NOT auto-search — user must press the Search button manually
     addSystemMessage("🔎 ძებნის დასაწყებად დააჭირეთ ღილაკს");
     addRegisterPromoCard();
+    addDonationCard();
   } else if (isReconnecting) {
     isReconnecting = false;
     _reconnectNameRetries = 0; // reset retry counter on success

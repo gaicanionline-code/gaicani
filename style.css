@@ -2896,3 +2896,36 @@ body.rc-theme-light .reply-preview-close:hover { color: #1a1b1e; background: rgb
   box-shadow: 0 8px 22px rgba(168,85,247,.32);
 }
 .donate-btn:hover { filter: brightness(1.07); }
+
+/* ── Donation card shown inside the chat feed (idle / pre-search state) ──── */
+.chat-donate-card {
+  align-self: center;
+  max-width: 440px;
+  width: calc(100% - 24px);
+  margin: 10px auto 4px;
+  background: linear-gradient(160deg, rgba(168,85,247,.13), rgba(88,101,242,.09));
+  border: 1px solid rgba(168,85,247,.30);
+  border-radius: 14px;
+  padding: 15px 16px;
+  text-align: center;
+}
+.chat-donate-text {
+  font-size: 0.84em;
+  line-height: 1.65;
+  color: #c7cad3;
+  margin-bottom: 12px;
+}
+.chat-donate-btn {
+  display: inline-block;
+  text-decoration: none;
+  background: linear-gradient(135deg, #a855f7, #7c3aed);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.84em;
+  padding: 10px 22px;
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(168,85,247,.30);
+}
+.chat-donate-btn:hover { filter: brightness(1.07); }
+
+body.rc-theme-light .chat-donate-text { color: #4b4f5a; }

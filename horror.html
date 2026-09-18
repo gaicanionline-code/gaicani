@@ -206,17 +206,47 @@
     this.style.height="auto"; this.style.height=Math.min(this.scrollHeight,90)+"px";
   });
 
+
+  // Registration gate — shown in-page instead of bouncing the user out to the
+  // home page (which is the random chat, and looked like the game was broken).
+  function showNeedsRegister(){
+    document.querySelectorAll(".hr-screen").forEach(s=>s.classList.remove("active"));
+    const wrap=document.createElement("div");
+    wrap.className="hr-screen active";
+    wrap.innerHTML='<div class="hr-header">'+
+      '<a href="/dashboard.html" class="hr-icon-btn" style="display:flex;align-items:center;justify-content:center;text-decoration:none">\u2190</a>'+
+      '<div><div class="hr-title">\u10d1\u10e3\u10e0\u10d0</div></div></div>';
+    const box=document.createElement("div");
+    box.className="hr-lobby";
+    const card=document.createElement("div"); card.className="hr-card";
+    const h=document.createElement("h3"); h.textContent="\u10e1\u10d0\u10ed\u10d8\u10e0\u10dd\u10d0 \u10e0\u10d4\u10d2\u10d8\u10e1\u10e2\u10e0\u10d0\u10ea\u10d8\u10d0";
+    const p=document.createElement("div"); p.className="hr-sub";
+    p.style.lineHeight="1.6"; p.style.marginBottom="14px";
+    p.textContent="Horror-\u10e8\u10d8 \u10e1\u10d0\u10d7\u10d0\u10db\u10d0\u10e8\u10dd\u10d3 \u10e1\u10d0\u10ed\u10d8\u10e0\u10dd\u10d0 \u10d0\u10dc\u10d2\u10d0\u10e0\u10d8\u10e8\u10d8. \u10e0\u10d4\u10d2\u10d8\u10e1\u10e2\u10e0\u10d0\u10ea\u10d8\u10d0 \u10e3\u10e4\u10d0\u10e1\u10dd\u10d0.";
+    const a=document.createElement("a"); a.className="hr-btn";
+    a.style.display="block"; a.style.textAlign="center"; a.style.textDecoration="none";
+    a.href="/"; a.textContent="\u10d3\u10d0\u10e0\u10d4\u10d2\u10d8\u10e1\u10e2\u10e0\u10d8\u10e0\u10d3\u10d8 \u2192";
+    const b=document.createElement("a"); b.className="hr-btn secondary";
+    b.style.display="block"; b.style.textAlign="center"; b.style.textDecoration="none"; b.style.marginTop="8px";
+    b.href="/dashboard.html"; b.textContent="\u10e3\u10d9\u10d0\u10dc";
+    card.appendChild(h); card.appendChild(p); card.appendChild(a); card.appendChild(b);
+    box.appendChild(card); wrap.appendChild(box);
+    document.body.appendChild(wrap);
+  }
+
   function init(){
     const a=auth(); me=a.username;
     socket=io();
-    socket.on("connect",()=>{ if(a.token) socket.emit("auth:token",{token:a.token}); else location.href="/"; });
+    socket.on("connect",()=>{ if(a.token) socket.emit("auth:token",{token:a.token});
+      else socket.emit("auth:guest",{preferredUsername:sessionStorage.getItem("gaicani_guest_username")||null}); });
     socket.on("auth:authenticated",({username})=>{
       me=username || me;
       socket.emit("horror:list");
       const p=new URLSearchParams(location.search).get("room");
       if(p) socket.emit("horror:join",{roomId:p});
     });
-    socket.on("auth:invalid",()=>location.href="/");
+    socket.on("auth:invalid",()=>{ try{localStorage.removeItem("gaicani_auth_token");}catch(_){}
+      socket.emit("auth:guest",{preferredUsername:null}); });
     socket.on("horror:room",s=>{
       history.replaceState(null,"","/horror.html?room="+encodeURIComponent(s.roomId));
       renderRoom(s);
@@ -225,7 +255,7 @@
     socket.on("horror:message",m=>addMessage(m));
     socket.on("horror:error",({message})=>toast(message));
     socket.on("horror:ended",()=>{ toast("ოთახი დაიხურა"); setTimeout(()=>location.href="/dashboard.html",1400); });
-    socket.on("guest:registerRequired",()=>{ alert("საჭიროა რეგისტრაცია"); location.href="/"; });
+    socket.on("guest:registerRequired",()=>{ showNeedsRegister(); });
   }
   init();
 })();

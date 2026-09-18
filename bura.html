@@ -451,20 +451,49 @@
   }
   function closeCallModal(){ $("callModal").classList.remove("show"); }
 
+
+  // Registration gate — shown in-page instead of bouncing the user out to the
+  // home page (which is the random chat, and looked like the game was broken).
+  function showNeedsRegister(){
+    document.querySelectorAll(".bu-screen").forEach(s=>s.classList.remove("active"));
+    const wrap=document.createElement("div");
+    wrap.className="bu-screen active";
+    wrap.innerHTML='<div class="bu-header">'+
+      '<a href="/dashboard.html" class="bu-icon-btn" style="display:flex;align-items:center;justify-content:center;text-decoration:none">\u2190</a>'+
+      '<div><div class="bu-title">\u10d1\u10e3\u10e0\u10d0</div></div></div>';
+    const box=document.createElement("div");
+    box.className="bu-lobby";
+    const card=document.createElement("div"); card.className="bu-card";
+    const h=document.createElement("h3"); h.textContent="\u10e1\u10d0\u10ed\u10d8\u10e0\u10dd\u10d0 \u10e0\u10d4\u10d2\u10d8\u10e1\u10e2\u10e0\u10d0\u10ea\u10d8\u10d0";
+    const p=document.createElement("div"); p.className="bu-sub";
+    p.style.lineHeight="1.6"; p.style.marginBottom="14px";
+    p.textContent="\u10d1\u10e3\u10e0\u10d0\u10e8\u10d8 \u10e1\u10d0\u10d7\u10d0\u10db\u10d0\u10e8\u10dd\u10d3 \u10e1\u10d0\u10ed\u10d8\u10e0\u10dd\u10d0 \u10d0\u10dc\u10d2\u10d0\u10e0\u10d8\u10e8\u10d8. \u10e0\u10d4\u10d2\u10d8\u10e1\u10e2\u10e0\u10d0\u10ea\u10d8\u10d0 \u10e3\u10e4\u10d0\u10e1\u10dd\u10d0.";
+    const a=document.createElement("a"); a.className="bu-btn";
+    a.style.display="block"; a.style.textAlign="center"; a.style.textDecoration="none";
+    a.href="/"; a.textContent="\u10d3\u10d0\u10e0\u10d4\u10d2\u10d8\u10e1\u10e2\u10e0\u10d8\u10e0\u10d3\u10d8 \u2192";
+    const b=document.createElement("a"); b.className="bu-btn secondary";
+    b.style.display="block"; b.style.textAlign="center"; b.style.textDecoration="none"; b.style.marginTop="8px";
+    b.href="/dashboard.html"; b.textContent="\u10e3\u10d9\u10d0\u10dc";
+    card.appendChild(h); card.appendChild(p); card.appendChild(a); card.appendChild(b);
+    box.appendChild(card); wrap.appendChild(box);
+    document.body.appendChild(wrap);
+  }
+
   /* ── socket ── */
   function init(){
     const {token}=loadAuth();
     socket=io();
     socket.on("connect",()=>{
       if(token) socket.emit("auth:token",{token});
-      else location.href="/";
+      else socket.emit("auth:guest",{preferredUsername:sessionStorage.getItem("gaicani_guest_username")||null});
     });
     socket.on("auth:authenticated",()=>{
       socket.emit("bura:listPublicRooms");
       const p=new URLSearchParams(location.search).get("room");
       if(p) socket.emit("bura:join",{roomId:p});
     });
-    socket.on("auth:invalid",()=>location.href="/");
+    socket.on("auth:invalid",()=>{ try{localStorage.removeItem("gaicani_auth_token");}catch(_){}
+      socket.emit("auth:guest",{preferredUsername:null}); });
     socket.on("bura:room",s=>{
       roomId=s.roomId; selected=[];
       history.replaceState(null,"","/bura.html?room="+encodeURIComponent(s.roomId));
@@ -488,9 +517,7 @@
       alert(`მატჩი დასრულდა — გაიმარჯვა გუნდმა ${winner}`);
       location.href="/dashboard.html";
     });
-    socket.on("guest:registerRequired",()=>{
-      alert("ბურაში სათამაშოდ საჭიროა რეგისტრაცია"); location.href="/";
-    });
+    socket.on("guest:registerRequired",()=>{ showNeedsRegister(); });
   }
   init();
 })();
