@@ -6877,6 +6877,8 @@ function broadcastBuraRoom(room) {
       players: room.players.map(x => ({ username: x.username, seat: x.seat, connected: x.connected })),
       mySeat: p.seat,
       seatCount: buraSeatCount(room),
+      malutkaAnySuit: !!room.malutkaAnySuit,
+      isHost: p.lc === room.hostLc,
     };
     if (room.game && room.game.round && p.seat !== null) {
       Object.assign(base, BuraGame.viewForSeat(room.game, p.seat));
@@ -10792,6 +10794,32 @@ io.on("connection", (socket) => {
     if (!res.ok) { socket.emit("bura:error", { message: res.error }); return; }
     io.to(`bura:${room.id}`).emit("bura:varResult", res);
     buraAfterMove(room);
+    broadcastBuraRoom(room);
+  });
+
+  // Let the host change the table's settings while still in the lobby.
+  // Without this the mode was fixed at creation: make a 4-player table, have
+  // only one friend turn up, and you were stuck at "2/4" with no way to switch
+  // to the 1v1 variant short of abandoning the room.
+  socket.on("bura:setMode", ({ roomId, mode, target, malutkaAnySuit }) => {
+    const room = buraRooms.get(roomId);
+    if (!room || !socket._regUser) return;
+    if (room.hostLc !== socket._regUser.usernameLower) {
+      socket.emit("bura:error", { message: "მხოლოდ ჰოსტს შეუძლია შეცვლა" }); return;
+    }
+    if (room.status !== "lobby") {
+      socket.emit("bura:error", { message: "თამაში უკვე დაიწყო" }); return;
+    }
+    if (mode === "classic" || mode === "three") {
+      const newSeats = mode === "three" ? 2 : 4;
+      if (room.players.length > newSeats) {
+        socket.emit("bura:error", { message: `ამ რეჟიმში მხოლოდ ${newSeats} მოთამაშე ეტევა` });
+        return;
+      }
+      room.mode = mode;
+    }
+    if ([6, 11, 21].includes(Number(target))) room.target = Number(target);
+    if (typeof malutkaAnySuit === "boolean") room.malutkaAnySuit = malutkaAnySuit;
     broadcastBuraRoom(room);
   });
 

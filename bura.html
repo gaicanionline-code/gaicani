@@ -155,6 +155,21 @@
       <h3>მაგიდა</h3>
       <div class="bu-seat-list" id="seatList"></div>
       <div class="bu-sub" id="roomInfo" style="margin-bottom:10px"></div>
+
+      <!-- Host can still change the table while waiting — e.g. drop to 1v1
+           when only one friend shows up. -->
+      <div id="hostSettings" class="hidden" style="margin-bottom:12px">
+        <div class="bu-sub" style="margin-bottom:6px">რეჟიმის შეცვლა</div>
+        <div class="bu-row" id="lobbyModeRow">
+          <button class="bu-opt" data-lmode="classic">4 კაცი</button>
+          <button class="bu-opt" data-lmode="three">1 on 1</button>
+        </div>
+        <div class="bu-row" id="lobbyTargetRow">
+          <button class="bu-opt" data-ltarget="6">6</button>
+          <button class="bu-opt" data-ltarget="11">11</button>
+          <button class="bu-opt" data-ltarget="21">21</button>
+        </div>
+      </div>
       <button class="bu-btn" id="startBtn" disabled>თამაშის დაწყება</button>
       <button class="bu-btn secondary" id="inviteBtn" style="margin-top:8px">მოთამაშის მოწვევა</button>
       <div id="invitePanel" class="hidden" style="margin-top:12px">
@@ -305,6 +320,16 @@
     $("invitePanel").classList.add("hidden");
     toast("მოწვევა გაიგზავნა");
   });
+  $("lobbyModeRow").addEventListener("click", e=>{
+    const b=e.target.closest("[data-lmode]"); if(!b||!roomId) return;
+    cfg.mode=b.dataset.lmode;
+    socket.emit("bura:setMode",{roomId,mode:b.dataset.lmode});
+  });
+  $("lobbyTargetRow").addEventListener("click", e=>{
+    const b=e.target.closest("[data-ltarget]"); if(!b||!roomId) return;
+    cfg.target=Number(b.dataset.ltarget);
+    socket.emit("bura:setMode",{roomId,target:Number(b.dataset.ltarget)});
+  });
   $("startBtn").addEventListener("click", ()=>{ if(roomId) socket.emit("bura:start",{roomId}); });
   $("leaveBtn").addEventListener("click", ()=>{
     if(confirm("დატოვებ თამაშს?")){ socket.emit("bura:leave"); location.href="/dashboard.html"; }
@@ -329,7 +354,15 @@
     $("roomInfo").textContent =
       `${s.mode==="three"?"1 on 1 — 3 კარტი":"4 კაცი — 5 კარტი"} · მატჩი ${s.target}-მდე`;
     const full = s.players.length===s.seatCount;
-    const amHost = s.hostUsername===loadAuth().username;
+    const amHost = (typeof s.isHost === "boolean") ? s.isHost : (s.hostUsername===loadAuth().username);
+
+    // Host-only settings, reflecting whatever the room is currently set to
+    $("hostSettings").classList.toggle("hidden", !amHost);
+    $("lobbyModeRow").querySelectorAll("[data-lmode]").forEach(b=>
+      b.classList.toggle("active", b.dataset.lmode===s.mode));
+    $("lobbyTargetRow").querySelectorAll("[data-ltarget]").forEach(b=>
+      b.classList.toggle("active", Number(b.dataset.ltarget)===Number(s.target)));
+
     $("startBtn").disabled = !(full && amHost);
     $("startBtn").textContent = full ? "თამაშის დაწყება"
       : `ველოდებით (${s.players.length}/${s.seatCount})`;
