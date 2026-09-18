@@ -353,6 +353,7 @@ const ROUTE = {
   unblockUA:    "/j2vc5ns8ek3", // POST: remove a user-agent block
   regUsers:     "/y5tm2bk9lz3", // JSON: every REGISTERED username + their last-used IP (not just who's online now)
   accountReports: "/z3np8wk1yh6", // JSON: reports filed against registered accounts from their profile card
+  deleteUser:   "/c8ke2mr5vq1", // POST: admin delete an account (purges content, bans last IP)
 };
 
 // ── Sensitive-URL visitor log ─────────────────────────────────────────────────
@@ -1608,6 +1609,98 @@ app.get(ROUTE.regUsers, ownerOnly, (req, res) => {
   res.json({ count: rows.length, users: rows });
 });
 
+
+// POST <deleteUser route>?username=x[&banIp=false]  — admin removal of an account.
+//
+// Deliberately HARSHER than the self-serve deletion in /api/auth/delete-account:
+//   * self-delete ANONYMISES forum/room content so conversations stay readable
+//   * this DELETES it, because it exists to remove an abuser's output entirely
+// It also bans the account's last known IP by default. Pass banIp=false to
+// delete without banning (e.g. removing a duplicate or test account).
+app.post(ROUTE.deleteUser, ownerOnly, (req, res) => {
+  const username = String(req.query.username || "").trim();
+  const banIp = req.query.banIp !== "false";
+  if (!username) return res.status(400).json({ error: "username param required" });
+
+  const lc = username.toLowerCase();
+  const user = registeredUsers.get(lc);
+  if (!user) return res.status(404).json({ error: "user not found" });
+  // Guard against wiping out an administrator by a mistyped name.
+  if (user.isAdmin) return res.status(403).json({ error: "cannot delete an admin account" });
+
+  const lastIP = user.lastIP || null;
+  let removedPosts = 0, removedComments = 0, removedRoomMsgs = 0;
+
+  // ── forum: remove their posts outright, and their comments elsewhere ──
+  for (const [postId, post] of [...forumPosts]) {
+    if (post.authorLc === lc) { forumPosts.delete(postId); removedPosts++; continue; }
+    if (Array.isArray(post.comments)) {
+      const before = post.comments.length;
+      post.comments = post.comments.filter(c => c.authorLc !== lc);
+      removedComments += before - post.comments.length;
+    }
+    if (post.votes) delete post.votes[lc];
+  }
+
+  // ── rooms: strip their messages and membership ──
+  for (const [, room] of chatRooms) {
+    if (Array.isArray(room.messages)) {
+      const before = room.messages.length;
+      room.messages = room.messages.filter(m => m.fromLc !== lc);
+      removedRoomMsgs += before - room.messages.length;
+    }
+    if (Array.isArray(room.members)) room.members = room.members.filter(m => m !== lc);
+    if (Array.isArray(room.bannedUsers)) room.bannedUsers = room.bannedUsers.filter(b => b !== lc);
+    if (room.lastRead) delete room.lastRead[lc];
+  }
+
+  // ── private data and social graph ──
+  for (const [roomId] of privateRooms) if (roomId.split("::").includes(lc)) privateRooms.delete(roomId);
+  for (const [roomId] of friendStreaks) if (roomId.split("::").includes(lc)) friendStreaks.delete(roomId);
+  for (const [, other] of registeredUsers) {
+    if (Array.isArray(other.friends))         other.friends         = other.friends.filter(f => f !== lc);
+    if (Array.isArray(other.pendingRequests)) other.pendingRequests = other.pendingRequests.filter(r => r !== lc);
+    if (Array.isArray(other.blockedUsers))    other.blockedUsers    = other.blockedUsers.filter(b => b !== lc);
+  }
+  if (typeof accountReportLog !== "undefined") accountReportLog.delete(lc);
+
+  // ── kill sessions and kick every live socket ──
+  for (const [t, e] of authTokens) if (e.usernameLower === lc) authTokens.delete(t);
+  let kicked = 0;
+  const sockets = onlineRegSockets.get(lc);
+  if (sockets) {
+    for (const sid of sockets) {
+      const s = io.sockets.sockets.get(sid);
+      if (s) { s.emit("auth:accountDeleted"); setTimeout(() => s.disconnect(true), 300); kicked++; }
+    }
+  }
+  onlineRegSockets.delete(lc);
+  registeredUsers.delete(lc);
+  authReservedNames.delete(lc);
+  activeUsernames.delete(lc);
+
+  // ── ban the last known IP (this is a manual admin action, so it is NOT
+  //    affected by the AUTO_BAN_ENABLED switch that disables self-banning) ──
+  let bannedIp = null;
+  if (banIp && lastIP) {
+    bannedIPs.add(lastIP);
+    saveBannedIPs();
+    bannedIp = lastIP;
+    for (const [, s] of io.sockets.sockets) {
+      if (s.clientIP === lastIP) { s.emit("autoKicked"); setTimeout(() => s.disconnect(true), 300); }
+    }
+  }
+
+  saveAuthUsers(); savePrivateMsgs(); saveStreaks(); saveChatRooms(); saveForum();
+  console.log(`[ADMIN] Deleted account "${username}" — ${removedPosts} post(s), ${removedComments} comment(s), ${removedRoomMsgs} room message(s), ${kicked} socket(s) kicked, IP ${bannedIp || "not banned"}`);
+
+  res.json({
+    success: true, username,
+    removedPosts, removedComments, removedRoomMsgs,
+    kickedSockets: kicked, bannedIp,
+  });
+});
+
 // POST <ban route>?ip=1.2.3.4  — ban an IP and kick all matching sockets
 app.post(ROUTE.ban, ownerOnly, (req, res) => {
   const ip = (req.query.ip || "").trim();
@@ -1881,6 +1974,18 @@ async function banIP(ip) {
   loadAll();
 }
 
+async function deleteUser(username) {
+  if (!confirm("Delete the account \"" + username + "\"?\n\nThis permanently removes the account, deletes their forum posts, comments and room messages, and bans their last known IP.\n\nThis cannot be undone.")) return;
+  try {
+    const r = await api("POST", R.deleteUser + "?username=" + encodeURIComponent(username));
+    alert("Deleted " + username + "\n\nposts: " + r.removedPosts +
+          "\ncomments: " + r.removedComments +
+          "\nroom messages: " + r.removedRoomMsgs +
+          "\nIP banned: " + (r.bannedIp || "none on file"));
+    load();
+  } catch (e) { alert("Failed: " + e.message); }
+}
+
 async function unbanIP(ip) {
   await api("POST", R.unban + "?ip=" + encodeURIComponent(ip));
   setStatus("✅ Unbanned " + ip);
@@ -2004,12 +2109,15 @@ async function loadAll() {
                 ? \`<button class="unban-btn" onclick="unbanIP('\${esc(u.lastIP)}')">✅ Unban</button>\`
                 : \`<button class="ban-btn" onclick="banIP('\${esc(u.lastIP)}')">🚫 Ban this IP</button>\`)
             : '<span class="hint">no IP on file</span>';
+          const delHtml = u.isAdmin
+            ? '<span class="hint">protected</span>'
+            : \`<button class="ban-btn" style="margin-left:6px" onclick="deleteUser('\${esc(u.username)}')">🗑 Delete + ban</button>\`;
           return \`<tr>
             <td><span class="ip">\${esc(u.username)}</span></td>
             <td style="font-family:monospace;color:#b5bac1">\${esc(u.lastIP || "—")}</td>
             <td style="color:#b5bac1;font-size:.85em">\${esc(lastSeen)}</td>
             <td>\${statusHtml}</td>
-            <td style="white-space:nowrap">\${actionHtml}</td>
+            <td style="white-space:nowrap">\${actionHtml}\${delHtml}</td>
           </tr>\`;
         }).join("") + "</table>";
     }
