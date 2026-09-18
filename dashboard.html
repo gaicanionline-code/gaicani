@@ -365,6 +365,12 @@
       cursor: pointer; flex-shrink: 0; transition: filter 0.15s;
     }
     .bj-room-join-btn:hover { filter: brightness(1.1); }
+    .bu-room-join-btn {
+      background: linear-gradient(135deg,#e0a458,#a86a24); color: #fff; border: none;
+      border-radius: var(--radius-sm); padding: 8px 14px; font-size: 0.82em; font-weight: 700;
+      cursor: pointer; flex-shrink: 0; transition: filter 0.15s;
+    }
+    .bu-room-join-btn:hover { filter: brightness(1.1); }
 
     /* ── Friend List ── */
     .friends-list {
@@ -1028,6 +1034,11 @@
       <div id="bjRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>
 
+    <div id="buRoomsSection" class="rooms-browser" style="display:none">
+      <div class="dg-rooms-label">🂡 ბურას მაგიდები — შემოუერთდი</div>
+      <div id="buRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
+
     <div id="dgRoomsSection" class="rooms-browser" style="display:none">
       <div class="dg-rooms-label">🎨 დახატე და გამოიცანი — შემოუერთდი</div>
       <div id="dgRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
@@ -1502,6 +1513,7 @@
         socket.emit("chess:listPublicRooms");
         socket.emit("checkers:listPublicRooms");
         socket.emit("joker:listPublicRooms");
+        socket.emit("bura:listPublicRooms");
         socket.emit("imposter:listPublicRooms");
         socket.emit("blackjack:listPublicRooms");
       });
@@ -1609,6 +1621,7 @@
       socket.on("chess:publicRooms", (rooms) => renderCsRooms(rooms || []));
       socket.on("checkers:publicRooms", (rooms) => renderDmRooms(rooms || []));
       socket.on("joker:publicRooms", (rooms) => renderJkRooms(rooms || []));
+      socket.on("bura:publicRooms", ({ rooms }) => renderBuRooms(rooms || []));
       socket.on("imposter:publicRooms", (rooms) => renderImRooms(rooms || []));
       socket.on("blackjack:publicRooms", (rooms) => renderBjRooms(rooms || []));
 
@@ -2160,6 +2173,30 @@
       list.querySelectorAll(".dg-room-row").forEach(row => {
         row.querySelector(".dm-room-join-btn").addEventListener("click", () => {
           window.location.href = "/checkers.html?room=" + encodeURIComponent(row.dataset.room);
+        });
+      });
+    }
+
+    function renderBuRooms(rooms) {
+      const section = document.getElementById("buRoomsSection");
+      const list    = document.getElementById("buRoomsList");
+      if (!section || !list) return;
+      if (!rooms.length) { section.style.display = "none"; return; }
+      section.style.display = "block";
+
+      list.innerHTML = rooms.map(r => `
+        <div class="dg-room-row" data-room="${esc(r.id)}">
+          <div class="dg-room-info">
+            <div class="dg-room-host">🂡 ${esc(r.hostUsername)}-ის მაგიდა</div>
+            <div class="dg-room-meta">${r.playerCount}/${r.seatCount} მოთამაშე · ${r.mode === "three" ? "1 on 1" : "4 კაცი"}</div>
+          </div>
+          <span class="dg-room-badge ${r.status === "playing" ? "playing" : "lobby"}">${r.status === "playing" ? "მიმდინარეობს" : "ლობი"}</span>
+          <button class="bu-room-join-btn">შემოერთება</button>
+        </div>`).join("");
+
+      list.querySelectorAll(".dg-room-row").forEach(row => {
+        row.querySelector(".bu-room-join-btn").addEventListener("click", () => {
+          window.location.href = "/bura.html?room=" + encodeURIComponent(row.dataset.room);
         });
       });
     }
