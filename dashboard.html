@@ -273,8 +273,6 @@
     .game-tile--joker    { --tile-accent: #8b5cf6; }
     .game-tile--imposter { --tile-accent: #7c3aed; }
     .game-tile--blackjack{ --tile-accent: #2dbd7c; }
-    .game-tile--bura     { --tile-accent: #e0a458; }
-    .game-tile--horror   { --tile-accent: #7c3aed; }
 
     /* ── Active-room lists per game — appear below the grid, only when
        relevant, kept as their own clearly-labeled area ── */
@@ -365,12 +363,6 @@
       cursor: pointer; flex-shrink: 0; transition: filter 0.15s;
     }
     .bj-room-join-btn:hover { filter: brightness(1.1); }
-    .bu-room-join-btn {
-      background: linear-gradient(135deg,#e0a458,#a86a24); color: #fff; border: none;
-      border-radius: var(--radius-sm); padding: 8px 14px; font-size: 0.82em; font-weight: 700;
-      cursor: pointer; flex-shrink: 0; transition: filter 0.15s;
-    }
-    .bu-room-join-btn:hover { filter: brightness(1.1); }
 
     /* ── Friend List ── */
     .friends-list {
@@ -992,14 +984,6 @@
         <div class="game-tile-icon"><img src="/icon-blackjack.jpg" alt="ბლექჯეკი" /></div>
         <div class="game-tile-name">ბლექჯეკი</div>
       </a>
-      <a href="/bura.html" class="game-tile game-tile--bura">
-        <div class="game-tile-icon">🂡</div>
-        <div class="game-tile-name">ბურა</div>
-      </a>
-      <a href="/horror.html" class="game-tile game-tile--horror">
-        <div class="game-tile-icon">🕯️</div>
-        <div class="game-tile-name">Horror</div>
-      </a>
     </div>
 
     <!-- Active tables/rooms you can join — appear below the grid, per game,
@@ -1032,11 +1016,6 @@
     <div id="bjRoomsSection" class="rooms-browser" style="display:none">
       <div class="dg-rooms-label">🂡 ბლექჯეკის მაგიდები — შემოუერთდი</div>
       <div id="bjRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
-    </div>
-
-    <div id="buRoomsSection" class="rooms-browser" style="display:none">
-      <div class="dg-rooms-label">🂡 ბურას მაგიდები — შემოუერთდი</div>
-      <div id="buRoomsList" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>
 
     <div id="dgRoomsSection" class="rooms-browser" style="display:none">
@@ -1513,7 +1492,6 @@
         socket.emit("chess:listPublicRooms");
         socket.emit("checkers:listPublicRooms");
         socket.emit("joker:listPublicRooms");
-        socket.emit("bura:listPublicRooms");
         socket.emit("imposter:listPublicRooms");
         socket.emit("blackjack:listPublicRooms");
       });
@@ -1621,7 +1599,6 @@
       socket.on("chess:publicRooms", (rooms) => renderCsRooms(rooms || []));
       socket.on("checkers:publicRooms", (rooms) => renderDmRooms(rooms || []));
       socket.on("joker:publicRooms", (rooms) => renderJkRooms(rooms || []));
-      socket.on("bura:publicRooms", ({ rooms }) => renderBuRooms(rooms || []));
       socket.on("imposter:publicRooms", (rooms) => renderImRooms(rooms || []));
       socket.on("blackjack:publicRooms", (rooms) => renderBjRooms(rooms || []));
 
@@ -1743,35 +1720,10 @@
           socket.emit("blackjack:declineInvite", { roomId });
         };
       });
-
-      socket.on("bura:invited", ({ roomId, fromUsername }) => {
-        const bar = document.getElementById("dgInviteBar");
-        bar.innerHTML = `
-          <span>\u{1F0A1} <strong>${esc(fromUsername)}</strong>-\u10db\u10d0 \u10db\u10dd\u10d2\u10d8\u10ec\u10d5\u10d8\u10d0 \u10d1\u10e3\u10e0\u10d0\u10e8\u10d8</span>
-          <button class="dg-invite-accept">\u2705</button>
-          <button class="dg-invite-decline">\u274C</button>`;
-        bar.classList.add("show");
-        bar.querySelector(".dg-invite-accept").onclick = () => {
-          window.location.href = "/bura.html?room=" + encodeURIComponent(roomId);
-        };
-        bar.querySelector(".dg-invite-decline").onclick = () => bar.classList.remove("show");
-      });
-
-      socket.on("horror:invited", ({ roomId, fromUsername }) => {
-        const bar = document.getElementById("dgInviteBar");
-        bar.innerHTML = `
-          <span>\u{1F56F}\uFE0F <strong>${esc(fromUsername)}</strong>-\u10db\u10d0 \u10db\u10dd\u10d2\u10d8\u10ec\u10d5\u10d8\u10d0 Horror-\u10e8\u10d8</span>
-          <button class="dg-invite-accept">\u2705</button>
-          <button class="dg-invite-decline">\u274C</button>`;
-        bar.classList.add("show");
-        bar.querySelector(".dg-invite-accept").onclick = () => {
-          window.location.href = "/horror.html?room=" + encodeURIComponent(roomId);
-        };
-        bar.querySelector(".dg-invite-decline").onclick = () => bar.classList.remove("show");
-      });
     }
 
     /* ── Unread dot helpers ──────────────────────────────────────── */
+
     function markUnreadDot(usernameLc) {
       const btn = document.querySelector(`.act-chat[data-f="${CSS.escape(usernameLc)}"]`) ||
                   document.querySelector(`.act-chat[data-f="${usernameLc}"]`);
@@ -2173,30 +2125,6 @@
       list.querySelectorAll(".dg-room-row").forEach(row => {
         row.querySelector(".dm-room-join-btn").addEventListener("click", () => {
           window.location.href = "/checkers.html?room=" + encodeURIComponent(row.dataset.room);
-        });
-      });
-    }
-
-    function renderBuRooms(rooms) {
-      const section = document.getElementById("buRoomsSection");
-      const list    = document.getElementById("buRoomsList");
-      if (!section || !list) return;
-      if (!rooms.length) { section.style.display = "none"; return; }
-      section.style.display = "block";
-
-      list.innerHTML = rooms.map(r => `
-        <div class="dg-room-row" data-room="${esc(r.id)}">
-          <div class="dg-room-info">
-            <div class="dg-room-host">🂡 ${esc(r.hostUsername)}-ის მაგიდა</div>
-            <div class="dg-room-meta">${r.playerCount}/${r.seatCount} მოთამაშე · ${r.mode === "three" ? "1 on 1" : "4 კაცი"}</div>
-          </div>
-          <span class="dg-room-badge ${r.status === "playing" ? "playing" : "lobby"}">${r.status === "playing" ? "მიმდინარეობს" : "ლობი"}</span>
-          <button class="bu-room-join-btn">შემოერთება</button>
-        </div>`).join("");
-
-      list.querySelectorAll(".dg-room-row").forEach(row => {
-        row.querySelector(".bu-room-join-btn").addEventListener("click", () => {
-          window.location.href = "/bura.html?room=" + encodeURIComponent(row.dataset.room);
         });
       });
     }

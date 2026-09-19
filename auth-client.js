@@ -418,22 +418,6 @@
         onAccept: () => { window.location.href = "/blackjack.html?room=" + encodeURIComponent(roomId); },
         onDecline: () => s.emit("blackjack:declineInvite", { roomId }),
       });
-
-    s.on("bura:invited", ({ roomId, fromUsername }) => {
-      renderChatInviteBar({
-        icon: "\u{1F0A1}", messageHtml: `<strong>${esc(fromUsername)}</strong>-\u10db\u10d0 \u10db\u10dd\u10d2\u10d8\u10ec\u10d5\u10d8\u10d0 \u10d1\u10e3\u10e0\u10d0\u10e8\u10d8`,
-        onAccept: () => { window.location.href = "/bura.html?room=" + encodeURIComponent(roomId); },
-        onDecline: () => {},
-      });
-    });
-
-    s.on("horror:invited", ({ roomId, fromUsername }) => {
-      renderChatInviteBar({
-        icon: "\u{1F56F}\uFE0F", messageHtml: `<strong>${esc(fromUsername)}</strong>-\u10db\u10d0 \u10db\u10dd\u10d2\u10d8\u10ec\u10d5\u10d8\u10d0 Horror-\u10e8\u10d8`,
-        onAccept: () => { window.location.href = "/horror.html?room=" + encodeURIComponent(roomId); },
-        onDecline: () => {},
-      });
-    });
     });
 
     // ── Request accepted (by the other person) ────────────────────────
