@@ -89,6 +89,9 @@ const sendBtn        = document.getElementById("sendBtn");
 const nextBtn        = document.getElementById("nextBtn");
 const scrollToTopBtn = document.getElementById("scrollToTopBtn");
 const blockBtn       = document.getElementById("blockBtn");
+if (typeof window.initAdCountdown === "function") {
+  window.initAdCountdown("gaicani_ad_randomchat", "adCountdownRandomChat", nextBtn);
+}
 const reportBtn      = document.getElementById("reportBtn");
 const changeNameBtn  = document.getElementById("changeNameBtn");
 const interestsBtn   = document.getElementById("interestsBtn");
@@ -1736,6 +1739,9 @@ socket.on("awayTimeout", () => {});
 // ── Button handlers ───────────────────────────────────────────────────────────
 
 nextBtn.addEventListener("click", () => {
+  if (typeof window.registerAdClick === "function") {
+    window.registerAdClick("gaicani_ad_randomchat", "adCountdownRandomChat", nextBtn);
+  }
   nextBtn.disabled = true;
   setTimeout(() => { nextBtn.disabled = false; }, 1200);
 
@@ -1759,6 +1765,9 @@ nextBtn.addEventListener("click", () => {
 });
 
 blockBtn.addEventListener("click", () => {
+  if (typeof window.registerAdClick === "function") {
+    window.registerAdClick("gaicani_ad_randomchat", "adCountdownRandomChat", nextBtn);
+  }
   const targetName = partnerName || lastPartnerName;
   if (!targetName) return;
   showConfirmModal(

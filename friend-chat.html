@@ -867,7 +867,8 @@
       <div class="fc-sub" id="fcSub">პირადი ჩატი</div>
     </div>
     <button class="fc-theme-btn" id="fcThemeBtn" title="პარამეტრები — ფონი და რეაქცია">🎨</button>
-    <div class="fc-expiry-badge">🕐 3 სთ ჩაშლა</div>
+    <div class="fc-expiry-badge">🕐 30 სთ ჩაშლა</div>
+    <div id="adCountdownPrivateChat" class="ad-countdown-badge"></div>
   </header>
 
   <!-- Chat background picker -->
@@ -954,6 +955,7 @@
 <div id="dgInviteBar" class="dg-invite-bar"></div>
 
 <script src="/ban-notice.js"></script>
+<script src="/ad-trigger.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script>
   // Keep --app-height in sync with the real visible viewport, so the
@@ -1128,6 +1130,9 @@
   const elInputBar  = $("fc-input-bar");
   const elInput     = $("fc-input");
   const elSend      = $("fc-send");
+  if (typeof window.initAdCountdown === "function") {
+    window.initAdCountdown("gaicani_ad_privatechat", "adCountdownPrivateChat", null);
+  }
   const elAuth      = $("fc-auth-screen");
 
   /* If not logged in or no friend param → auth screen */
@@ -1686,6 +1691,11 @@
     const focusAfter = !opts || opts.focusAfter !== false;
     const text = elInput.value.trim();
     if (!text || !socket?.connected) return;
+
+    if (typeof window.registerAdClick === "function") {
+      window.registerAdClick("gaicani_ad_privatechat", "adCountdownPrivateChat", null);
+    }
+
     elInput.value = "";
     elInput.style.height = "auto";
     isTyping = false;
