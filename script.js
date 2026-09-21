@@ -240,13 +240,7 @@ function addDonationCard() {
 
   const txt = document.createElement("div");
   txt.className = "chat-donate-text";
-txt.appendChild(document.createTextNode(
-    "💜 თუ მოგწონს Gaicani.online და გინდა, რომ კიდევ უფრო გავაუმჯობესოთ!\n\n" +
-    "🎯 ჩვენი მიზანია შევაგროვოთ 300₾.\n" +
-    "🙏 თითოეული შემოწირულობა გვეხმარება მიზნის მიღწევაში.\n\n" +
-    "❤️ თუ 300₾ შევაგროვებთ, რეკლამები მთელი 1 თვით გაითიშება! 🚫📢\n\n" +
-    "🔥 300₾ = 1 თვე რეკლამების გარეშე! 🎉"
-));
+txt.appendChild(document.createTextNode("❤️ თუ 50₾ შევაგროვებთ, რეკლამები მთელი კვირით გაითიშება! 🚫📢"));
   txt.appendChild(document.createElement("br"));
   txt.appendChild(document.createTextNode("შენი მხარდაჭერა ჩვენთვის ძალიან ბევრს ნიშნავს."));
 
