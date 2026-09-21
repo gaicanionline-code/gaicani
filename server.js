@@ -240,6 +240,62 @@ loadBannedUserAgents(); // restore UA bans immediately at startup
 // Set AUTO_BAN_ENABLED=true in the environment to restore the old behaviour.
 const AUTO_BAN_ENABLED = process.env.AUTO_BAN_ENABLED === "true";
 
+// ── Temporary (24 h) IP bans ─────────────────────────────────────────────────
+// Separate from bannedIPs (which is permanent and silent). These carry a
+// reason and the offending username, and the blocked visitor is shown an
+// explanation page rather than a bare 403 — the point is to tell someone why
+// they were removed and when they can come back.
+const tempBans = new Map(); // ip -> { until, reason, username, at }
+const TEMP_BAN_MS = 24 * 60 * 60 * 1000;
+
+function getTempBan(ip) {
+  const e = tempBans.get(ip);
+  if (!e) return null;
+  if (Date.now() >= e.until) { tempBans.delete(ip); return null; } // expired
+  return e;
+}
+
+function addTempBan(ip, username, reason) {
+  const entry = {
+    until: Date.now() + TEMP_BAN_MS,
+    reason: reason || "offensive_name",
+    username: username || "",
+    at: Date.now(),
+  };
+  tempBans.set(ip, entry);
+  return entry;
+}
+
+function tempBanPageHtml(entry) {
+  const hoursLeft = Math.max(1, Math.ceil((entry.until - Date.now()) / 3600000));
+  const name = String(entry.username || "").replace(/[&<>"']/g, c =>
+    ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  return `<!DOCTYPE html>
+<html lang="ka"><head><meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>\u10ec\u10d5\u10d3\u10dd\u10db\u10d0 \u10e8\u10d4\u10d6\u10e6\u10e3\u10d3\u10e3\u10da\u10d8\u10d0</title>
+<style>
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:#17181c;color:#eceef2;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;padding:24px}
+  .box{max-width:400px;width:100%;background:#212227;border:1px solid rgba(242,63,66,.3);
+    border-radius:16px;padding:28px 24px;text-align:center}
+  .icon{font-size:2.6em;margin-bottom:10px}
+  h1{font-size:1.15em;margin:0 0 14px;color:#f56769}
+  p{font-size:.9em;line-height:1.65;color:#c7cad3;margin:0 0 12px}
+  .name{display:inline-block;background:rgba(242,63,66,.12);border:1px solid rgba(242,63,66,.3);
+    color:#f56769;border-radius:8px;padding:6px 14px;font-weight:800;margin:6px 0 14px;word-break:break-all}
+  .left{font-size:.82em;color:#8a8d9c;margin-top:16px}
+</style></head><body>
+<div class="box">
+  <div class="icon">\u{1F6AB}</div>
+  <h1>\u10ec\u10d5\u10d3\u10dd\u10db\u10d0 \u10e8\u10d4\u10d6\u10e6\u10e3\u10d3\u10e3\u10da\u10d8\u10d0 1 \u10d3\u10e6\u10d8\u10d7</h1>
+  <p>\u10d7\u10e5\u10d5\u10d4\u10dc \u10d3\u10e0\u10dd\u10d4\u10d1\u10d8\u10d7 \u10d3\u10d0\u10d2\u10d4\u10d1\u10da\u10dd\u10d9\u10d0\u10d7 \u10ec\u10d5\u10d3\u10dd\u10db\u10d0<br><b>\u10e8\u10d4\u10e3\u10e0\u10d0\u10ea\u10ee\u10db\u10e7\u10dd\u10e4\u10d4\u10da\u10d8 \u10e1\u10d0\u10ee\u10d4\u10da\u10d8\u10e1 \u10d2\u10d0\u10db\u10dd</b>.</p>
+  <div class="name">${name || "\u2014"}</div>
+  <p>\u10d2\u10d7\u10ee\u10dd\u10d5\u10d7, \u10d3\u10d0\u10d1\u10e0\u10e3\u10dc\u10d4\u10d1\u10d8\u10e1\u10d0\u10e1 \u10d0\u10d8\u10e0\u10e9\u10d8\u10dd\u10d7 \u10e1\u10ee\u10d5\u10d0 \u10e1\u10d0\u10ee\u10d4\u10da\u10d8.</p>
+  <div class="left">\u10d3\u10d0\u10e0\u10e9\u10d4\u10dc\u10d8\u10da\u10d8\u10d0 \u10d3\u10d0\u10d0\u10ee\u10da\u10dd\u10d4\u10d1\u10d8\u10d7 ${hoursLeft} \u10e1\u10d0\u10d0\u10d7\u10d8</div>
+</div></body></html>`;
+}
+
 const VT_QUEUE_FILE = path.join(DATA_PATH, "vt-queue.json");
 const VT_BANS_FILE  = path.join(DATA_PATH, "vt-bans.json");
 const STATS_FILE     = path.join(DATA_PATH, "stats.json");
@@ -352,6 +408,7 @@ const ROUTE = {
   regUsers:     "/y5tm2bk9lz3", // JSON: every REGISTERED username + their last-used IP (not just who's online now)
   accountReports: "/z3np8wk1yh6", // JSON: reports filed against registered accounts from their profile card
   deleteUser:   "/c8ke2mr5vq1", // POST: admin delete an account (purges content, bans last IP)
+  tempBan:      "/w4qd7np2xb8", // POST: 24h IP block with a shown reason
 };
 
 // ── Sensitive-URL visitor log ─────────────────────────────────────────────────
@@ -1117,6 +1174,13 @@ app.use((req, res, next) => {
     req.socket?.remoteAddress ||
     ""
   );
+  // Temporary bans explain themselves; permanent ones stay silent.
+  const tb = getTempBan(ip);
+  if (tb) {
+    res.status(403).setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(tempBanPageHtml(tb));
+    return;
+  }
   if (bannedIPs.has(ip)) {
     // Return a generic 403 — don't reveal why or that a ban system exists
     res.status(403).end();
@@ -1699,6 +1763,33 @@ app.post(ROUTE.deleteUser, ownerOnly, (req, res) => {
   });
 });
 
+// POST <tempBan route>?ip=1.2.3.4&username=x  — block an IP for 24 hours.
+// Unlike the permanent ban this one is EXPLAINED to the visitor: they get a
+// page naming the offending username and saying when they can return.
+app.post(ROUTE.tempBan, ownerOnly, (req, res) => {
+  const ip = String(req.query.ip || "").trim();
+  const username = String(req.query.username || "").trim();
+  if (!ip) return res.status(400).json({ error: "ip param required" });
+
+  const entry = addTempBan(ip, username, "offensive_name");
+
+  let kicked = 0;
+  for (const [, s] of io.sockets.sockets) {
+    if (s.clientIP === ip) {
+      s.emit("tempBanned", {
+        hours: 24,
+        reason: "offensive_name",
+        username,
+        until: entry.until,
+      });
+      setTimeout(() => s.disconnect(true), 600);
+      kicked++;
+    }
+  }
+  console.log(`[ADMIN] 24h block on ${ip} (name: ${username || "n/a"}) — kicked ${kicked} socket(s)`);
+  res.json({ success: true, ip, username, until: entry.until, kickedSockets: kicked });
+});
+
 // POST <ban route>?ip=1.2.3.4  — ban an IP and kick all matching sockets
 app.post(ROUTE.ban, ownerOnly, (req, res) => {
   const ip = (req.query.ip || "").trim();
@@ -1972,6 +2063,26 @@ async function banIP(ip) {
   loadAll();
 }
 
+async function tempBan(ip, username) {
+  const msg = [
+    'Block this IP for 24 hours?',
+    '',
+    'IP: ' + ip,
+    'Name: ' + username,
+    '',
+    'They will see a page saying they were blocked for 1 day',
+    'because of an offensive name, showing that name.'
+  ].join(String.fromCharCode(10));
+  if (!confirm(msg)) return;
+  try {
+    const r = await api('POST', R.tempBan + '?ip=' + encodeURIComponent(ip) +
+                        '&username=' + encodeURIComponent(username));
+    alert('Blocked ' + ip + ' for 24 hours' + String.fromCharCode(10) +
+          'sockets kicked: ' + r.kickedSockets);
+    load();
+  } catch (e) { alert('Failed: ' + e.message); }
+}
+
 async function deleteUser(username) {
   const warn = [
     'Delete the account: ' + username,
@@ -2117,6 +2228,9 @@ async function loadAll() {
                 ? \`<button class="unban-btn" onclick="unbanIP('\${esc(u.lastIP)}')">✅ Unban</button>\`
                 : \`<button class="ban-btn" onclick="banIP('\${esc(u.lastIP)}')">🚫 Ban this IP</button>\`)
             : '<span class="hint">no IP on file</span>';
+          const tempHtml = u.lastIP
+            ? \`<button class="ban-btn" style="margin-left:6px;background:#8a6d1f" onclick="tempBan('\${esc(u.lastIP)}','\${esc(u.username)}')">\u23F1 24h block</button>\`
+            : '';
           const delHtml = u.isAdmin
             ? '<span class="hint">protected</span>'
             : \`<button class="ban-btn" style="margin-left:6px" onclick="deleteUser('\${esc(u.username)}')">🗑 Delete + ban</button>\`;
@@ -2125,7 +2239,7 @@ async function loadAll() {
             <td style="font-family:monospace;color:#b5bac1">\${esc(u.lastIP || "—")}</td>
             <td style="color:#b5bac1;font-size:.85em">\${esc(lastSeen)}</td>
             <td>\${statusHtml}</td>
-            <td style="white-space:nowrap">\${actionHtml}\${delHtml}</td>
+            <td style="white-space:nowrap">\${actionHtml}\${tempHtml}\${delHtml}</td>
           </tr>\`;
         }).join("") + "</table>";
     }
@@ -3752,7 +3866,7 @@ const PRIV_MSGS_FILE    = path.join(DATA_PATH, "private_messages.json");
 const STREAKS_FILE      = path.join(DATA_PATH, "friend_streaks.json");
 const ROOMS_FILE        = path.join(DATA_PATH, "chat_rooms.json");
 const FORUM_FILE        = path.join(DATA_PATH, "forum_posts.json");
-const PRIVATE_MSG_TTL   = 3 * 60 * 60 * 1000; // 3 h — auto-delete
+const PRIVATE_MSG_TTL   = 30 * 60 * 60 * 1000; // 30 h — auto-delete
 const AUTH_TOKEN_TTL    = 7  * 24 * 60 * 60 * 1000; // 7 days
 const ROOM_MSG_CAP      = 200; // per-room stored history — oldest trimmed past this
 const ROOM_NAME_MAX     = 80;
