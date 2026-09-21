@@ -1154,7 +1154,8 @@
     </div>
   </div>
 
-  <script src="/socket.io/socket.io.js"></script>
+  <script src="/ban-notice.js"></script>
+<script src="/socket.io/socket.io.js"></script>
   <script>
   (function () {
     "use strict";
@@ -1446,7 +1447,7 @@
 
     /* ── Socket setup ────────────────────────────────────────────── */
     function setupSocket(token) {
-      socket = io();
+      socket = io(); attachTempBanGuard(socket);
       socket.on("connect", () => {
         if (token) {
           socket.emit("auth:token", token);

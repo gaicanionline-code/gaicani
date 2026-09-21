@@ -2207,7 +2207,11 @@ async function loadAll() {
           <td style="font-family:monospace;color:#b5bac1">\${esc(u.ip)}</td>
           <td class="ua-cell" title="\${esc(u.userAgent || '(none)')}">\${esc(u.userAgent || '(none)')}</td>
           <td>\${u.partner ? '<span class="badge green">chatting</span>' : '<span class="badge">waiting</span>'}</td>
-          <td style="white-space:nowrap"><button class="ban-btn" onclick="banIP('\${esc(u.ip)}')">Ban IP</button>\${u.userAgent ? \`<button class="block-ua-btn" onclick="blockUA('\${b64enc(u.userAgent)}')">Block UA</button>\` : ''}</td>
+          <td style="white-space:nowrap">
+            <button class="ban-btn" onclick="banIP('\${esc(u.ip)}')">Ban IP</button>
+            <button class="ban-btn" style="background:#8a6d1f" onclick="tempBan('\${esc(u.ip)}','\${esc(u.name)}')">\u23F1 24h block</button>
+            \${u.userAgent ? \`<button class="block-ua-btn" onclick="blockUA('\${b64enc(u.userAgent)}')">Block UA</button>\` : ''}
+          </td>
         </tr>\`).join("") + "</table>";
     }
   } catch(e) { document.getElementById("users").textContent = "Error"; }
@@ -8616,6 +8620,21 @@ io.on("connection", (socket) => {
   if (bannedIPs.has(socket.clientIP)) {
     console.log(`[BAN] Rejected banned IP: ${socket.clientIP}`);
     socket.emit("autoKicked");
+    socket.disconnect(true);
+    return;
+  }
+  // 24h temp ban — same idea as the permanent ban above, but this one tells
+  // the client WHY (name + reason) so the UI can show the explanation page
+  // instead of just silently dropping the connection.
+  const tempBanEntry = getTempBan(socket.clientIP);
+  if (tempBanEntry) {
+    console.log(`[TEMP-BAN] Rejected temp-banned IP: ${socket.clientIP}`);
+    socket.emit("tempBanned", {
+      hours: Math.max(1, Math.ceil((tempBanEntry.until - Date.now()) / 3600000)),
+      reason: tempBanEntry.reason,
+      username: tempBanEntry.username,
+      until: tempBanEntry.until,
+    });
     socket.disconnect(true);
     return;
   }

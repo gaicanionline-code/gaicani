@@ -953,6 +953,7 @@
 <div id="fc-toast"></div>
 <div id="dgInviteBar" class="dg-invite-bar"></div>
 
+<script src="/ban-notice.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script>
   // Keep --app-height in sync with the real visible viewport, so the
@@ -1777,6 +1778,7 @@
     socket = io({
       transports: ["websocket", "polling"],
     });
+    attachTempBanGuard(socket);
 
 
     socket.on("friendChat:gif", ({ fromUsername, url, timestamp }) => {

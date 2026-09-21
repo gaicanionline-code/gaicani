@@ -280,6 +280,7 @@
   </div>
 </div>
 
+<script src="/ban-notice.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script>
   (function () {
@@ -552,7 +553,7 @@
 
   /* ── Boot ────────────────────────────────────────────────────── */
   function init() {
-    socket = io();
+    socket = io(); attachTempBanGuard(socket);
     socket.on("connect", () => {
       if (token) socket.emit("auth:token", { token });
       else socket.emit("auth:guest", { preferredUsername: sessionStorage.getItem("gaicani_guest_username") || null });

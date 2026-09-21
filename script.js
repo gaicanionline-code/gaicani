@@ -1,4 +1,5 @@
 const socket = io();
+attachTempBanGuard(socket);
 
 window.socket = socket;
 
