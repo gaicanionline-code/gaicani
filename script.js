@@ -1581,6 +1581,14 @@ socket.on("partnerDisconnected", (data) => {
     scheduleScroll();
 
     document.getElementById("blockOfferBtn").addEventListener("click", () => {
+      // Same underlying action as the main toolbar block button — counts
+      // toward the SAME countdown. This button is dynamically created and
+      // gets removed the instant it's clicked, so its own badge would just
+      // flash and disappear; updating the persistent toolbar button's badge
+      // instead is what the user can actually see and watch count down.
+      if (typeof window.registerAdClick === "function") {
+        window.registerAdClick("gaicani_ad_block", "adBadgeBlock", blockBtn);
+      }
       offerEl.remove();
       emitBlockUser(lastPartnerName);
     });
