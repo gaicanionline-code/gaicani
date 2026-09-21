@@ -90,7 +90,8 @@ const nextBtn        = document.getElementById("nextBtn");
 const scrollToTopBtn = document.getElementById("scrollToTopBtn");
 const blockBtn       = document.getElementById("blockBtn");
 if (typeof window.initAdCountdown === "function") {
-  window.initAdCountdown("gaicani_ad_randomchat", "adCountdownRandomChat", nextBtn);
+  window.initAdCountdown("gaicani_ad_next", "adBadgeNext", nextBtn);
+  window.initAdCountdown("gaicani_ad_block", "adBadgeBlock", blockBtn);
 }
 const reportBtn      = document.getElementById("reportBtn");
 const changeNameBtn  = document.getElementById("changeNameBtn");
@@ -1740,7 +1741,7 @@ socket.on("awayTimeout", () => {});
 
 nextBtn.addEventListener("click", () => {
   if (typeof window.registerAdClick === "function") {
-    window.registerAdClick("gaicani_ad_randomchat", "adCountdownRandomChat", nextBtn);
+    window.registerAdClick("gaicani_ad_next", "adBadgeNext", nextBtn);
   }
   nextBtn.disabled = true;
   setTimeout(() => { nextBtn.disabled = false; }, 1200);
@@ -1766,7 +1767,7 @@ nextBtn.addEventListener("click", () => {
 
 blockBtn.addEventListener("click", () => {
   if (typeof window.registerAdClick === "function") {
-    window.registerAdClick("gaicani_ad_randomchat", "adCountdownRandomChat", nextBtn);
+    window.registerAdClick("gaicani_ad_block", "adBadgeBlock", blockBtn);
   }
   const targetName = partnerName || lastPartnerName;
   if (!targetName) return;

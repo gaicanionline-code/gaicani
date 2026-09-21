@@ -1,78 +1,78 @@
-// ── Click-counted ad trigger ─────────────────────────────────────────────
-// Shared between random chat (ძებნა / დაბლოკვა) and private chat.
-// Opens the ad link in a new tab every AD_EVERY_N clicks, with a small
-// countdown badge showing how many clicks remain.
+// ── Per-button click-counted ad trigger ──────────────────────────────────
+// Each button gets its OWN independent countdown, shown as a small number
+// badge in its bottom-right corner — not a shared counter, not a separate
+// floating element. ძებნა counts its own clicks; ბლოკი counts its own;
+// private chat's send button counts its own. Every Nth click on a button
+// opens the ad and that button's own countdown restarts at N.
 //
 // Must be called SYNCHRONOUSLY, directly inside a real click handler — not
 // after an await/fetch/setTimeout — or the browser's popup blocker will
-// silently swallow window.open(). Every call site below does this correctly.
+// silently swallow window.open(). Every call site does this correctly.
 (function () {
   const AD_URL = "https://omg10.com/4/11150018";
   const AD_EVERY_N = 5;
 
-  // Persisted per browser tab (sessionStorage), so a reload mid-chat doesn't
-  // quietly reset someone back to a full 5 clicks — but a brand new tab does
-  // start fresh, since there's no server-side identity tying counts together
-  // and nothing here is meant to track a person across sessions.
-  function getCounters(storageKey) {
+  // Persisted per browser tab so a reload mid-session doesn't reset someone
+  // back to a full count. Each button gets its own sessionStorage key.
+  function getCount(storageKey) {
     try {
       const raw = sessionStorage.getItem(storageKey);
-      if (raw) return JSON.parse(raw);
+      if (raw !== null) return parseInt(raw, 10) || 0;
     } catch (_) {}
-    return { count: 0 };
+    return 0;
   }
-  function saveCounters(storageKey, data) {
-    try { sessionStorage.setItem(storageKey, JSON.stringify(data)); } catch (_) {}
+  function saveCount(storageKey, n) {
+    try { sessionStorage.setItem(storageKey, String(n)); } catch (_) {}
   }
 
-  function ensureBadge(badgeId, anchorEl) {
+  // Creates (once) or reuses a small number badge pinned to the button's
+  // own bottom-right corner. The button must have (or gets given) its own
+  // stacking context — position:relative — so the badge anchors to IT,
+  // not to some distant positioned ancestor.
+  function ensureButtonBadge(btnEl, badgeId) {
     let badge = document.getElementById(badgeId);
     if (badge) return badge;
-    badge = document.createElement("div");
+
+    const computedPos = window.getComputedStyle(btnEl).position;
+    if (computedPos === "static") btnEl.style.position = "relative";
+
+    badge = document.createElement("span");
     badge.id = badgeId;
-    badge.className = "ad-countdown-badge";
+    badge.className = "ad-click-badge";
     badge.title = "რეკლამამდე დარჩენილი დაწკაპუნებები";
-    if (anchorEl && anchorEl.parentNode) {
-      anchorEl.parentNode.insertBefore(badge, anchorEl);
-    } else {
-      document.body.appendChild(badge);
-    }
+    btnEl.appendChild(badge);
     return badge;
   }
 
-  function renderBadge(badge, remaining) {
-    badge.textContent = "📢 " + remaining;
+  function render(badge, remaining) {
+    badge.textContent = String(remaining);
   }
 
-  // Call this from inside a real click handler. `storageKey` scopes the
-  // counter (random chat and private chat count separately); `badgeId` +
-  // `anchorEl` control where the countdown shows.
-  window.registerAdClick = function (storageKey, badgeId, anchorEl) {
-    const data = getCounters(storageKey);
-    data.count = (data.count || 0) + 1;
+  // Call inside a real click handler. `storageKey` must be UNIQUE per
+  // button (each button counts independently); `badgeId` names that
+  // button's own badge; `btnEl` is the button the badge attaches to.
+  window.registerAdClick = function (storageKey, badgeId, btnEl) {
+    let count = getCount(storageKey) + 1;
+    const badge = ensureButtonBadge(btnEl, badgeId);
 
-    const badge = ensureBadge(badgeId, anchorEl);
-    // Clicks remaining until the next multiple of N (wraps back to N right
-    // after firing, since that's the countdown to the *next* ad).
-    const untilNext = AD_EVERY_N - (data.count % AD_EVERY_N);
-
-    if (data.count % AD_EVERY_N === 0) {
-      // This click IS the Nth — fire the ad now, synchronously, so the
-      // browser still treats it as a direct result of the user's click.
+    if (count >= AD_EVERY_N) {
+      // This click completes THIS button's own set of N — fire the ad,
+      // synchronously, so the browser still treats it as a direct result
+      // of the user's click. Then this button's countdown restarts.
       window.open(AD_URL, "_blank", "noopener");
-      renderBadge(badge, AD_EVERY_N);
+      count = 0;
+      render(badge, AD_EVERY_N);
     } else {
-      renderBadge(badge, untilNext);
+      render(badge, AD_EVERY_N - count);
     }
-    saveCounters(storageKey, data);
+    saveCount(storageKey, count);
   };
 
-  // Draws the badge at its current count without incrementing — used once
-  // on page load so it shows the right number before the first click.
-  window.initAdCountdown = function (storageKey, badgeId, anchorEl) {
-    const data = getCounters(storageKey);
-    const badge = ensureBadge(badgeId, anchorEl);
-    const untilNext = AD_EVERY_N - (data.count % AD_EVERY_N);
-    renderBadge(badge, untilNext === AD_EVERY_N ? AD_EVERY_N : untilNext);
+  // Draws a button's badge at its current count without incrementing —
+  // used once on page load so it shows the right number before any click.
+  window.initAdCountdown = function (storageKey, badgeId, btnEl) {
+    const count = getCount(storageKey);
+    const badge = ensureButtonBadge(btnEl, badgeId);
+    render(badge, AD_EVERY_N - count);
   };
 })();

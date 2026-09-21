@@ -2930,16 +2930,23 @@ body.rc-theme-light .reply-preview-close:hover { color: #1a1b1e; background: rgb
 
 body.rc-theme-light .chat-donate-text { color: #4b4f5a; }
 
-/* ── Ad countdown badge (random chat + private chat) ─────────────────────── */
-.ad-countdown-badge {
-  font-size: 0.72em;
-  font-weight: 700;
-  color: #96989d;
-  background: rgba(255,255,255,0.06);
-  border-radius: 12px;
-  padding: 3px 9px;
-  align-self: center;
-  white-space: nowrap;
+/* ── Ad click-countdown badge — sits in a button's own bottom-right corner ── */
+.ad-click-badge {
+  position: absolute;
+  bottom: -5px;
+  right: -5px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #1e1f22;
+  color: #dcddde;
+  border: 1.5px solid rgba(255,255,255,0.25);
+  font-size: 0.66em;
+  font-weight: 800;
+  line-height: 17px;
+  text-align: center;
+  pointer-events: none;
   user-select: none;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.5);
 }
-body.rc-theme-light .ad-countdown-badge { color: #6b7080; background: rgba(0,0,0,0.05); }

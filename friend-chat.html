@@ -328,6 +328,27 @@
     }
     #fc-send:hover { box-shadow: 0 3px 14px rgba(88,101,242,0.55); }
     #fc-send:active { transform: scale(0.93); }
+
+    /* ── Ad click-countdown badge — sits in the send button's own corner ── */
+    .ad-click-badge {
+      position: absolute;
+      bottom: -5px;
+      right: -5px;
+      min-width: 17px;
+      height: 17px;
+      padding: 0 4px;
+      border-radius: 999px;
+      background: #1e1f22;
+      color: #dcddde;
+      border: 1.5px solid rgba(255,255,255,0.25);
+      font-size: 0.66em;
+      font-weight: 800;
+      line-height: 17px;
+      text-align: center;
+      pointer-events: none;
+      user-select: none;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+    }
     #fc-send:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
 
     /* ── EMPTY STATE ── */
@@ -868,7 +889,6 @@
     </div>
     <button class="fc-theme-btn" id="fcThemeBtn" title="პარამეტრები — ფონი და რეაქცია">🎨</button>
     <div class="fc-expiry-badge">🕐 30 სთ ჩაშლა</div>
-    <div id="adCountdownPrivateChat" class="ad-countdown-badge"></div>
   </header>
 
   <!-- Chat background picker -->
@@ -1131,7 +1151,7 @@
   const elInput     = $("fc-input");
   const elSend      = $("fc-send");
   if (typeof window.initAdCountdown === "function") {
-    window.initAdCountdown("gaicani_ad_privatechat", "adCountdownPrivateChat", null);
+    window.initAdCountdown("gaicani_ad_send", "adBadgeSend", elSend);
   }
   const elAuth      = $("fc-auth-screen");
 
@@ -1693,7 +1713,7 @@
     if (!text || !socket?.connected) return;
 
     if (typeof window.registerAdClick === "function") {
-      window.registerAdClick("gaicani_ad_privatechat", "adCountdownPrivateChat", null);
+      window.registerAdClick("gaicani_ad_send", "adBadgeSend", elSend);
     }
 
     elInput.value = "";
