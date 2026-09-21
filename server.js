@@ -1955,49 +1955,88 @@ function renderAdminPanelHtml() {
 <title>Admin Panel</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#1e1f22;color:#dcddde;font-family:"Segoe UI",Arial,sans-serif;padding:24px}
-h1{color:#fff;font-size:1.4em;margin-bottom:20px}
-h2{color:#5865f2;font-size:1em;margin:24px 0 10px;text-transform:uppercase;letter-spacing:.5px}
-.card{background:#2b2d31;border-radius:10px;padding:16px;margin-bottom:12px}
-.ip{font-family:monospace;color:#fff;font-size:1em}
-.ban-btn{background:#f23f42;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:.85em;float:right;margin-top:-2px}
+:root{--bg:#1e1f22;--surface:#2b2d31;--surface2:#232427;--border:#1a1b1e;--text:#dcddde;--muted:#72767d;--accent:#5865f2}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI",Arial,sans-serif;padding:16px;padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));max-width:1100px;margin:0 auto}
+h1{color:#fff;font-size:1.25em;margin-bottom:4px}
+.subtitle{color:var(--muted);font-size:.8em;margin-bottom:16px}
+.top-bar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:18px;position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:10;border-bottom:1px solid var(--border)}
+.card{background:var(--surface);border-radius:10px;padding:16px;margin-bottom:12px}
+.ip{font-family:monospace;color:#fff;font-size:1em;word-break:break-all}
+.ban-btn{background:#f23f42;color:#fff;border:none;border-radius:6px;padding:7px 14px;cursor:pointer;font-size:.85em;min-height:32px}
 .ban-btn:hover{background:#c0393b}
-.unban-btn{background:#3ba55d;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:.85em}
+.unban-btn{background:#3ba55d;color:#fff;border:none;border-radius:6px;padding:7px 14px;cursor:pointer;font-size:.85em;min-height:32px}
 .unban-btn:hover{background:#2d8a4e}
 .badge{display:inline-block;background:rgba(88,101,242,.2);color:#5865f2;border-radius:4px;font-size:.75em;padding:2px 7px;margin-left:6px}
 .badge.green{background:rgba(59,165,93,.2);color:#3ba55d}
 .reason-list{margin:0;padding:0;list-style:none;max-width:320px}
-.reason-list li{font-size:.85em;color:#dcddde;padding:3px 0;border-bottom:1px solid #1a1b1e}
+.reason-list li{font-size:.85em;color:var(--text);padding:3px 0;border-bottom:1px solid var(--border)}
 .reason-list li:last-child{border-bottom:none}
-.reason-list .meta{color:#72767d;font-size:.85em}
-.refresh-btn{background:#5865f2;color:#fff;border:none;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:.85em;margin-bottom:16px}
+.reason-list .meta{color:var(--muted);font-size:.85em}
+.refresh-btn{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:9px 18px;cursor:pointer;font-size:.88em;min-height:38px}
 .refresh-btn:hover{background:#4752c4}
-.section{margin-bottom:32px}
-#status{color:#3ba55d;font-size:.85em;margin-left:10px;display:inline}
-table{width:100%;border-collapse:collapse}
-td,th{padding:8px 10px;text-align:left;font-size:.85em}
-th{color:#72767d;font-weight:600;border-bottom:1px solid #1a1b1e}
+.collapse-all-btn{background:var(--surface2);color:var(--text);border:1px solid #3a3c40;border-radius:6px;padding:9px 16px;cursor:pointer;font-size:.85em;min-height:38px}
+.collapse-all-btn:hover{background:#2f3136}
+
+/* ── Collapsible sections — native <details>, no JS needed to expand/
+   collapse, so there is nothing here that can break the data-loading
+   logic below it. ── */
+details.section{background:var(--surface);border-radius:10px;margin-bottom:10px;overflow:hidden}
+details.section > summary{
+  list-style:none;cursor:pointer;padding:14px 16px;color:#8b93ff;font-size:.92em;font-weight:600;
+  display:flex;align-items:center;gap:8px;user-select:none;min-height:24px;
+}
+details.section > summary::-webkit-details-marker{display:none}
+details.section > summary::before{content:"▸";display:inline-block;font-size:.8em;color:var(--muted);transition:transform .15s ease;flex-shrink:0}
+details.section[open] > summary::before{transform:rotate(90deg)}
+details.section > summary .count-badge{margin-left:auto;background:rgba(88,101,242,.2);color:#8b93ff;border-radius:10px;padding:2px 9px;font-size:.78em;font-weight:700}
+details.section > .section-body{padding:0 16px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+#status{color:#3ba55d;font-size:.85em;display:inline-block}
+
+/* Tables scroll horizontally within their section on narrow screens
+   (via .section-body's overflow-x, set above) instead of squeezing
+   every column unreadably small. */
+table{width:100%;border-collapse:collapse;min-width:480px}
+td,th{padding:9px 10px;text-align:left;font-size:.85em}
+th{color:var(--muted);font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap}
 tr:hover td{background:rgba(255,255,255,.03)}
-.manual-ban-box{background:#2b2d31;border-radius:10px;padding:18px;margin-bottom:12px}
-.manual-ban-box textarea{width:100%;background:#1e1f22;border:1px solid #3a3c40;border-radius:6px;color:#dcddde;font-family:monospace;font-size:.9em;padding:10px 12px;resize:vertical;min-height:72px;outline:none;margin-bottom:10px}
-.manual-ban-box textarea:focus{border-color:#5865f2}
-.manual-ban-box input[type=text]{width:100%;background:#1e1f22;border:1px solid #3a3c40;border-radius:6px;color:#dcddde;font-size:.85em;padding:8px 12px;outline:none;margin-bottom:10px}
-.manual-ban-box input[type=text]:focus{border-color:#5865f2}
-.manual-ban-box label{display:block;color:#72767d;font-size:.78em;margin-bottom:4px}
-.do-ban-btn{background:#f23f42;color:#fff;border:none;border-radius:6px;padding:8px 20px;cursor:pointer;font-size:.88em;font-weight:600}
+
+.manual-ban-box{background:var(--surface);border-radius:10px;padding:16px}
+.manual-ban-box textarea{width:100%;background:var(--bg);border:1px solid #3a3c40;border-radius:6px;color:var(--text);font-family:monospace;font-size:16px;padding:10px 12px;resize:vertical;min-height:72px;outline:none;margin-bottom:10px}
+.manual-ban-box textarea:focus{border-color:var(--accent)}
+.manual-ban-box input[type=text]{width:100%;background:var(--bg);border:1px solid #3a3c40;border-radius:6px;color:var(--text);font-size:16px;padding:10px 12px;outline:none;margin-bottom:10px;min-height:40px}
+.manual-ban-box input[type=text]:focus{border-color:var(--accent)}
+.manual-ban-box label{display:block;color:var(--muted);font-size:.78em;margin-bottom:4px}
+.do-ban-btn{background:#f23f42;color:#fff;border:none;border-radius:6px;padding:10px 20px;cursor:pointer;font-size:.9em;font-weight:600;min-height:40px;width:100%}
 .do-ban-btn:hover{background:#c0393b}
-.hint{color:#72767d;font-size:.76em;margin-top:6px}
-.ua-cell{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#b5bac1;font-size:.85em}
-.block-ua-btn{background:#faa61a;color:#1e1f22;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:.8em;font-weight:600;margin-left:6px;white-space:nowrap}
+.hint{color:var(--muted);font-size:.76em;margin-top:8px;line-height:1.5}
+.ua-cell{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#b5bac1;font-size:.85em}
+.block-ua-btn{background:#faa61a;color:#1e1f22;border:none;border-radius:6px;padding:7px 12px;cursor:pointer;font-size:.8em;font-weight:600;margin-left:6px;white-space:nowrap;min-height:32px}
 .block-ua-btn:hover{background:#d78d0f}
+
+@media (max-width:640px){
+  body{padding:10px;padding-top:max(10px,env(safe-area-inset-top))}
+  h1{font-size:1.1em}
+  details.section > summary{font-size:.86em;padding:12px 12px}
+  details.section > .section-body{padding:0 12px 14px}
+  .manual-ban-box{padding:14px}
+  .refresh-btn,.collapse-all-btn{flex:1;text-align:center}
+  td,th{padding:8px 6px;font-size:.8em}
+}
 </style>
 </head>
 <body>
 <h1>🛡️ Admin Panel</h1>
-<button class="refresh-btn" onclick="loadAll()">↻ Refresh</button><span id="status"></span>
+<div class="subtitle">GAICANI moderation</div>
+<div class="top-bar">
+  <button class="refresh-btn" onclick="loadAll()">↻ Refresh</button>
+  <button class="collapse-all-btn" onclick="toggleAllSections()" id="collapseAllBtn">⇕ Collapse all</button>
+  <span id="status"></span>
+</div>
 
-<div class="section">
-  <h2>🔒 Manual Permanent Ban</h2>
+<details class="section" open>
+  <summary>🔒 Manual Permanent Ban</summary>
+  <div class="section-body">
   <div class="manual-ban-box">
     <label>IP address(es) to ban forever</label>
     <textarea id="manualIPs" placeholder="1.2.3.4&#10;5.6.7.8&#10;or comma-separated: 1.2.3.4, 5.6.7.8"></textarea>
@@ -2006,47 +2045,50 @@ tr:hover td{background:rgba(255,255,255,.03)}
     <button class="do-ban-btn" onclick="manualBan()">🚫 Ban Forever</button>
     <p class="hint">Enter one IP per line, or separate with commas. Bans are saved to disk and survive restarts.</p>
   </div>
-</div>
+  </div>
+</details>
 
-<div class="section">
-  <h2>Connected Users</h2>
-  <div id="users">Loading...</div>
-</div>
+<details class="section" open>
+  <summary>Connected Users</summary>
+  <div class="section-body"><div id="users">Loading...</div></div>
+</details>
 
-<div class="section">
-  <h2>🚩 All Reports (every IP with 1+ reports — 5 still auto-bans for 24h)</h2>
-  <div id="reported">Loading...</div>
-</div>
+<details class="section">
+  <summary>🚩 All Reports <span class="hint" style="margin:0 0 0 4px;font-weight:400">(every IP with 1+ reports — 5 still auto-bans for 24h)</span></summary>
+  <div class="section-body"><div id="reported">Loading...</div></div>
+</details>
 
-<div class="section">
-  <h2>🚩 Profile Reports (registered accounts reported via their profile card)</h2>
-  <div id="accountReported">Loading...</div>
-</div>
+<details class="section">
+  <summary>🚩 Profile Reports <span class="hint" style="margin:0 0 0 4px;font-weight:400">(registered accounts, via profile card)</span></summary>
+  <div class="section-body"><div id="accountReported">Loading...</div></div>
+</details>
 
-<div class="section">
-  <h2>👤 All Registered Accounts (last-used IP)</h2>
-  <div id="regUsers">Loading...</div>
-</div>
+<details class="section">
+  <summary>👤 All Registered Accounts <span class="hint" style="margin:0 0 0 4px;font-weight:400">(last-used IP)</span></summary>
+  <div class="section-body"><div id="regUsers">Loading...</div></div>
+</details>
 
-<div class="section">
-  <h2>Banned IPs</h2>
-  <div id="bans">Loading...</div>
-</div>
+<details class="section">
+  <summary>Banned IPs</summary>
+  <div class="section-body"><div id="bans">Loading...</div></div>
+</details>
 
-<div class="section">
-  <h2>🌐 Block a User-Agent</h2>
+<details class="section">
+  <summary>🌐 Block a User-Agent</summary>
+  <div class="section-body">
   <div class="manual-ban-box">
     <label>Block a User-Agent manually (paste the exact string)</label>
     <input type="text" id="manualUA" placeholder="e.g. Mozilla/5.0 (compatible; SomeBot/1.0)" />
     <button class="do-ban-btn" onclick="manualBlockUA()">🚫 Block This User-Agent</button>
     <p class="hint">Blocks every visitor sending this exact User-Agent header, on any IP. Saved to disk and survives restarts.</p>
   </div>
-</div>
+  </div>
+</details>
 
-<div class="section">
-  <h2>🧱 Blocked User-Agents</h2>
-  <div id="blockedUAs">Loading...</div>
-</div>
+<details class="section">
+  <summary>🧱 Blocked User-Agents</summary>
+  <div class="section-body"><div id="blockedUAs">Loading...</div></div>
+</details>
 
 <script>
 const R = ${JSON.stringify(ROUTE)};
@@ -2054,6 +2096,33 @@ const R = ${JSON.stringify(ROUTE)};
 async function api(method, url) {
   const r = await fetch(url, { method });
   return r.json();
+}
+
+// -- Collapse / expand all sections ------------------------------------
+function toggleAllSections() {
+  const sections = document.querySelectorAll("details.section");
+  const anyOpen = [...sections].some(s => s.open);
+  sections.forEach(s => { s.open = !anyOpen; });
+  document.getElementById("collapseAllBtn").textContent = anyOpen ? "\u21d5 Expand all" : "\u21d5 Collapse all";
+}
+
+// Shows a count badge on a section's own header (visible even while
+// collapsed), so e.g. "Banned IPs" reads as "Banned IPs 3" without
+// having to open it first.
+function setSectionCount(bodyElId, n) {
+  const body = document.getElementById(bodyElId);
+  if (!body) return;
+  const details = body.closest("details.section");
+  if (!details) return;
+  const summary = details.querySelector("summary");
+  if (!summary) return;
+  let badge = summary.querySelector(".count-badge");
+  if (!badge) {
+    badge = document.createElement("span");
+    badge.className = "count-badge";
+    summary.appendChild(badge);
+  }
+  badge.textContent = String(n);
 }
 
 async function banIP(ip) {
@@ -2199,6 +2268,7 @@ async function loadAll() {
   try {
     const d = await api("GET", R.users);
     const el = document.getElementById("users");
+    setSectionCount("users", (d.users || []).length);
     if (!d.users || !d.users.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No connected users</p>'; }
     else {
       el.innerHTML = '<table><tr><th>Name</th><th>IP</th><th>User-Agent</th><th>Status</th><th></th></tr>' +
@@ -2219,6 +2289,7 @@ async function loadAll() {
   try {
     const d = await api("GET", R.regUsers);
     const el = document.getElementById("regUsers");
+    setSectionCount("regUsers", (d.users || []).length);
     if (!d.users || !d.users.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No registered accounts yet</p>'; }
     else {
       el.innerHTML = '<table><tr><th>Username</th><th>Last IP</th><th>Last seen</th><th>Status</th><th></th></tr>' +
@@ -2252,6 +2323,7 @@ async function loadAll() {
   try {
     const d = await api("GET", R.reported);
     const el = document.getElementById("reported");
+    setSectionCount("reported", (d.reported || []).length);
     if (!d.reported || !d.reported.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No reports on file</p>'; }
     else {
       el.innerHTML = '<table><tr><th>IP</th><th>Name(s)</th><th>Reports</th><th>Reasons</th><th>Status</th><th></th></tr>' +
@@ -2290,6 +2362,7 @@ async function loadAll() {
   try {
     const d = await api("GET", R.accountReports);
     const el = document.getElementById("accountReported");
+    setSectionCount("accountReported", (d.reported || []).length);
     if (!d.reported || !d.reported.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No profile reports on file</p>'; }
     else {
       el.innerHTML = '<table><tr><th>Username</th><th>Reports</th><th>Latest reasons</th></tr>' +
@@ -2309,6 +2382,7 @@ async function loadAll() {
   try {
     const d = await api("GET", R.bans);
     const el = document.getElementById("bans");
+    setSectionCount("bans", (d.ips || []).length);
     if (!d.ips || !d.ips.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No banned IPs</p>'; }
     else {
       el.innerHTML = d.ips.map(ip => \`<div class="card">
@@ -2321,6 +2395,7 @@ async function loadAll() {
   try {
     const d = await api("GET", R.blockedUAs);
     const el = document.getElementById("blockedUAs");
+    setSectionCount("blockedUAs", (d.userAgents || []).length);
     if (!d.userAgents || !d.userAgents.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No blocked user-agents</p>'; }
     else {
       el.innerHTML = d.userAgents.map(ua => \`<div class="card">
