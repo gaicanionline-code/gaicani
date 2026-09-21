@@ -240,7 +240,7 @@ function addDonationCard() {
 
   const txt = document.createElement("div");
   txt.className = "chat-donate-text";
-txt.appendChild(document.createTextNode("❤️ თუ 50₾ შევაგროვებთ, რეკლამები მთელი კვირით გაითიშება! 🚫📢"));
+txt.appendChild(document.createTextNode("❤️ თუ 30₾ შევაგროვებთ, რეკლამები მთელი კვირით გაითიშება! 🚫📢"));
   txt.appendChild(document.createElement("br"));
   txt.appendChild(document.createTextNode("შენი მხარდაჭერა ჩვენთვის ძალიან ბევრს ნიშნავს."));
 
