@@ -22,6 +22,31 @@ const dataDirUsable = fs.existsSync(DATA_DIR) && (() => {
 const DATA_PATH = dataDirUsable ? DATA_DIR : __dirname;
 console.log(`[DATA] Persistent files will be stored in: ${DATA_PATH}`);
 const crypto     = require("crypto");
+
+// ── Private photo storage ────────────────────────────────────────────────
+// Lives under DATA_PATH (the same persistent volume as the JSON data,
+// see above) rather than __dirname, because __dirname is the app CODE
+// directory — on a host with an ephemeral filesystem, anything written
+// there can vanish on the next deploy. User-uploaded content needs to
+// survive that the same way the message history already does.
+const PRIVATE_PHOTOS_DIR = path.join(DATA_PATH, "private-photos");
+try {
+  if (!fs.existsSync(PRIVATE_PHOTOS_DIR)) fs.mkdirSync(PRIVATE_PHOTOS_DIR, { recursive: true });
+} catch (e) {
+  console.error("[PHOTOS] Could not create private-photos directory:", e.message);
+}
+
+// A deleted private room can still be referencing real files on disk — call
+// this BEFORE removing a room from privateRooms, on both the self-service
+// and admin delete paths, or those files just sit there forever.
+function deleteRoomPhotoFiles(room) {
+  if (!room?.messages) return;
+  for (const m of room.messages) {
+    if (m.type !== "photo" || !m.photoUrl) continue;
+    const filename = path.basename(m.photoUrl); // defence in depth against a malformed stored path
+    try { fs.unlinkSync(path.join(PRIVATE_PHOTOS_DIR, filename)); } catch { /* already gone, fine */ }
+  }
+}
 const compression   = require("compression");
 const rateLimit     = require("express-rate-limit");
 
@@ -123,6 +148,12 @@ const io     = new Server(server, {
   pingInterval: 25000,
   // Allow both polling and websocket so mobile fallback works
   transports: ["websocket", "polling"],
+  // Default is 1MB, which would silently drop any photo upload anywhere
+  // near the application-level 5MB cap enforced in privateMsg:sendPhoto —
+  // the packet never reaches that handler's validation at all, so the
+  // sender would see nothing happen with no error. Sized for a 5MB raw
+  // image (~6.7MB as base64) plus its JSON envelope, with headroom.
+  maxHttpBufferSize: 8 * 1024 * 1024,
 });
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -408,7 +439,10 @@ const ROUTE = {
   regUsers:     "/y5tm2bk9lz3", // JSON: every REGISTERED username + their last-used IP (not just who's online now)
   accountReports: "/z3np8wk1yh6", // JSON: reports filed against registered accounts from their profile card
   deleteUser:   "/c8ke2mr5vq1", // POST: admin delete an account (purges content, bans last IP)
+  setPro:       "/m8hy3rn6qc2", // POST: grant/revoke pro status on a registered account
   tempBan:      "/w4qd7np2xb8", // POST: 24h IP block with a shown reason
+  tempBansList: "/j3nc6wp0xz5", // GET: list currently-active 24h blocks
+  unbanTemp:    "/k9vd4qz2ym8", // POST: lift a 24h block early
 };
 
 // ── Sensitive-URL visitor log ─────────────────────────────────────────────────
@@ -1447,6 +1481,9 @@ app.post("/captcha-verify", (req, res) => {
 });
 
 app.use(express.static(path.join(__dirname)));
+// Uploaded private-chat photos live outside __dirname (see PRIVATE_PHOTOS_DIR
+// above), so they need their own explicit static route to be reachable.
+app.use("/private-photos", express.static(PRIVATE_PHOTOS_DIR, { maxAge: "7d" }));
 
 // (captcha gate was previously here — moved above static)
 
@@ -1662,6 +1699,8 @@ app.get(ROUTE.regUsers, ownerOnly, (req, res) => {
       lastIP: u.lastIP || null,
       lastIPAt: u.lastIPAt || null,
       isAdmin: !!u.isAdmin,
+      isPro: !!u.isPro,
+      isGuest: !!u.isGuest,
       isBanned: u.lastIP ? bannedIPs.has(u.lastIP) : false,
     });
   }
@@ -1717,7 +1756,9 @@ app.post(ROUTE.deleteUser, ownerOnly, (req, res) => {
   }
 
   // ── private data and social graph ──
-  for (const [roomId] of privateRooms) if (roomId.split("::").includes(lc)) privateRooms.delete(roomId);
+  for (const [roomId, room] of privateRooms) {
+    if (roomId.split("::").includes(lc)) { deleteRoomPhotoFiles(room); privateRooms.delete(roomId); }
+  }
   for (const [roomId] of friendStreaks) if (roomId.split("::").includes(lc)) friendStreaks.delete(roomId);
   for (const [, other] of registeredUsers) {
     if (Array.isArray(other.friends))         other.friends         = other.friends.filter(f => f !== lc);
@@ -1763,6 +1804,39 @@ app.post(ROUTE.deleteUser, ownerOnly, (req, res) => {
   });
 });
 
+// POST <setPro route>?username=x&pro=true|false — grant or revoke pro
+// status on a registered account. Pro gets them a visible star badge,
+// exemption from the click-ad system, and photo-sending in private chat
+// with their mutual friends.
+app.post(ROUTE.setPro, ownerOnly, (req, res) => {
+  const username = String(req.query.username || "").trim();
+  const pro = req.query.pro !== "false"; // default true; explicit "false" revokes
+  if (!username) return res.status(400).json({ error: "username param required" });
+
+  const lc = username.toLowerCase();
+  const user = registeredUsers.get(lc);
+  if (!user) return res.status(404).json({ error: "user not found" });
+  if (user.isGuest) return res.status(400).json({ error: "guests cannot be granted pro status" });
+
+  user.isPro = pro;
+  saveAuthUsers();
+
+  // If they're online right now, tell their live session immediately —
+  // otherwise the star/ad-exemption/photo-button wouldn't show up until
+  // their next login, which is confusing right after an admin just did this.
+  let notified = 0;
+  const sockets = onlineRegSockets.get(lc);
+  if (sockets) {
+    for (const sid of sockets) {
+      const s = io.sockets.sockets.get(sid);
+      if (s) { s.emit("auth:proStatusChanged", { isPro: pro }); notified++; }
+    }
+  }
+
+  console.log(`[ADMIN] ${pro ? "Granted" : "Revoked"} pro status for "${user.username}"`);
+  res.json({ success: true, username: user.username, isPro: pro, notifiedSockets: notified });
+});
+
 // POST <tempBan route>?ip=1.2.3.4&username=x  — block an IP for 24 hours.
 // Unlike the permanent ban this one is EXPLAINED to the visitor: they get a
 // page naming the offending username and saying when they can return.
@@ -1788,6 +1862,37 @@ app.post(ROUTE.tempBan, ownerOnly, (req, res) => {
   }
   console.log(`[ADMIN] 24h block on ${ip} (name: ${username || "n/a"}) — kicked ${kicked} socket(s)`);
   res.json({ success: true, ip, username, until: entry.until, kickedSockets: kicked });
+});
+
+// GET <tempBansList route> — every currently-active 24h block, with how
+// much time is left on each. Expired entries are pruned on the way out
+// (getTempBan() already does this lazily per-IP; here we sweep the whole
+// map so the list doesn't show stale rows that would vanish on their own
+// the next time someone actually hits that IP).
+app.get(ROUTE.tempBansList, ownerOnly, (req, res) => {
+  const now = Date.now();
+  const list = [];
+  for (const [ip, entry] of [...tempBans]) {
+    if (now >= entry.until) { tempBans.delete(ip); continue; }
+    list.push({
+      ip,
+      username: entry.username || "",
+      reason: entry.reason || "offensive_name",
+      until: entry.until,
+      remainingMs: entry.until - now,
+    });
+  }
+  list.sort((a, b) => a.remainingMs - b.remainingMs); // soonest-to-expire first
+  res.json({ count: list.length, bans: list });
+});
+
+// POST <unbanTemp route>?ip=1.2.3.4 — lift a 24h block early
+app.post(ROUTE.unbanTemp, ownerOnly, (req, res) => {
+  const ip = String(req.query.ip || "").trim();
+  if (!ip) return res.status(400).json({ error: "ip param required" });
+  const had = tempBans.delete(ip);
+  console.log(`[ADMIN] Lifted 24h block on ${ip} early`);
+  res.json({ success: true, ip, wasActive: had });
 });
 
 // POST <ban route>?ip=1.2.3.4  — ban an IP and kick all matching sockets
@@ -2065,12 +2170,21 @@ tr:hover td{background:rgba(255,255,255,.03)}
 
 <details class="section">
   <summary>👤 All Registered Accounts <span class="hint" style="margin:0 0 0 4px;font-weight:400">(last-used IP)</span></summary>
-  <div class="section-body"><div id="regUsers">Loading...</div></div>
+  <div class="section-body">
+    <input type="text" id="regUserSearch" placeholder="\u{1F50D} Search by username..." oninput="filterRegUsers(this.value)"
+      style="width:100%;background:#1e1f22;border:1px solid #3a3c40;border-radius:6px;color:#dcddde;font-size:16px;padding:9px 12px;outline:none;margin-bottom:10px" />
+    <div id="regUsers">Loading...</div>
+  </div>
 </details>
 
 <details class="section">
   <summary>Banned IPs</summary>
   <div class="section-body"><div id="bans">Loading...</div></div>
+</details>
+
+<details class="section">
+  <summary>⏱ 24h Blocks <span class="hint" style="margin:0 0 0 4px;font-weight:400">(temporary — shows time remaining, can be lifted early)</span></summary>
+  <div class="section-body"><div id="tempBansList">Loading...</div></div>
 </details>
 
 <details class="section">
@@ -2178,6 +2292,87 @@ async function unbanIP(ip) {
   await api("POST", R.unban + "?ip=" + encodeURIComponent(ip));
   setStatus("✅ Unbanned " + ip);
   loadAll();
+}
+
+async function unbanTemp(ip) {
+  if (!confirm("Lift the 24h block on " + ip + " early?")) return;
+  await api("POST", R.unbanTemp + "?ip=" + encodeURIComponent(ip));
+  setStatus("✅ Lifted 24h block on " + ip);
+  loadAll();
+}
+
+// "3h 12m" / "45m" / "<1m" — deliberately coarse, this is a moderation
+// dashboard, not a stopwatch. Refreshes whenever loadAll() re-polls.
+function fmtRemaining(ms) {
+  if (ms <= 0) return "expired";
+  const totalMin = Math.ceil(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h > 0) return h + "h " + m + "m";
+  if (m > 0) return m + "m";
+  return "<1m";
+}
+
+let allRegUsers = []; // cached from the last load, so search filters instantly with no extra request
+
+function renderRegUsersTable(list) {
+  const el = document.getElementById("regUsers");
+  if (!list.length) {
+    el.innerHTML = '<p style="color:#72767d;font-size:.9em">No matching accounts</p>';
+    return;
+  }
+  el.innerHTML = '<table><tr><th>Username</th><th>Last IP</th><th>Last seen</th><th>Status</th><th></th></tr>' +
+    list.map(u => {
+      const lastSeen = u.lastIPAt ? new Date(u.lastIPAt).toLocaleString() : "never logged in";
+      const proBadge = u.isPro ? '<span class="badge" style="background:rgba(242,201,76,.2);color:#f2c94c">\u2B50 pro</span>' : '';
+      const statusHtml = (u.isBanned
+        ? '<span class="badge" style="background:rgba(242,63,66,.2);color:#f23f42">🔒 IP banned</span>'
+        : (u.isAdmin ? '<span class="badge green">admin</span>' : '')) + proBadge;
+      const actionHtml = u.lastIP
+        ? (u.isBanned
+            ? \`<button class="unban-btn" onclick="unbanIP('\${esc(u.lastIP)}')">✅ Unban</button>\`
+            : \`<button class="ban-btn" onclick="banIP('\${esc(u.lastIP)}')">🚫 Ban this IP</button>\`)
+        : '<span class="hint">no IP on file</span>';
+      const tempHtml = u.lastIP
+        ? \`<button class="ban-btn" style="margin-left:6px;background:#8a6d1f" onclick="tempBan('\${esc(u.lastIP)}','\${esc(u.username)}')">\u23F1 24h block</button>\`
+        : '';
+      const proBtnHtml = \`<button class="\${u.isPro ? "unban-btn" : "ban-btn"}" style="margin-left:6px;\${u.isPro ? "" : "background:#8a6d1f"}" onclick="setProStatus('\${esc(u.username)}', \${u.isPro ? "false" : "true"})">\${u.isPro ? "\u2B50 Revoke pro" : "\u2B50 Grant pro"}</button>\`;
+      const delHtml = u.isAdmin
+        ? '<span class="hint">protected</span>'
+        : \`<button class="ban-btn" style="margin-left:6px" onclick="deleteUser('\${esc(u.username)}')">🗑 Delete + ban</button>\`;
+      return \`<tr>
+        <td><span class="ip">\${esc(u.username)}</span></td>
+        <td style="font-family:monospace;color:#b5bac1">\${esc(u.lastIP || "—")}</td>
+        <td style="color:#b5bac1;font-size:.85em">\${esc(lastSeen)}</td>
+        <td>\${statusHtml}</td>
+        <td style="white-space:nowrap">\${actionHtml}\${tempHtml}\${proBtnHtml}\${delHtml}</td>
+      </tr>\`;
+    }).join("") + "</table>";
+}
+
+// Purely client-side — the full list is already cached, so this is instant
+// and never hits the network. Called on every keystroke.
+function filterRegUsers(query) {
+  const q = query.trim().toLowerCase();
+  const filtered = q ? allRegUsers.filter(u => u.username.toLowerCase().includes(q)) : allRegUsers;
+  renderRegUsersTable(filtered);
+}
+
+// The 20s auto-refresh must not silently wipe out whatever an admin is
+// currently searching for — this re-applies it after fresh data lands.
+function reapplyRegUserFilter() {
+  const box = document.getElementById("regUserSearch");
+  if (box && box.value.trim()) filterRegUsers(box.value);
+}
+
+async function setProStatus(username, makeProBool) {
+  const verb = makeProBool ? "Grant" : "Revoke";
+  if (!confirm(\`\${verb} pro status for "\${username}"?\${makeProBool ? "\\n\\nThey'll get a star badge, no more click-ads, and can send photos to friends." : ""}\`)) return;
+  try {
+    const r = await api("POST", R.setPro + "?username=" + encodeURIComponent(username) + "&pro=" + makeProBool);
+    setStatus(\`✅ \${r.isPro ? "Granted" : "Revoked"} pro for \${r.username}\`);
+    loadAll();
+  } catch(e) { alert("Failed: " + e.message); }
 }
 
 async function unbanReportedIP(ip) {
@@ -2288,36 +2483,10 @@ async function loadAll() {
 
   try {
     const d = await api("GET", R.regUsers);
-    const el = document.getElementById("regUsers");
-    setSectionCount("regUsers", (d.users || []).length);
-    if (!d.users || !d.users.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No registered accounts yet</p>'; }
-    else {
-      el.innerHTML = '<table><tr><th>Username</th><th>Last IP</th><th>Last seen</th><th>Status</th><th></th></tr>' +
-        d.users.map(u => {
-          const lastSeen = u.lastIPAt ? new Date(u.lastIPAt).toLocaleString() : "never logged in";
-          const statusHtml = u.isBanned
-            ? '<span class="badge" style="background:rgba(242,63,66,.2);color:#f23f42">🔒 IP banned</span>'
-            : (u.isAdmin ? '<span class="badge green">admin</span>' : '');
-          const actionHtml = u.lastIP
-            ? (u.isBanned
-                ? \`<button class="unban-btn" onclick="unbanIP('\${esc(u.lastIP)}')">✅ Unban</button>\`
-                : \`<button class="ban-btn" onclick="banIP('\${esc(u.lastIP)}')">🚫 Ban this IP</button>\`)
-            : '<span class="hint">no IP on file</span>';
-          const tempHtml = u.lastIP
-            ? \`<button class="ban-btn" style="margin-left:6px;background:#8a6d1f" onclick="tempBan('\${esc(u.lastIP)}','\${esc(u.username)}')">\u23F1 24h block</button>\`
-            : '';
-          const delHtml = u.isAdmin
-            ? '<span class="hint">protected</span>'
-            : \`<button class="ban-btn" style="margin-left:6px" onclick="deleteUser('\${esc(u.username)}')">🗑 Delete + ban</button>\`;
-          return \`<tr>
-            <td><span class="ip">\${esc(u.username)}</span></td>
-            <td style="font-family:monospace;color:#b5bac1">\${esc(u.lastIP || "—")}</td>
-            <td style="color:#b5bac1;font-size:.85em">\${esc(lastSeen)}</td>
-            <td>\${statusHtml}</td>
-            <td style="white-space:nowrap">\${actionHtml}\${tempHtml}\${delHtml}</td>
-          </tr>\`;
-        }).join("") + "</table>";
-    }
+    allRegUsers = d.users || []; // cached for filterRegUsers() below
+    setSectionCount("regUsers", allRegUsers.length);
+    renderRegUsersTable(allRegUsers);
+    reapplyRegUserFilter();
   } catch(e) { document.getElementById("regUsers").textContent = "Error"; }
 
   try {
@@ -2391,6 +2560,21 @@ async function loadAll() {
       </div>\`).join("");
     }
   } catch(e) { document.getElementById("bans").textContent = "Error"; }
+
+  try {
+    const d = await api("GET", R.tempBansList);
+    const el = document.getElementById("tempBansList");
+    setSectionCount("tempBansList", (d.bans || []).length);
+    if (!d.bans || !d.bans.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No active 24h blocks</p>'; }
+    else {
+      el.innerHTML = d.bans.map(b => \`<div class="card">
+        <span class="ip">\${esc(b.ip)}</span>
+        \${b.username ? \`<span class="badge">\${esc(b.username)}</span>\` : ""}
+        <button class="unban-btn" onclick="unbanTemp('\${esc(b.ip)}')" style="float:right">Unban</button>
+        <div class="hint" style="margin-top:6px">\${fmtRemaining(b.remainingMs)} remaining \\u2014 reason: \${esc(b.reason)}</div>
+      </div>\`).join("");
+    }
+  } catch(e) { document.getElementById("tempBansList").textContent = "Error"; }
 
   try {
     const d = await api("GET", R.blockedUAs);
@@ -4071,7 +4255,7 @@ function getOnlineRegisteredUsers(excludeLc) {
     if (lc === excludeLc) continue;
     const u = registeredUsers.get(lc);
     if (!u) continue;
-    list.push({ username: u.username, avatar: u.avatar || null, bio: u.bio || "", isGuest: !!u.isGuest });
+    list.push({ username: u.username, avatar: u.avatar || null, bio: u.bio || "", isGuest: !!u.isGuest, isPro: !!u.isPro });
   }
   // Real accounts first, temporary guests after — within each group, alphabetical.
   list.sort((a, b) => (a.isGuest === b.isGuest ? a.username.localeCompare(b.username) : (a.isGuest ? 1 : -1)));
@@ -4254,6 +4438,7 @@ function roomMessagePublic(m) {
     text: m.text,
     ts: m.ts,
     avatar: author?.avatar || null,
+    isPro: !!author?.isPro,
   };
 }
 
@@ -4685,7 +4870,7 @@ const adminSeedPromise = seedAdminAccount().catch(e => console.error("[ADMIN] Fa
 setInterval(() => {
   const now = Date.now();
   let n = 0;
-  for (const [id, r] of privateRooms) if (now >= r.expiresAt) { privateRooms.delete(id); n++; }
+  for (const [id, r] of privateRooms) if (now >= r.expiresAt) { deleteRoomPhotoFiles(r); privateRooms.delete(id); n++; }
   if (n) { savePrivateMsgs(); console.log(`[PRIV] Cleaned ${n} expired room(s)`); }
 }, 60 * 60 * 1000);
 
@@ -4943,8 +5128,8 @@ app.post("/api/auth/delete-account", authLimiter, express.json({ limit: "2kb" })
   }
 
   // 2. Private conversations involving this user, and their streaks
-  for (const [roomId] of privateRooms) {
-    if (roomId.split("::").includes(lc)) privateRooms.delete(roomId);
+  for (const [roomId, room] of privateRooms) {
+    if (roomId.split("::").includes(lc)) { deleteRoomPhotoFiles(room); privateRooms.delete(roomId); }
   }
   for (const [roomId] of friendStreaks) {
     if (roomId.split("::").includes(lc)) friendStreaks.delete(roomId);
@@ -5085,6 +5270,7 @@ app.get("/api/users/profile", (req, res) => {
     bio: u.bio || "",
     isOnline,
     isGuest: !!u.isGuest,
+    isPro: !!u.isPro,
   });
 });
 
@@ -5301,6 +5487,8 @@ app.get("/api/priv/history", (req, res) => {
   const msgs = (room.messages || []).map(m => ({
     from:      m.from,
     text:      m.text,
+    type:      m.type || "text",
+    photoUrl:  m.photoUrl || null,
     ts:        m.ts,
     messageId: m.id || null,
     replyTo:   m.replyTo || null,
@@ -8749,7 +8937,7 @@ io.on("connection", (socket) => {
     onlineRegSockets.get(entry.usernameLower).add(socket.id);
 
     socket.join(`user:${entry.usernameLower}`);
-    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, blockedUsers: user.blockedUsers || [] });
+    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, isPro: !!user.isPro, blockedUsers: user.blockedUsers || [] });
     console.log(`[AUTH] ${user.username} logged in`);
     io.emit("users:onlineChanged"); // let dashboards know the online list may have changed
   });
@@ -8783,7 +8971,7 @@ io.on("connection", (socket) => {
     if (!onlineRegSockets.has(entry.usernameLower)) onlineRegSockets.set(entry.usernameLower, new Set());
     onlineRegSockets.get(entry.usernameLower).add(socket.id);
     socket.join(`user:${entry.usernameLower}`);
-    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, blockedUsers: user.blockedUsers || [] });
+    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, isPro: !!user.isPro, blockedUsers: user.blockedUsers || [] });
     console.log(`[AUTH] ${user.username} logged in via auth:token`);
     io.emit("users:onlineChanged"); // let dashboards know the online list may have changed
   });
@@ -8863,7 +9051,7 @@ io.on("connection", (socket) => {
 
     socket.emit("auth:authenticated", {
       username, friends: [], pendingRequests: [], avatar: guestUser.avatar || GUEST_AVATAR, bio: guestUser.bio || "",
-      streaks: {}, isAdmin: false, isGuest: true, guestToken
+      streaks: {}, isAdmin: false, isPro: false, isGuest: true, guestToken
     });
     console.log(`[AUTH] ${username} started a guest session`);
     io.emit("users:onlineChanged");
@@ -9330,6 +9518,116 @@ io.on("connection", (socket) => {
     const streak = recordFriendMessage(socket._regUser.usernameLower, toLc);
     io.to(`user:${toLc}`).emit("streak:update", { friendUsername: socket._regUser.username, count: streak.count, atRisk: streak.atRisk });
     socket.emit("streak:update", { friendUsername: toUser?.username || toUsername, count: streak.count, atRisk: streak.atRisk });
+  });
+
+  // ── privateMsg:sendPhoto — pro users only, private chat with an EXISTING
+  // mutual friend only. Deliberately NOT available in random chat, rooms,
+  // or forum — see the scoping note at the top of this feature. Checked
+  // more strictly than the plain text handler above: friendship is verified
+  // in BOTH directions here rather than assumed from room membership, since
+  // image content warrants the extra certainty.
+  const ALLOWED_PHOTO_MIME = {
+    "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
+  };
+  const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // 5MB decoded
+
+  socket.on("privateMsg:sendPhoto", ({ toUsername, photoData, mimeType, messageId }) => {
+    if (!socket._regUser || !toUsername || !photoData || !mimeType) return;
+    if (socket._regUser.isGuest) { socket.emit("privateMsg:photoSent", { success: false, messageId, error: "სტუმრებს ფოტოს გაგზავნა არ შეუძლიათ" }); return; }
+
+    const myLc = socket._regUser.usernameLower;
+    const myUser = registeredUsers.get(myLc);
+    if (!myUser?.isPro) {
+      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ფოტოს გაგზავნა მხოლოდ Pro მომხმარებლებს შეუძლიათ" });
+      return;
+    }
+
+    const ext = ALLOWED_PHOTO_MIME[mimeType];
+    if (!ext) {
+      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ამ ტიპის ფაილი დაუშვებელია" });
+      return;
+    }
+
+    // 5 photos per minute — generous for real chat use, protects storage
+    // and the recipient from being flooded with images.
+    if (mediaRateLimited(socket, "privatePhoto", 5, 60_000)) {
+      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ძალიან ხშირად აგზავნი — ცოტა დაელოდე" });
+      return;
+    }
+
+    const toLc = String(toUsername).toLowerCase().trim();
+    const toUser = registeredUsers.get(toLc);
+    if (!toUser) { socket.emit("privateMsg:photoSent", { success: false, messageId, error: "მომხმარებელი ვერ მოიძებნა" }); return; }
+
+    // Mutual friendship checked explicitly in BOTH directions, rather than
+    // relying on the caller having already joined the friendchat room —
+    // a stricter bar than plain text messages get, deliberately, given
+    // this is image content.
+    if (!(myUser.friends || []).includes(toLc) || !(toUser.friends || []).includes(myLc)) {
+      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "მხოლოდ ორმხრივ მეგობრებთან შეგიძლია ფოტოს გაგზავნა" });
+      return;
+    }
+
+    // Same block check as text messages.
+    if (toUser.blockedUsers?.includes(myLc) || myUser.blockedUsers?.includes(toLc)) {
+      socket.emit("privateMsg:photoSent", { success: false, messageId }); return;
+    }
+
+    let buffer;
+    try {
+      buffer = Buffer.from(String(photoData), "base64");
+    } catch {
+      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ფოტოს დამუშავება ვერ მოხერხდა" });
+      return;
+    }
+    if (!buffer.length || buffer.length > MAX_PHOTO_BYTES) {
+      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ფოტო ზედმეტად დიდია (მაქს. 5MB)" });
+      return;
+    }
+
+    // Random filename — never trust or reuse anything client-supplied for
+    // this, both to avoid path-traversal and so filenames can't collide.
+    const filename = crypto.randomBytes(20).toString("hex") + "." + ext;
+    try {
+      fs.writeFileSync(path.join(PRIVATE_PHOTOS_DIR, filename), buffer);
+    } catch (e) {
+      console.error("[PHOTOS] Failed to save:", e.message);
+      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "შენახვა ვერ მოხერხდა" });
+      return;
+    }
+    const photoUrl = "/private-photos/" + filename;
+
+    const roomId = privRoomId(myLc, toLc);
+    let room = privateRooms.get(roomId);
+    if (!room) {
+      room = { messages: [], createdAt: Date.now(), expiresAt: Date.now() + PRIVATE_MSG_TTL };
+      privateRooms.set(roomId, room);
+    }
+
+    const msg = {
+      id: String(messageId || "").slice(0, 100) || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      from: myLc,
+      type: "photo",
+      photoUrl,
+      ts: new Date().toISOString(),
+    };
+    room.messages.push(msg);
+    if (room.messages.length > 100) room.messages.shift();
+    room.expiresAt = Date.now() + PRIVATE_MSG_TTL;
+    savePrivateMsgs();
+
+    io.to(`user:${toLc}`).emit("privateMsg:received", {
+      fromUsername: socket._regUser.username,
+      type: "photo",
+      photoUrl,
+      timestamp: msg.ts,
+      messageId: msg.id,
+    });
+    socket.emit("privateMsg:photoSent", { success: true, messageId: msg.id, photoUrl });
+
+    const streak = recordFriendMessage(myLc, toLc);
+    io.to(`user:${toLc}`).emit("streak:update", { friendUsername: socket._regUser.username, count: streak.count, atRisk: streak.atRisk });
+    socket.emit("streak:update", { friendUsername: toUser.username || toUsername, count: streak.count, atRisk: streak.atRisk });
   });
 
   // ── friendChat:join — subscribe socket to its friend-chat pair room ───────
