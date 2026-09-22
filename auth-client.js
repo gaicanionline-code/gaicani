@@ -313,7 +313,7 @@
     s.on("connect", sendAuthToken);
 
     // Authentication confirmed
-    s.on("auth:authenticated", ({ username, friends, pendingRequests, isGuest, isPro }) => {
+    s.on("auth:authenticated", ({ username, friends, pendingRequests, isGuest }) => {
       if (isGuest) {
         // Guests have no friends/pending requests to populate — just
         // remember the assigned name so it's reused on the next page.
@@ -323,21 +323,9 @@
       if (authUser) {
         authUser.friends = friends || [];
         authUser.pendingRequests = pendingRequests || [];
-        authUser.isPro = !!isPro;
         window.gaicaniAuthUser = authUser;
-        if (typeof window.clearAdBadgesIfPro === "function") window.clearAdBadgesIfPro();
       }
       renderDashFriends(friends || []);
-    });
-
-    // Pro status changed while this session is live (admin just granted or
-    // revoked it) — update immediately rather than waiting for a reconnect.
-    s.on("auth:proStatusChanged", ({ isPro }) => {
-      if (authUser) {
-        authUser.isPro = !!isPro;
-        window.gaicaniAuthUser = authUser;
-        if (typeof window.clearAdBadgesIfPro === "function") window.clearAdBadgesIfPro();
-      }
     });
 
     // Token expired

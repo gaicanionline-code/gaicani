@@ -142,7 +142,6 @@
     .rm-msg-meta { display: flex; align-items: center; gap: 8px; }
     .rm-msg-name { font-weight: 700; font-size: 0.86em; color: var(--accent-lt); }
     .rm-msg--me .rm-msg-name { color: var(--good); }
-    .pro-star { font-size: 0.85em; filter: drop-shadow(0 0 3px rgba(242,201,76,0.6)); }
     .rm-msg-time { font-size: 0.7em; color: var(--muted); }
     .rm-msg-del {
       margin-left: auto; background: none; border: none; color: var(--muted);
@@ -623,13 +622,6 @@
     nameSpan.className = "rm-msg-name";
     nameSpan.textContent = m.fromUsername; // textContent — auto-escapes
     nameSpan.addEventListener("click", () => openProfileCard(m.fromUsername));
-    if (m.isPro) {
-      const star = document.createElement("span");
-      star.className = "pro-star";
-      star.title = "Pro";
-      star.textContent = " ⭐";
-      nameSpan.appendChild(star);
-    }
 
     const timeSpan = document.createElement("span");
     timeSpan.className = "rm-msg-time";
@@ -692,13 +684,6 @@
       const nameEl = document.createElement("div");
       nameEl.className = "profile-card-name";
       nameEl.textContent = d.username;
-      if (d.isPro) {
-        const star = document.createElement("span");
-        star.className = "pro-star";
-        star.title = "Pro";
-        star.textContent = " ⭐";
-        nameEl.appendChild(star);
-      }
 
       const status = document.createElement("div");
       status.className = "profile-card-status " + (d.isOnline ? "online" : "offline");

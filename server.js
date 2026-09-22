@@ -22,31 +22,6 @@ const dataDirUsable = fs.existsSync(DATA_DIR) && (() => {
 const DATA_PATH = dataDirUsable ? DATA_DIR : __dirname;
 console.log(`[DATA] Persistent files will be stored in: ${DATA_PATH}`);
 const crypto     = require("crypto");
-
-// ── Private photo storage ────────────────────────────────────────────────
-// Lives under DATA_PATH (the same persistent volume as the JSON data,
-// see above) rather than __dirname, because __dirname is the app CODE
-// directory — on a host with an ephemeral filesystem, anything written
-// there can vanish on the next deploy. User-uploaded content needs to
-// survive that the same way the message history already does.
-const PRIVATE_PHOTOS_DIR = path.join(DATA_PATH, "private-photos");
-try {
-  if (!fs.existsSync(PRIVATE_PHOTOS_DIR)) fs.mkdirSync(PRIVATE_PHOTOS_DIR, { recursive: true });
-} catch (e) {
-  console.error("[PHOTOS] Could not create private-photos directory:", e.message);
-}
-
-// A deleted private room can still be referencing real files on disk — call
-// this BEFORE removing a room from privateRooms, on both the self-service
-// and admin delete paths, or those files just sit there forever.
-function deleteRoomPhotoFiles(room) {
-  if (!room?.messages) return;
-  for (const m of room.messages) {
-    if (m.type !== "photo" || !m.photoUrl) continue;
-    const filename = path.basename(m.photoUrl); // defence in depth against a malformed stored path
-    try { fs.unlinkSync(path.join(PRIVATE_PHOTOS_DIR, filename)); } catch { /* already gone, fine */ }
-  }
-}
 const compression   = require("compression");
 const rateLimit     = require("express-rate-limit");
 
@@ -148,12 +123,6 @@ const io     = new Server(server, {
   pingInterval: 25000,
   // Allow both polling and websocket so mobile fallback works
   transports: ["websocket", "polling"],
-  // Default is 1MB, which would silently drop any photo upload anywhere
-  // near the application-level 5MB cap enforced in privateMsg:sendPhoto —
-  // the packet never reaches that handler's validation at all, so the
-  // sender would see nothing happen with no error. Sized for a 5MB raw
-  // image (~6.7MB as base64) plus its JSON envelope, with headroom.
-  maxHttpBufferSize: 8 * 1024 * 1024,
 });
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -439,10 +408,7 @@ const ROUTE = {
   regUsers:     "/y5tm2bk9lz3", // JSON: every REGISTERED username + their last-used IP (not just who's online now)
   accountReports: "/z3np8wk1yh6", // JSON: reports filed against registered accounts from their profile card
   deleteUser:   "/c8ke2mr5vq1", // POST: admin delete an account (purges content, bans last IP)
-  setPro:       "/m8hy3rn6qc2", // POST: grant/revoke pro status on a registered account
   tempBan:      "/w4qd7np2xb8", // POST: 24h IP block with a shown reason
-  tempBansList: "/j3nc6wp0xz5", // GET: list currently-active 24h blocks
-  unbanTemp:    "/k9vd4qz2ym8", // POST: lift a 24h block early
 };
 
 // ── Sensitive-URL visitor log ─────────────────────────────────────────────────
@@ -1481,9 +1447,6 @@ app.post("/captcha-verify", (req, res) => {
 });
 
 app.use(express.static(path.join(__dirname)));
-// Uploaded private-chat photos live outside __dirname (see PRIVATE_PHOTOS_DIR
-// above), so they need their own explicit static route to be reachable.
-app.use("/private-photos", express.static(PRIVATE_PHOTOS_DIR, { maxAge: "7d" }));
 
 // (captcha gate was previously here — moved above static)
 
@@ -1699,8 +1662,6 @@ app.get(ROUTE.regUsers, ownerOnly, (req, res) => {
       lastIP: u.lastIP || null,
       lastIPAt: u.lastIPAt || null,
       isAdmin: !!u.isAdmin,
-      isPro: !!u.isPro,
-      isGuest: !!u.isGuest,
       isBanned: u.lastIP ? bannedIPs.has(u.lastIP) : false,
     });
   }
@@ -1756,9 +1717,7 @@ app.post(ROUTE.deleteUser, ownerOnly, (req, res) => {
   }
 
   // ── private data and social graph ──
-  for (const [roomId, room] of privateRooms) {
-    if (roomId.split("::").includes(lc)) { deleteRoomPhotoFiles(room); privateRooms.delete(roomId); }
-  }
+  for (const [roomId] of privateRooms) if (roomId.split("::").includes(lc)) privateRooms.delete(roomId);
   for (const [roomId] of friendStreaks) if (roomId.split("::").includes(lc)) friendStreaks.delete(roomId);
   for (const [, other] of registeredUsers) {
     if (Array.isArray(other.friends))         other.friends         = other.friends.filter(f => f !== lc);
@@ -1804,39 +1763,6 @@ app.post(ROUTE.deleteUser, ownerOnly, (req, res) => {
   });
 });
 
-// POST <setPro route>?username=x&pro=true|false — grant or revoke pro
-// status on a registered account. Pro gets them a visible star badge,
-// exemption from the click-ad system, and photo-sending in private chat
-// with their mutual friends.
-app.post(ROUTE.setPro, ownerOnly, (req, res) => {
-  const username = String(req.query.username || "").trim();
-  const pro = req.query.pro !== "false"; // default true; explicit "false" revokes
-  if (!username) return res.status(400).json({ error: "username param required" });
-
-  const lc = username.toLowerCase();
-  const user = registeredUsers.get(lc);
-  if (!user) return res.status(404).json({ error: "user not found" });
-  if (user.isGuest) return res.status(400).json({ error: "guests cannot be granted pro status" });
-
-  user.isPro = pro;
-  saveAuthUsers();
-
-  // If they're online right now, tell their live session immediately —
-  // otherwise the star/ad-exemption/photo-button wouldn't show up until
-  // their next login, which is confusing right after an admin just did this.
-  let notified = 0;
-  const sockets = onlineRegSockets.get(lc);
-  if (sockets) {
-    for (const sid of sockets) {
-      const s = io.sockets.sockets.get(sid);
-      if (s) { s.emit("auth:proStatusChanged", { isPro: pro }); notified++; }
-    }
-  }
-
-  console.log(`[ADMIN] ${pro ? "Granted" : "Revoked"} pro status for "${user.username}"`);
-  res.json({ success: true, username: user.username, isPro: pro, notifiedSockets: notified });
-});
-
 // POST <tempBan route>?ip=1.2.3.4&username=x  — block an IP for 24 hours.
 // Unlike the permanent ban this one is EXPLAINED to the visitor: they get a
 // page naming the offending username and saying when they can return.
@@ -1862,37 +1788,6 @@ app.post(ROUTE.tempBan, ownerOnly, (req, res) => {
   }
   console.log(`[ADMIN] 24h block on ${ip} (name: ${username || "n/a"}) — kicked ${kicked} socket(s)`);
   res.json({ success: true, ip, username, until: entry.until, kickedSockets: kicked });
-});
-
-// GET <tempBansList route> — every currently-active 24h block, with how
-// much time is left on each. Expired entries are pruned on the way out
-// (getTempBan() already does this lazily per-IP; here we sweep the whole
-// map so the list doesn't show stale rows that would vanish on their own
-// the next time someone actually hits that IP).
-app.get(ROUTE.tempBansList, ownerOnly, (req, res) => {
-  const now = Date.now();
-  const list = [];
-  for (const [ip, entry] of [...tempBans]) {
-    if (now >= entry.until) { tempBans.delete(ip); continue; }
-    list.push({
-      ip,
-      username: entry.username || "",
-      reason: entry.reason || "offensive_name",
-      until: entry.until,
-      remainingMs: entry.until - now,
-    });
-  }
-  list.sort((a, b) => a.remainingMs - b.remainingMs); // soonest-to-expire first
-  res.json({ count: list.length, bans: list });
-});
-
-// POST <unbanTemp route>?ip=1.2.3.4 — lift a 24h block early
-app.post(ROUTE.unbanTemp, ownerOnly, (req, res) => {
-  const ip = String(req.query.ip || "").trim();
-  if (!ip) return res.status(400).json({ error: "ip param required" });
-  const had = tempBans.delete(ip);
-  console.log(`[ADMIN] Lifted 24h block on ${ip} early`);
-  res.json({ success: true, ip, wasActive: had });
 });
 
 // POST <ban route>?ip=1.2.3.4  — ban an IP and kick all matching sockets
@@ -2060,88 +1955,49 @@ function renderAdminPanelHtml() {
 <title>Admin Panel</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#1e1f22;--surface:#2b2d31;--surface2:#232427;--border:#1a1b1e;--text:#dcddde;--muted:#72767d;--accent:#5865f2}
-html{-webkit-text-size-adjust:100%}
-body{background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI",Arial,sans-serif;padding:16px;padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));max-width:1100px;margin:0 auto}
-h1{color:#fff;font-size:1.25em;margin-bottom:4px}
-.subtitle{color:var(--muted);font-size:.8em;margin-bottom:16px}
-.top-bar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:18px;position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:10;border-bottom:1px solid var(--border)}
-.card{background:var(--surface);border-radius:10px;padding:16px;margin-bottom:12px}
-.ip{font-family:monospace;color:#fff;font-size:1em;word-break:break-all}
-.ban-btn{background:#f23f42;color:#fff;border:none;border-radius:6px;padding:7px 14px;cursor:pointer;font-size:.85em;min-height:32px}
+body{background:#1e1f22;color:#dcddde;font-family:"Segoe UI",Arial,sans-serif;padding:24px}
+h1{color:#fff;font-size:1.4em;margin-bottom:20px}
+h2{color:#5865f2;font-size:1em;margin:24px 0 10px;text-transform:uppercase;letter-spacing:.5px}
+.card{background:#2b2d31;border-radius:10px;padding:16px;margin-bottom:12px}
+.ip{font-family:monospace;color:#fff;font-size:1em}
+.ban-btn{background:#f23f42;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:.85em;float:right;margin-top:-2px}
 .ban-btn:hover{background:#c0393b}
-.unban-btn{background:#3ba55d;color:#fff;border:none;border-radius:6px;padding:7px 14px;cursor:pointer;font-size:.85em;min-height:32px}
+.unban-btn{background:#3ba55d;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:.85em}
 .unban-btn:hover{background:#2d8a4e}
 .badge{display:inline-block;background:rgba(88,101,242,.2);color:#5865f2;border-radius:4px;font-size:.75em;padding:2px 7px;margin-left:6px}
 .badge.green{background:rgba(59,165,93,.2);color:#3ba55d}
 .reason-list{margin:0;padding:0;list-style:none;max-width:320px}
-.reason-list li{font-size:.85em;color:var(--text);padding:3px 0;border-bottom:1px solid var(--border)}
+.reason-list li{font-size:.85em;color:#dcddde;padding:3px 0;border-bottom:1px solid #1a1b1e}
 .reason-list li:last-child{border-bottom:none}
-.reason-list .meta{color:var(--muted);font-size:.85em}
-.refresh-btn{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:9px 18px;cursor:pointer;font-size:.88em;min-height:38px}
+.reason-list .meta{color:#72767d;font-size:.85em}
+.refresh-btn{background:#5865f2;color:#fff;border:none;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:.85em;margin-bottom:16px}
 .refresh-btn:hover{background:#4752c4}
-.collapse-all-btn{background:var(--surface2);color:var(--text);border:1px solid #3a3c40;border-radius:6px;padding:9px 16px;cursor:pointer;font-size:.85em;min-height:38px}
-.collapse-all-btn:hover{background:#2f3136}
-
-/* ── Collapsible sections — native <details>, no JS needed to expand/
-   collapse, so there is nothing here that can break the data-loading
-   logic below it. ── */
-details.section{background:var(--surface);border-radius:10px;margin-bottom:10px;overflow:hidden}
-details.section > summary{
-  list-style:none;cursor:pointer;padding:14px 16px;color:#8b93ff;font-size:.92em;font-weight:600;
-  display:flex;align-items:center;gap:8px;user-select:none;min-height:24px;
-}
-details.section > summary::-webkit-details-marker{display:none}
-details.section > summary::before{content:"▸";display:inline-block;font-size:.8em;color:var(--muted);transition:transform .15s ease;flex-shrink:0}
-details.section[open] > summary::before{transform:rotate(90deg)}
-details.section > summary .count-badge{margin-left:auto;background:rgba(88,101,242,.2);color:#8b93ff;border-radius:10px;padding:2px 9px;font-size:.78em;font-weight:700}
-details.section > .section-body{padding:0 16px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch}
-#status{color:#3ba55d;font-size:.85em;display:inline-block}
-
-/* Tables scroll horizontally within their section on narrow screens
-   (via .section-body's overflow-x, set above) instead of squeezing
-   every column unreadably small. */
-table{width:100%;border-collapse:collapse;min-width:480px}
-td,th{padding:9px 10px;text-align:left;font-size:.85em}
-th{color:var(--muted);font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap}
+.section{margin-bottom:32px}
+#status{color:#3ba55d;font-size:.85em;margin-left:10px;display:inline}
+table{width:100%;border-collapse:collapse}
+td,th{padding:8px 10px;text-align:left;font-size:.85em}
+th{color:#72767d;font-weight:600;border-bottom:1px solid #1a1b1e}
 tr:hover td{background:rgba(255,255,255,.03)}
-
-.manual-ban-box{background:var(--surface);border-radius:10px;padding:16px}
-.manual-ban-box textarea{width:100%;background:var(--bg);border:1px solid #3a3c40;border-radius:6px;color:var(--text);font-family:monospace;font-size:16px;padding:10px 12px;resize:vertical;min-height:72px;outline:none;margin-bottom:10px}
-.manual-ban-box textarea:focus{border-color:var(--accent)}
-.manual-ban-box input[type=text]{width:100%;background:var(--bg);border:1px solid #3a3c40;border-radius:6px;color:var(--text);font-size:16px;padding:10px 12px;outline:none;margin-bottom:10px;min-height:40px}
-.manual-ban-box input[type=text]:focus{border-color:var(--accent)}
-.manual-ban-box label{display:block;color:var(--muted);font-size:.78em;margin-bottom:4px}
-.do-ban-btn{background:#f23f42;color:#fff;border:none;border-radius:6px;padding:10px 20px;cursor:pointer;font-size:.9em;font-weight:600;min-height:40px;width:100%}
+.manual-ban-box{background:#2b2d31;border-radius:10px;padding:18px;margin-bottom:12px}
+.manual-ban-box textarea{width:100%;background:#1e1f22;border:1px solid #3a3c40;border-radius:6px;color:#dcddde;font-family:monospace;font-size:.9em;padding:10px 12px;resize:vertical;min-height:72px;outline:none;margin-bottom:10px}
+.manual-ban-box textarea:focus{border-color:#5865f2}
+.manual-ban-box input[type=text]{width:100%;background:#1e1f22;border:1px solid #3a3c40;border-radius:6px;color:#dcddde;font-size:.85em;padding:8px 12px;outline:none;margin-bottom:10px}
+.manual-ban-box input[type=text]:focus{border-color:#5865f2}
+.manual-ban-box label{display:block;color:#72767d;font-size:.78em;margin-bottom:4px}
+.do-ban-btn{background:#f23f42;color:#fff;border:none;border-radius:6px;padding:8px 20px;cursor:pointer;font-size:.88em;font-weight:600}
 .do-ban-btn:hover{background:#c0393b}
-.hint{color:var(--muted);font-size:.76em;margin-top:8px;line-height:1.5}
-.ua-cell{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#b5bac1;font-size:.85em}
-.block-ua-btn{background:#faa61a;color:#1e1f22;border:none;border-radius:6px;padding:7px 12px;cursor:pointer;font-size:.8em;font-weight:600;margin-left:6px;white-space:nowrap;min-height:32px}
+.hint{color:#72767d;font-size:.76em;margin-top:6px}
+.ua-cell{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#b5bac1;font-size:.85em}
+.block-ua-btn{background:#faa61a;color:#1e1f22;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:.8em;font-weight:600;margin-left:6px;white-space:nowrap}
 .block-ua-btn:hover{background:#d78d0f}
-
-@media (max-width:640px){
-  body{padding:10px;padding-top:max(10px,env(safe-area-inset-top))}
-  h1{font-size:1.1em}
-  details.section > summary{font-size:.86em;padding:12px 12px}
-  details.section > .section-body{padding:0 12px 14px}
-  .manual-ban-box{padding:14px}
-  .refresh-btn,.collapse-all-btn{flex:1;text-align:center}
-  td,th{padding:8px 6px;font-size:.8em}
-}
 </style>
 </head>
 <body>
 <h1>🛡️ Admin Panel</h1>
-<div class="subtitle">GAICANI moderation</div>
-<div class="top-bar">
-  <button class="refresh-btn" onclick="loadAll()">↻ Refresh</button>
-  <button class="collapse-all-btn" onclick="toggleAllSections()" id="collapseAllBtn">⇕ Collapse all</button>
-  <span id="status"></span>
-</div>
+<button class="refresh-btn" onclick="loadAll()">↻ Refresh</button><span id="status"></span>
 
-<details class="section" open>
-  <summary>🔒 Manual Permanent Ban</summary>
-  <div class="section-body">
+<div class="section">
+  <h2>🔒 Manual Permanent Ban</h2>
   <div class="manual-ban-box">
     <label>IP address(es) to ban forever</label>
     <textarea id="manualIPs" placeholder="1.2.3.4&#10;5.6.7.8&#10;or comma-separated: 1.2.3.4, 5.6.7.8"></textarea>
@@ -2150,59 +2006,47 @@ tr:hover td{background:rgba(255,255,255,.03)}
     <button class="do-ban-btn" onclick="manualBan()">🚫 Ban Forever</button>
     <p class="hint">Enter one IP per line, or separate with commas. Bans are saved to disk and survive restarts.</p>
   </div>
-  </div>
-</details>
+</div>
 
-<details class="section" open>
-  <summary>Connected Users</summary>
-  <div class="section-body"><div id="users">Loading...</div></div>
-</details>
+<div class="section">
+  <h2>Connected Users</h2>
+  <div id="users">Loading...</div>
+</div>
 
-<details class="section">
-  <summary>🚩 All Reports <span class="hint" style="margin:0 0 0 4px;font-weight:400">(every IP with 1+ reports — 5 still auto-bans for 24h)</span></summary>
-  <div class="section-body"><div id="reported">Loading...</div></div>
-</details>
+<div class="section">
+  <h2>🚩 All Reports (every IP with 1+ reports — 5 still auto-bans for 24h)</h2>
+  <div id="reported">Loading...</div>
+</div>
 
-<details class="section">
-  <summary>🚩 Profile Reports <span class="hint" style="margin:0 0 0 4px;font-weight:400">(registered accounts, via profile card)</span></summary>
-  <div class="section-body"><div id="accountReported">Loading...</div></div>
-</details>
+<div class="section">
+  <h2>🚩 Profile Reports (registered accounts reported via their profile card)</h2>
+  <div id="accountReported">Loading...</div>
+</div>
 
-<details class="section">
-  <summary>👤 All Registered Accounts <span class="hint" style="margin:0 0 0 4px;font-weight:400">(last-used IP)</span></summary>
-  <div class="section-body">
-    <input type="text" id="regUserSearch" placeholder="\u{1F50D} Search by username..." oninput="filterRegUsers(this.value)"
-      style="width:100%;background:#1e1f22;border:1px solid #3a3c40;border-radius:6px;color:#dcddde;font-size:16px;padding:9px 12px;outline:none;margin-bottom:10px" />
-    <div id="regUsers">Loading...</div>
-  </div>
-</details>
+<div class="section">
+  <h2>👤 All Registered Accounts (last-used IP)</h2>
+  <div id="regUsers">Loading...</div>
+</div>
 
-<details class="section">
-  <summary>Banned IPs</summary>
-  <div class="section-body"><div id="bans">Loading...</div></div>
-</details>
+<div class="section">
+  <h2>Banned IPs</h2>
+  <div id="bans">Loading...</div>
+</div>
 
-<details class="section">
-  <summary>⏱ 24h Blocks <span class="hint" style="margin:0 0 0 4px;font-weight:400">(temporary — shows time remaining, can be lifted early)</span></summary>
-  <div class="section-body"><div id="tempBansList">Loading...</div></div>
-</details>
-
-<details class="section">
-  <summary>🌐 Block a User-Agent</summary>
-  <div class="section-body">
+<div class="section">
+  <h2>🌐 Block a User-Agent</h2>
   <div class="manual-ban-box">
     <label>Block a User-Agent manually (paste the exact string)</label>
     <input type="text" id="manualUA" placeholder="e.g. Mozilla/5.0 (compatible; SomeBot/1.0)" />
     <button class="do-ban-btn" onclick="manualBlockUA()">🚫 Block This User-Agent</button>
     <p class="hint">Blocks every visitor sending this exact User-Agent header, on any IP. Saved to disk and survives restarts.</p>
   </div>
-  </div>
-</details>
+</div>
 
-<details class="section">
-  <summary>🧱 Blocked User-Agents</summary>
-  <div class="section-body"><div id="blockedUAs">Loading...</div></div>
-</details>
+<div class="section">
+  <h2>🧱 Blocked User-Agents</h2>
+  <div id="blockedUAs">Loading...</div>
+</div>
 
 <script>
 const R = ${JSON.stringify(ROUTE)};
@@ -2210,33 +2054,6 @@ const R = ${JSON.stringify(ROUTE)};
 async function api(method, url) {
   const r = await fetch(url, { method });
   return r.json();
-}
-
-// -- Collapse / expand all sections ------------------------------------
-function toggleAllSections() {
-  const sections = document.querySelectorAll("details.section");
-  const anyOpen = [...sections].some(s => s.open);
-  sections.forEach(s => { s.open = !anyOpen; });
-  document.getElementById("collapseAllBtn").textContent = anyOpen ? "\u21d5 Expand all" : "\u21d5 Collapse all";
-}
-
-// Shows a count badge on a section's own header (visible even while
-// collapsed), so e.g. "Banned IPs" reads as "Banned IPs 3" without
-// having to open it first.
-function setSectionCount(bodyElId, n) {
-  const body = document.getElementById(bodyElId);
-  if (!body) return;
-  const details = body.closest("details.section");
-  if (!details) return;
-  const summary = details.querySelector("summary");
-  if (!summary) return;
-  let badge = summary.querySelector(".count-badge");
-  if (!badge) {
-    badge = document.createElement("span");
-    badge.className = "count-badge";
-    summary.appendChild(badge);
-  }
-  badge.textContent = String(n);
 }
 
 async function banIP(ip) {
@@ -2292,87 +2109,6 @@ async function unbanIP(ip) {
   await api("POST", R.unban + "?ip=" + encodeURIComponent(ip));
   setStatus("✅ Unbanned " + ip);
   loadAll();
-}
-
-async function unbanTemp(ip) {
-  if (!confirm("Lift the 24h block on " + ip + " early?")) return;
-  await api("POST", R.unbanTemp + "?ip=" + encodeURIComponent(ip));
-  setStatus("✅ Lifted 24h block on " + ip);
-  loadAll();
-}
-
-// "3h 12m" / "45m" / "<1m" — deliberately coarse, this is a moderation
-// dashboard, not a stopwatch. Refreshes whenever loadAll() re-polls.
-function fmtRemaining(ms) {
-  if (ms <= 0) return "expired";
-  const totalMin = Math.ceil(ms / 60000);
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  if (h > 0) return h + "h " + m + "m";
-  if (m > 0) return m + "m";
-  return "<1m";
-}
-
-let allRegUsers = []; // cached from the last load, so search filters instantly with no extra request
-
-function renderRegUsersTable(list) {
-  const el = document.getElementById("regUsers");
-  if (!list.length) {
-    el.innerHTML = '<p style="color:#72767d;font-size:.9em">No matching accounts</p>';
-    return;
-  }
-  el.innerHTML = '<table><tr><th>Username</th><th>Last IP</th><th>Last seen</th><th>Status</th><th></th></tr>' +
-    list.map(u => {
-      const lastSeen = u.lastIPAt ? new Date(u.lastIPAt).toLocaleString() : "never logged in";
-      const proBadge = u.isPro ? '<span class="badge" style="background:rgba(242,201,76,.2);color:#f2c94c">\u2B50 pro</span>' : '';
-      const statusHtml = (u.isBanned
-        ? '<span class="badge" style="background:rgba(242,63,66,.2);color:#f23f42">🔒 IP banned</span>'
-        : (u.isAdmin ? '<span class="badge green">admin</span>' : '')) + proBadge;
-      const actionHtml = u.lastIP
-        ? (u.isBanned
-            ? \`<button class="unban-btn" onclick="unbanIP('\${esc(u.lastIP)}')">✅ Unban</button>\`
-            : \`<button class="ban-btn" onclick="banIP('\${esc(u.lastIP)}')">🚫 Ban this IP</button>\`)
-        : '<span class="hint">no IP on file</span>';
-      const tempHtml = u.lastIP
-        ? \`<button class="ban-btn" style="margin-left:6px;background:#8a6d1f" onclick="tempBan('\${esc(u.lastIP)}','\${esc(u.username)}')">\u23F1 24h block</button>\`
-        : '';
-      const proBtnHtml = \`<button class="\${u.isPro ? "unban-btn" : "ban-btn"}" style="margin-left:6px;\${u.isPro ? "" : "background:#8a6d1f"}" onclick="setProStatus('\${esc(u.username)}', \${u.isPro ? "false" : "true"})">\${u.isPro ? "\u2B50 Revoke pro" : "\u2B50 Grant pro"}</button>\`;
-      const delHtml = u.isAdmin
-        ? '<span class="hint">protected</span>'
-        : \`<button class="ban-btn" style="margin-left:6px" onclick="deleteUser('\${esc(u.username)}')">🗑 Delete + ban</button>\`;
-      return \`<tr>
-        <td><span class="ip">\${esc(u.username)}</span></td>
-        <td style="font-family:monospace;color:#b5bac1">\${esc(u.lastIP || "—")}</td>
-        <td style="color:#b5bac1;font-size:.85em">\${esc(lastSeen)}</td>
-        <td>\${statusHtml}</td>
-        <td style="white-space:nowrap">\${actionHtml}\${tempHtml}\${proBtnHtml}\${delHtml}</td>
-      </tr>\`;
-    }).join("") + "</table>";
-}
-
-// Purely client-side — the full list is already cached, so this is instant
-// and never hits the network. Called on every keystroke.
-function filterRegUsers(query) {
-  const q = query.trim().toLowerCase();
-  const filtered = q ? allRegUsers.filter(u => u.username.toLowerCase().includes(q)) : allRegUsers;
-  renderRegUsersTable(filtered);
-}
-
-// The 20s auto-refresh must not silently wipe out whatever an admin is
-// currently searching for — this re-applies it after fresh data lands.
-function reapplyRegUserFilter() {
-  const box = document.getElementById("regUserSearch");
-  if (box && box.value.trim()) filterRegUsers(box.value);
-}
-
-async function setProStatus(username, makeProBool) {
-  const verb = makeProBool ? "Grant" : "Revoke";
-  if (!confirm(\`\${verb} pro status for "\${username}"?\${makeProBool ? "\\n\\nThey'll get a star badge, no more click-ads, and can send photos to friends." : ""}\`)) return;
-  try {
-    const r = await api("POST", R.setPro + "?username=" + encodeURIComponent(username) + "&pro=" + makeProBool);
-    setStatus(\`✅ \${r.isPro ? "Granted" : "Revoked"} pro for \${r.username}\`);
-    loadAll();
-  } catch(e) { alert("Failed: " + e.message); }
 }
 
 async function unbanReportedIP(ip) {
@@ -2463,7 +2199,6 @@ async function loadAll() {
   try {
     const d = await api("GET", R.users);
     const el = document.getElementById("users");
-    setSectionCount("users", (d.users || []).length);
     if (!d.users || !d.users.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No connected users</p>'; }
     else {
       el.innerHTML = '<table><tr><th>Name</th><th>IP</th><th>User-Agent</th><th>Status</th><th></th></tr>' +
@@ -2483,16 +2218,40 @@ async function loadAll() {
 
   try {
     const d = await api("GET", R.regUsers);
-    allRegUsers = d.users || []; // cached for filterRegUsers() below
-    setSectionCount("regUsers", allRegUsers.length);
-    renderRegUsersTable(allRegUsers);
-    reapplyRegUserFilter();
+    const el = document.getElementById("regUsers");
+    if (!d.users || !d.users.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No registered accounts yet</p>'; }
+    else {
+      el.innerHTML = '<table><tr><th>Username</th><th>Last IP</th><th>Last seen</th><th>Status</th><th></th></tr>' +
+        d.users.map(u => {
+          const lastSeen = u.lastIPAt ? new Date(u.lastIPAt).toLocaleString() : "never logged in";
+          const statusHtml = u.isBanned
+            ? '<span class="badge" style="background:rgba(242,63,66,.2);color:#f23f42">🔒 IP banned</span>'
+            : (u.isAdmin ? '<span class="badge green">admin</span>' : '');
+          const actionHtml = u.lastIP
+            ? (u.isBanned
+                ? \`<button class="unban-btn" onclick="unbanIP('\${esc(u.lastIP)}')">✅ Unban</button>\`
+                : \`<button class="ban-btn" onclick="banIP('\${esc(u.lastIP)}')">🚫 Ban this IP</button>\`)
+            : '<span class="hint">no IP on file</span>';
+          const tempHtml = u.lastIP
+            ? \`<button class="ban-btn" style="margin-left:6px;background:#8a6d1f" onclick="tempBan('\${esc(u.lastIP)}','\${esc(u.username)}')">\u23F1 24h block</button>\`
+            : '';
+          const delHtml = u.isAdmin
+            ? '<span class="hint">protected</span>'
+            : \`<button class="ban-btn" style="margin-left:6px" onclick="deleteUser('\${esc(u.username)}')">🗑 Delete + ban</button>\`;
+          return \`<tr>
+            <td><span class="ip">\${esc(u.username)}</span></td>
+            <td style="font-family:monospace;color:#b5bac1">\${esc(u.lastIP || "—")}</td>
+            <td style="color:#b5bac1;font-size:.85em">\${esc(lastSeen)}</td>
+            <td>\${statusHtml}</td>
+            <td style="white-space:nowrap">\${actionHtml}\${tempHtml}\${delHtml}</td>
+          </tr>\`;
+        }).join("") + "</table>";
+    }
   } catch(e) { document.getElementById("regUsers").textContent = "Error"; }
 
   try {
     const d = await api("GET", R.reported);
     const el = document.getElementById("reported");
-    setSectionCount("reported", (d.reported || []).length);
     if (!d.reported || !d.reported.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No reports on file</p>'; }
     else {
       el.innerHTML = '<table><tr><th>IP</th><th>Name(s)</th><th>Reports</th><th>Reasons</th><th>Status</th><th></th></tr>' +
@@ -2531,7 +2290,6 @@ async function loadAll() {
   try {
     const d = await api("GET", R.accountReports);
     const el = document.getElementById("accountReported");
-    setSectionCount("accountReported", (d.reported || []).length);
     if (!d.reported || !d.reported.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No profile reports on file</p>'; }
     else {
       el.innerHTML = '<table><tr><th>Username</th><th>Reports</th><th>Latest reasons</th></tr>' +
@@ -2551,7 +2309,6 @@ async function loadAll() {
   try {
     const d = await api("GET", R.bans);
     const el = document.getElementById("bans");
-    setSectionCount("bans", (d.ips || []).length);
     if (!d.ips || !d.ips.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No banned IPs</p>'; }
     else {
       el.innerHTML = d.ips.map(ip => \`<div class="card">
@@ -2562,24 +2319,8 @@ async function loadAll() {
   } catch(e) { document.getElementById("bans").textContent = "Error"; }
 
   try {
-    const d = await api("GET", R.tempBansList);
-    const el = document.getElementById("tempBansList");
-    setSectionCount("tempBansList", (d.bans || []).length);
-    if (!d.bans || !d.bans.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No active 24h blocks</p>'; }
-    else {
-      el.innerHTML = d.bans.map(b => \`<div class="card">
-        <span class="ip">\${esc(b.ip)}</span>
-        \${b.username ? \`<span class="badge">\${esc(b.username)}</span>\` : ""}
-        <button class="unban-btn" onclick="unbanTemp('\${esc(b.ip)}')" style="float:right">Unban</button>
-        <div class="hint" style="margin-top:6px">\${fmtRemaining(b.remainingMs)} remaining \\u2014 reason: \${esc(b.reason)}</div>
-      </div>\`).join("");
-    }
-  } catch(e) { document.getElementById("tempBansList").textContent = "Error"; }
-
-  try {
     const d = await api("GET", R.blockedUAs);
     const el = document.getElementById("blockedUAs");
-    setSectionCount("blockedUAs", (d.userAgents || []).length);
     if (!d.userAgents || !d.userAgents.length) { el.innerHTML = '<p style="color:#72767d;font-size:.9em">No blocked user-agents</p>'; }
     else {
       el.innerHTML = d.userAgents.map(ua => \`<div class="card">
@@ -3144,17 +2885,9 @@ io.on("connection", (socket) => {
 
     const sharedTags = (socket.interests || []).filter(t => (partnerSocket.interests || []).includes(t));
 
-    // If either side is a logged-in registered account (auth-client.js's
-    // silent session restore sets socket._regUser even while someone is
-    // just using random chat, not the dashboard), surface their pro status
-    // to the STRANGER they were matched with — a guest or anonymous visitor
-    // has no _regUser at all, so this naturally stays false for them.
-    const socketIsPro        = socket._regUser ? !!registeredUsers.get(socket._regUser.usernameLower)?.isPro : false;
-    const partnerSocketIsPro = partnerSocket._regUser ? !!registeredUsers.get(partnerSocket._regUser.usernameLower)?.isPro : false;
-
-    socket.emit("partnerFound",        { name: partnerSocket.userName, sharedTags, partnerBio: partnerSocket.bio, partnerIsPro: partnerSocketIsPro });
+    socket.emit("partnerFound",        { name: partnerSocket.userName, sharedTags, partnerBio: partnerSocket.bio });
     recordChatStarted();
-    partnerSocket.emit("partnerFound", { name: socket.userName,        sharedTags, partnerBio: socket.bio, partnerIsPro: socketIsPro });
+    partnerSocket.emit("partnerFound", { name: socket.userName,        sharedTags, partnerBio: socket.bio });
 
     // ── Reset anti-bot state for both users ────────────────────────────────
     const now = Date.now();
@@ -4263,7 +3996,7 @@ function getOnlineRegisteredUsers(excludeLc) {
     if (lc === excludeLc) continue;
     const u = registeredUsers.get(lc);
     if (!u) continue;
-    list.push({ username: u.username, avatar: u.avatar || null, bio: u.bio || "", isGuest: !!u.isGuest, isPro: !!u.isPro });
+    list.push({ username: u.username, avatar: u.avatar || null, bio: u.bio || "", isGuest: !!u.isGuest });
   }
   // Real accounts first, temporary guests after — within each group, alphabetical.
   list.sort((a, b) => (a.isGuest === b.isGuest ? a.username.localeCompare(b.username) : (a.isGuest ? 1 : -1)));
@@ -4446,7 +4179,6 @@ function roomMessagePublic(m) {
     text: m.text,
     ts: m.ts,
     avatar: author?.avatar || null,
-    isPro: !!author?.isPro,
   };
 }
 
@@ -4878,7 +4610,7 @@ const adminSeedPromise = seedAdminAccount().catch(e => console.error("[ADMIN] Fa
 setInterval(() => {
   const now = Date.now();
   let n = 0;
-  for (const [id, r] of privateRooms) if (now >= r.expiresAt) { deleteRoomPhotoFiles(r); privateRooms.delete(id); n++; }
+  for (const [id, r] of privateRooms) if (now >= r.expiresAt) { privateRooms.delete(id); n++; }
   if (n) { savePrivateMsgs(); console.log(`[PRIV] Cleaned ${n} expired room(s)`); }
 }, 60 * 60 * 1000);
 
@@ -5136,8 +4868,8 @@ app.post("/api/auth/delete-account", authLimiter, express.json({ limit: "2kb" })
   }
 
   // 2. Private conversations involving this user, and their streaks
-  for (const [roomId, room] of privateRooms) {
-    if (roomId.split("::").includes(lc)) { deleteRoomPhotoFiles(room); privateRooms.delete(roomId); }
+  for (const [roomId] of privateRooms) {
+    if (roomId.split("::").includes(lc)) privateRooms.delete(roomId);
   }
   for (const [roomId] of friendStreaks) {
     if (roomId.split("::").includes(lc)) friendStreaks.delete(roomId);
@@ -5222,8 +4954,7 @@ app.post("/api/auth/verify", express.json({ limit: "1kb" }), (req, res) => {
     pendingRequests: user.pendingRequests || [],
     avatar: user.avatar || DEFAULT_AVATAR,
     bio: user.bio || "",
-    isAdmin: !!user.isAdmin,
-    isPro: !!user.isPro
+    isAdmin: !!user.isAdmin
   });
 });
 
@@ -5279,7 +5010,6 @@ app.get("/api/users/profile", (req, res) => {
     bio: u.bio || "",
     isOnline,
     isGuest: !!u.isGuest,
-    isPro: !!u.isPro,
   });
 });
 
@@ -5496,8 +5226,6 @@ app.get("/api/priv/history", (req, res) => {
   const msgs = (room.messages || []).map(m => ({
     from:      m.from,
     text:      m.text,
-    type:      m.type || "text",
-    photoUrl:  m.photoUrl || null,
     ts:        m.ts,
     messageId: m.id || null,
     replyTo:   m.replyTo || null,
@@ -8946,7 +8674,7 @@ io.on("connection", (socket) => {
     onlineRegSockets.get(entry.usernameLower).add(socket.id);
 
     socket.join(`user:${entry.usernameLower}`);
-    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, isPro: !!user.isPro, blockedUsers: user.blockedUsers || [] });
+    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, blockedUsers: user.blockedUsers || [] });
     console.log(`[AUTH] ${user.username} logged in`);
     io.emit("users:onlineChanged"); // let dashboards know the online list may have changed
   });
@@ -8980,7 +8708,7 @@ io.on("connection", (socket) => {
     if (!onlineRegSockets.has(entry.usernameLower)) onlineRegSockets.set(entry.usernameLower, new Set());
     onlineRegSockets.get(entry.usernameLower).add(socket.id);
     socket.join(`user:${entry.usernameLower}`);
-    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, isPro: !!user.isPro, blockedUsers: user.blockedUsers || [] });
+    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, blockedUsers: user.blockedUsers || [] });
     console.log(`[AUTH] ${user.username} logged in via auth:token`);
     io.emit("users:onlineChanged"); // let dashboards know the online list may have changed
   });
@@ -9060,7 +8788,7 @@ io.on("connection", (socket) => {
 
     socket.emit("auth:authenticated", {
       username, friends: [], pendingRequests: [], avatar: guestUser.avatar || GUEST_AVATAR, bio: guestUser.bio || "",
-      streaks: {}, isAdmin: false, isPro: false, isGuest: true, guestToken
+      streaks: {}, isAdmin: false, isGuest: true, guestToken
     });
     console.log(`[AUTH] ${username} started a guest session`);
     io.emit("users:onlineChanged");
@@ -9527,116 +9255,6 @@ io.on("connection", (socket) => {
     const streak = recordFriendMessage(socket._regUser.usernameLower, toLc);
     io.to(`user:${toLc}`).emit("streak:update", { friendUsername: socket._regUser.username, count: streak.count, atRisk: streak.atRisk });
     socket.emit("streak:update", { friendUsername: toUser?.username || toUsername, count: streak.count, atRisk: streak.atRisk });
-  });
-
-  // ── privateMsg:sendPhoto — pro users only, private chat with an EXISTING
-  // mutual friend only. Deliberately NOT available in random chat, rooms,
-  // or forum — see the scoping note at the top of this feature. Checked
-  // more strictly than the plain text handler above: friendship is verified
-  // in BOTH directions here rather than assumed from room membership, since
-  // image content warrants the extra certainty.
-  const ALLOWED_PHOTO_MIME = {
-    "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
-  };
-  const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // 5MB decoded
-
-  socket.on("privateMsg:sendPhoto", ({ toUsername, photoData, mimeType, messageId }) => {
-    if (!socket._regUser || !toUsername || !photoData || !mimeType) return;
-    if (socket._regUser.isGuest) { socket.emit("privateMsg:photoSent", { success: false, messageId, error: "სტუმრებს ფოტოს გაგზავნა არ შეუძლიათ" }); return; }
-
-    const myLc = socket._regUser.usernameLower;
-    const myUser = registeredUsers.get(myLc);
-    if (!myUser?.isPro) {
-      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ფოტოს გაგზავნა მხოლოდ Pro მომხმარებლებს შეუძლიათ" });
-      return;
-    }
-
-    const ext = ALLOWED_PHOTO_MIME[mimeType];
-    if (!ext) {
-      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ამ ტიპის ფაილი დაუშვებელია" });
-      return;
-    }
-
-    // 5 photos per minute — generous for real chat use, protects storage
-    // and the recipient from being flooded with images.
-    if (mediaRateLimited(socket, "privatePhoto", 5, 60_000)) {
-      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ძალიან ხშირად აგზავნი — ცოტა დაელოდე" });
-      return;
-    }
-
-    const toLc = String(toUsername).toLowerCase().trim();
-    const toUser = registeredUsers.get(toLc);
-    if (!toUser) { socket.emit("privateMsg:photoSent", { success: false, messageId, error: "მომხმარებელი ვერ მოიძებნა" }); return; }
-
-    // Mutual friendship checked explicitly in BOTH directions, rather than
-    // relying on the caller having already joined the friendchat room —
-    // a stricter bar than plain text messages get, deliberately, given
-    // this is image content.
-    if (!(myUser.friends || []).includes(toLc) || !(toUser.friends || []).includes(myLc)) {
-      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "მხოლოდ ორმხრივ მეგობრებთან შეგიძლია ფოტოს გაგზავნა" });
-      return;
-    }
-
-    // Same block check as text messages.
-    if (toUser.blockedUsers?.includes(myLc) || myUser.blockedUsers?.includes(toLc)) {
-      socket.emit("privateMsg:photoSent", { success: false, messageId }); return;
-    }
-
-    let buffer;
-    try {
-      buffer = Buffer.from(String(photoData), "base64");
-    } catch {
-      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ფოტოს დამუშავება ვერ მოხერხდა" });
-      return;
-    }
-    if (!buffer.length || buffer.length > MAX_PHOTO_BYTES) {
-      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ფოტო ზედმეტად დიდია (მაქს. 5MB)" });
-      return;
-    }
-
-    // Random filename — never trust or reuse anything client-supplied for
-    // this, both to avoid path-traversal and so filenames can't collide.
-    const filename = crypto.randomBytes(20).toString("hex") + "." + ext;
-    try {
-      fs.writeFileSync(path.join(PRIVATE_PHOTOS_DIR, filename), buffer);
-    } catch (e) {
-      console.error("[PHOTOS] Failed to save:", e.message);
-      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "შენახვა ვერ მოხერხდა" });
-      return;
-    }
-    const photoUrl = "/private-photos/" + filename;
-
-    const roomId = privRoomId(myLc, toLc);
-    let room = privateRooms.get(roomId);
-    if (!room) {
-      room = { messages: [], createdAt: Date.now(), expiresAt: Date.now() + PRIVATE_MSG_TTL };
-      privateRooms.set(roomId, room);
-    }
-
-    const msg = {
-      id: String(messageId || "").slice(0, 100) || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      from: myLc,
-      type: "photo",
-      photoUrl,
-      ts: new Date().toISOString(),
-    };
-    room.messages.push(msg);
-    if (room.messages.length > 100) room.messages.shift();
-    room.expiresAt = Date.now() + PRIVATE_MSG_TTL;
-    savePrivateMsgs();
-
-    io.to(`user:${toLc}`).emit("privateMsg:received", {
-      fromUsername: socket._regUser.username,
-      type: "photo",
-      photoUrl,
-      timestamp: msg.ts,
-      messageId: msg.id,
-    });
-    socket.emit("privateMsg:photoSent", { success: true, messageId: msg.id, photoUrl });
-
-    const streak = recordFriendMessage(myLc, toLc);
-    io.to(`user:${toLc}`).emit("streak:update", { friendUsername: socket._regUser.username, count: streak.count, atRisk: streak.atRisk });
-    socket.emit("streak:update", { friendUsername: toUser.username || toUsername, count: streak.count, atRisk: streak.atRisk });
   });
 
   // ── friendChat:join — subscribe socket to its friend-chat pair room ───────
