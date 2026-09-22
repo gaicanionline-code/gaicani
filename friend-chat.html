@@ -831,6 +831,7 @@
     }
     .profile-card-avatar img { width: 100%; height: 100%; object-fit: cover; }
     .profile-card-name { font-size: 1.15em; font-weight: 800; color: #fff; margin-bottom: 6px; }
+    .pro-star { font-size: 0.82em; filter: drop-shadow(0 0 3px rgba(242,201,76,0.6)); }
     .profile-card-status {
       display: inline-flex; align-items: center; gap: 6px; font-size: 0.82em;
       font-weight: 600; padding: 4px 12px; border-radius: 20px; margin-bottom: 14px;
@@ -945,6 +946,11 @@
   <div id="fc-input-bar" style="display:none">
     <button class="fc-extra-btn" id="fc-gif-btn" title="GIF">GIF</button>
     <button class="fc-extra-btn" id="fc-question-btn" title="შემთხვევითი კითხვა">?</button>
+    <!-- Pro-only. Stays hidden (display:none) until JS confirms isPro, so
+         non-pro users — the vast majority — see no extra clutter in an
+         already-tight row. -->
+    <button class="fc-extra-btn" id="fc-photo-btn" title="ფოტოს გაგზავნა" style="display:none">📷</button>
+    <input type="file" id="fc-photo-input" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" />
     <textarea id="fc-input" placeholder="შეტყობინება..." rows="1" maxlength="2000"></textarea>
     <span id="fc-char-count" class="fc-char-count"></span>
     <button class="fc-heart-send" id="fc-heart-send" title="გულის გაგზავნა — დააჭირე გასაგრძელებლად ემოჯის შესაცვლელად">🤍</button>
@@ -1070,7 +1076,7 @@
 
       body.innerHTML = `
         <div class="profile-card-avatar">${avatarHtml}</div>
-        <div class="profile-card-name">${esc(d.username)}</div>
+        <div class="profile-card-name">${esc(d.username)}${d.isPro ? ' <span class="pro-star" title="Pro">⭐</span>' : ""}</div>
         ${statusHtml}
         ${bioHtml}`;
     } catch (_) {
@@ -1143,6 +1149,7 @@
   /* ── Main ────────────────────────────────────────────────────── */
   const { token, username } = loadAuth();
   const friendName = getFriendParam();
+  let myIsPro = false; // set from the auth:authenticated payload once connected
 
   const elLoading   = $("fc-loading");
   const elMessages  = $("fc-messages");
@@ -1323,7 +1330,7 @@
     // Anchor on friendName (URL param) — more reliable than comparing against
     // myUsername which may have case mismatches with server's stored lowercase.
     const isMe = !msg.from || msg.from.toLowerCase() !== friendName.toLowerCase();
-    const isMedia = msg.type === "gif";
+    const isMedia = msg.type === "gif" || msg.type === "photo";
 
     const row = document.createElement("div");
     row.className = "fc-row" + (isMe ? " me" : "") + (consec ? " consec" : "");
@@ -1370,6 +1377,12 @@
       const img = document.createElement("img");
       img.src = msg.url;
       img.className = "fc-gif-img";
+      bubble.appendChild(img);
+    } else if (msg.type === "photo") {
+      const img = document.createElement("img");
+      img.src = msg.photoUrl;
+      img.className = "fc-gif-img";
+      img.loading = "lazy";
       bubble.appendChild(img);
     } else {
       const textSpan = document.createElement("span");
@@ -1755,6 +1768,8 @@
         id:        m.messageId || fcGenId(),
         from:      m.from,
         text:      m.text,
+        type:      m.type || "text",
+        photoUrl:  m.photoUrl || null,
         ts:        m.ts,
         replyTo:   m.replyTo || null,
         reactions: m.reactions || null,
@@ -1823,22 +1838,42 @@
     });
 
     /* Authenticated → join friend-chat room */
-    socket.on("auth:authenticated", () => {
+    socket.on("auth:authenticated", (d) => {
+      myIsPro = !!(d && d.isPro);
+      window.gaicaniAuthUser = Object.assign(window.gaicaniAuthUser || {}, { isPro: myIsPro });
+      if (typeof window.clearAdBadgesIfPro === "function") window.clearAdBadgesIfPro();
+      refreshPhotoBtnVisibility();
       socket.emit("friendChat:join", { friendUsername: friendName });
     });
 
+    // Pro status changed while this session is live (admin granted/revoked
+    // it just now) — update immediately rather than waiting for a reconnect.
+    socket.on("auth:proStatusChanged", ({ isPro }) => {
+      myIsPro = !!isPro;
+      window.gaicaniAuthUser = Object.assign(window.gaicaniAuthUser || {}, { isPro: myIsPro });
+      if (typeof window.clearAdBadgesIfPro === "function") window.clearAdBadgesIfPro();
+      refreshPhotoBtnVisibility();
+    });
+
     /* Incoming message for THIS friend conversation */
-    socket.on("privateMsg:received", ({ fromUsername, message, timestamp, type, url, messageId, replyTo }) => {
+    socket.on("privateMsg:received", ({ fromUsername, message, timestamp, type, url, photoUrl, messageId, replyTo }) => {
       /* Only process messages from our specific friend */
       if (fromUsername.toLowerCase() !== friendName.toLowerCase()) return;
       hideTyping();
       if (type === "gif") {
         appendMessage({ from: fromUsername, type: "gif", url, ts: timestamp });
+      } else if (type === "photo") {
+        appendMessage({ id: messageId, from: fromUsername, type: "photo", photoUrl, ts: timestamp });
       } else {
         const newId = appendMessage({ id: messageId, from: fromUsername, text: message, ts: timestamp, replyTo: replyTo || null });
         if (!document.hidden) markFCSeen(newId);
       }
       incUnread();
+    });
+
+    // Response to sending a photo — mirrors the text privateMsg:sent pattern.
+    socket.on("privateMsg:photoSent", ({ success, error, messageId } = {}) => {
+      if (success === false) showToast("⚠️ " + (error || "ფოტო ვერ გაიგზავნა"));
     });
 
     /* Message sent confirmation — normally a no-op (already optimistically
@@ -2081,7 +2116,71 @@
     });
   }
 
-  /* ── GIF picker ──────────────────────────────────────────────── */
+  /* ── Photo sending (Pro only) ────────────────────────────────── */
+  const elPhotoBtn   = $("fc-photo-btn");
+  const elPhotoInput = $("fc-photo-input");
+  const PHOTO_MAX_BYTES = 5 * 1024 * 1024; // must match the server's cap
+  const PHOTO_ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+
+  // Called once we actually know isPro (see the auth:authenticated and
+  // auth:proStatusChanged handlers above) — reveals the button for pro
+  // users, and makes sure it disappears again if pro status is revoked
+  // while this session is still open.
+  function refreshPhotoBtnVisibility() {
+    if (elPhotoBtn) elPhotoBtn.style.display = myIsPro ? "" : "none";
+  }
+
+  if (elPhotoBtn && elPhotoInput) {
+    elPhotoBtn.addEventListener("click", () => {
+      if (!myIsPro) return; // defence in depth — button should be hidden anyway
+      elPhotoInput.click();
+    });
+
+    elPhotoInput.addEventListener("change", () => {
+      const file = elPhotoInput.files && elPhotoInput.files[0];
+      elPhotoInput.value = ""; // reset so picking the SAME file again still fires 'change'
+      if (!file) return;
+
+      if (!PHOTO_ALLOWED_TYPES.has(file.type)) {
+        showToast("⚠️ მხოლოდ სურათის ფაილებია დაშვებული");
+        return;
+      }
+      if (file.size > PHOTO_MAX_BYTES) {
+        showToast("⚠️ ფოტო ზედმეტად დიდია (მაქს. 5MB)");
+        return;
+      }
+      if (!socket?.connected) {
+        showToast("⚠️ კავშირი არ არის");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        // FileReader gives a data: URI ("data:image/png;base64,XXXX") — the
+        // server only wants the base64 payload itself.
+        const commaIdx = String(reader.result).indexOf(",");
+        const base64 = commaIdx >= 0 ? reader.result.slice(commaIdx + 1) : "";
+        if (!base64) { showToast("⚠️ ფოტოს წაკითხვა ვერ მოხერხდა"); return; }
+
+        const msgId = fcGenId();
+        // Optimistic local render, same pattern as text sends — the photo
+        // shows immediately rather than waiting on a round trip, and the
+        // photoSent handler above will surface an error if it actually failed.
+        appendMessage({ id: msgId, from: myUsername, type: "photo", photoUrl: reader.result, ts: new Date().toISOString() });
+
+        socket.emit("privateMsg:sendPhoto", {
+          toUsername: friendName,
+          photoData: base64,
+          mimeType: file.type,
+          messageId: msgId,
+        });
+      };
+      reader.onerror = () => showToast("⚠️ ფოტოს წაკითხვა ვერ მოხერხდა");
+      reader.readAsDataURL(file);
+    });
+  }
+
+
   const elGifBtn     = $("fc-gif-btn");
   const elGifPicker  = $("fc-gif-picker");
   const elGifSearch  = $("fc-gif-search");

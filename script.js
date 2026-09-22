@@ -240,7 +240,8 @@ function addDonationCard() {
 
   const txt = document.createElement("div");
   txt.className = "chat-donate-text";
-txt.appendChild(document.createTextNode("❤️ თუ 30₾ შევაგროვებთ, რეკლამები მთელი კვირით გაითიშება! 🚫📢"));
+  txt.appendChild(document.createTextNode(
+    "თუ მოგწონს Gaicani.online და გინდა, რომ კიდევ უფრო გავაუმჯობესოთ, შეგიძლია მხარი დაგვიჭირო მცირე შემოწირულობით 💜"));
   txt.appendChild(document.createElement("br"));
   txt.appendChild(document.createTextNode("შენი მხარდაჭერა ჩვენთვის ძალიან ბევრს ნიშნავს."));
 
@@ -267,10 +268,19 @@ function addRegisterPromoCard() {
     <div class="register-promo-line">
       🔒 დაიკავე შენი უნიკალური სახელი — სამუდამოდ მხოლოდ შენია <br>
       👥 იპოვე მეგობრები და დაამატე ისინი სამუდამოდ <br>
+      💬 პირადი ჩათი მეგობრებთან — რეაქციები, ფონები, სურათები <br>
+      🎮 ითამაშე 8+ თამაში მეგობრებთან: პოკერი, ჭადრაკი, დამა, ჯოკერი, ბლექჯეკი, იმპოსტორი და სხვა <br>
+      🏆 ლიდერბორდები და რეკორდები — აჩვენე ვინ არის საუკეთესო <br>
       🗨️ შემოუერთდი ოთახებს, დებატებს და ფორუმს <br>
+      🪙 შეაგროვე მონეტები და ითამაშე უფრო მეტი <br>
       🖼️ დააყენე პროფილის სურათი და აღწერა
       <br><br>
       🚀 დარეგისტრირდი უფასოდ — სულ 2 წამში! <br>
+      ✏️ შეიყვანე მხოლოდ სახელი და პაროლი <br>
+      📧 არც ელფოსტა გჭირდება <br>
+      💳 არც რაიმეს გადახდა <br>
+      ✅ და სულ ესაა — მზად ხარ! <br>
+      👉 დარეგისტრირდი ახლავე და ისარგებლე ყველა ფუნქციით! 🔥
     </div>`;
   card.addEventListener("click", () => {
     const signupTab = document.getElementById("auth-tab-signup");

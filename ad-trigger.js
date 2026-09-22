@@ -48,10 +48,23 @@
     badge.textContent = String(remaining);
   }
 
+  // Pro users are exempt entirely — no countdown shown, no ad ever fires.
+  // Checked here so every call site (present and future) benefits without
+  // needing its own guard.
+  function isCurrentUserPro() {
+    return !!(window.gaicaniAuthUser && window.gaicaniAuthUser.isPro);
+  }
+
   // Call inside a real click handler. `storageKey` must be UNIQUE per
   // button (each button counts independently); `badgeId` names that
   // button's own badge; `btnEl` is the button the badge attaches to.
   window.registerAdClick = function (storageKey, badgeId, btnEl) {
+    if (isCurrentUserPro()) {
+      // Make sure no stale badge/number lingers from before they went pro.
+      const existing = document.getElementById(badgeId);
+      if (existing) existing.remove();
+      return;
+    }
     let count = getCount(storageKey) + 1;
     const badge = ensureButtonBadge(btnEl, badgeId);
 
@@ -71,8 +84,19 @@
   // Draws a button's badge at its current count without incrementing —
   // used once on page load so it shows the right number before any click.
   window.initAdCountdown = function (storageKey, badgeId, btnEl) {
+    if (isCurrentUserPro()) return; // no badge at all for pro users
     const count = getCount(storageKey);
     const badge = ensureButtonBadge(btnEl, badgeId);
     render(badge, AD_EVERY_N - count);
+  };
+
+  // initAdCountdown runs on page load, before the socket has finished
+  // authenticating — so a pro user can briefly see a stale badge rendered
+  // under the assumption they weren't pro yet. Call this once isPro becomes
+  // known (after auth completes, or right after an admin grants it live) to
+  // sweep any badge that was drawn too early.
+  window.clearAdBadgesIfPro = function () {
+    if (!isCurrentUserPro()) return;
+    document.querySelectorAll(".ad-click-badge").forEach(b => b.remove());
   };
 })();
