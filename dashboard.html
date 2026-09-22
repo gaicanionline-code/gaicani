@@ -127,6 +127,14 @@
       color: #fff; letter-spacing: -0.01em;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
+    .vip-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      background: linear-gradient(135deg,#f2c94c,#e0a020);
+      color: #1a1408; font-size: 0.62em; font-weight: 900;
+      padding: 2px 8px 2px 6px; border-radius: 20px; margin-left: 8px;
+      vertical-align: middle; letter-spacing: 0.02em;
+      box-shadow: 0 2px 6px rgba(242,201,76,0.35);
+    }
     .user-meta {
       font-size: 0.78em; color: var(--muted); margin-top: 4px;
       display: flex; align-items: center; gap: 5px;
@@ -1276,6 +1284,28 @@
     /* ── Guest mode — same interface, registered-only sections replaced
        with a banner, registered-only actions prompt to register instead
        of silently failing. Games, Rooms, and Forum stay reachable. ── */
+    /* ── VIP badge on the user's own card ─────────────────────────────
+       Called from both auth paths (initial /api/auth/verify load AND the
+       live socket auth:authenticated event) since whichever resolves first
+       shouldn't leave the other one stale — and again from
+       auth:proStatusChanged if an admin grants/revokes it mid-session. */
+    function renderVipBadge(isPro) {
+      const nameEl = document.getElementById("userName");
+      if (!nameEl) return;
+      let badge = document.getElementById("vipBadge");
+      if (isPro) {
+        if (!badge) {
+          badge = document.createElement("span");
+          badge.id = "vipBadge";
+          badge.className = "vip-badge";
+          badge.innerHTML = "VIP <span class=\"pro-star\">⭐</span>";
+          nameEl.appendChild(badge);
+        }
+      } else if (badge) {
+        badge.remove();
+      }
+    }
+
     function enterGuestMode() {
       document.body.classList.add("guest-mode");
 
@@ -1464,7 +1494,7 @@
         }
       });
 
-      socket.on("auth:authenticated", ({ username, friends, pendingRequests, avatar, bio, streaks, isGuest, guestToken, blockedUsers: serverBlockedUsers }) => {
+      socket.on("auth:authenticated", ({ username, friends, pendingRequests, avatar, bio, streaks, isGuest, guestToken, isPro, blockedUsers: serverBlockedUsers }) => {
         if (isGuest) {
           try { sessionStorage.setItem("gaicani_guest_username", username); } catch (_) {}
           authUser = { username, token: guestToken || null, friends: [], pendingRequests: [], avatar: avatar || AVAILABLE_AVATARS[0], bio: bio || "", isGuest: true };
@@ -1481,7 +1511,9 @@
           authUser.pendingRequests = pendingRequests || [];
           if (avatar) authUser.avatar = avatar;
           authUser.bio = bio || "";
+          authUser.isPro = !!isPro;
         }
+        renderVipBadge(!!isPro);
         blockedUsers = new Set(serverBlockedUsers || []);
         if (typeof window._bindReportListener === "function") window._bindReportListener(socket);
         friendStreaks = streaks || {};
@@ -1498,6 +1530,13 @@
         socket.emit("joker:listPublicRooms");
         socket.emit("imposter:listPublicRooms");
         socket.emit("blackjack:listPublicRooms");
+      });
+
+      // Admin granted/revoked pro status while this session is live —
+      // update the badge immediately rather than waiting for a reload.
+      socket.on("auth:proStatusChanged", ({ isPro }) => {
+        if (authUser) authUser.isPro = !!isPro;
+        renderVipBadge(!!isPro);
       });
 
       socket.on("guest:registerRequired", ({ feature }) => promptGuestToRegister(feature));
@@ -2437,6 +2476,7 @@
           pendingRequests: d.pendingRequests || [],
           avatar: d.avatar || AVAILABLE_AVATARS[0],
           bio: d.bio || "",
+          isPro: !!d.isPro,
         };
       } catch (_) {
         // Network error — best-effort: show page with stored username, no friend data yet
@@ -2450,6 +2490,7 @@
       paintUserBio();
       if (nameEl)    nameEl.textContent   = authUser.username;
       if (topUserEl) topUserEl.textContent = `🔐 ${authUser.username}`;
+      renderVipBadge(!!authUser.isPro);
 
       renderFriends(authUser.friends);
       renderBlocked();

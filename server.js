@@ -3144,9 +3144,17 @@ io.on("connection", (socket) => {
 
     const sharedTags = (socket.interests || []).filter(t => (partnerSocket.interests || []).includes(t));
 
-    socket.emit("partnerFound",        { name: partnerSocket.userName, sharedTags, partnerBio: partnerSocket.bio });
+    // If either side is a logged-in registered account (auth-client.js's
+    // silent session restore sets socket._regUser even while someone is
+    // just using random chat, not the dashboard), surface their pro status
+    // to the STRANGER they were matched with — a guest or anonymous visitor
+    // has no _regUser at all, so this naturally stays false for them.
+    const socketIsPro        = socket._regUser ? !!registeredUsers.get(socket._regUser.usernameLower)?.isPro : false;
+    const partnerSocketIsPro = partnerSocket._regUser ? !!registeredUsers.get(partnerSocket._regUser.usernameLower)?.isPro : false;
+
+    socket.emit("partnerFound",        { name: partnerSocket.userName, sharedTags, partnerBio: partnerSocket.bio, partnerIsPro: partnerSocketIsPro });
     recordChatStarted();
-    partnerSocket.emit("partnerFound", { name: socket.userName,        sharedTags, partnerBio: socket.bio });
+    partnerSocket.emit("partnerFound", { name: socket.userName,        sharedTags, partnerBio: socket.bio, partnerIsPro: socketIsPro });
 
     // ── Reset anti-bot state for both users ────────────────────────────────
     const now = Date.now();
@@ -5214,7 +5222,8 @@ app.post("/api/auth/verify", express.json({ limit: "1kb" }), (req, res) => {
     pendingRequests: user.pendingRequests || [],
     avatar: user.avatar || DEFAULT_AVATAR,
     bio: user.bio || "",
-    isAdmin: !!user.isAdmin
+    isAdmin: !!user.isAdmin,
+    isPro: !!user.isPro
   });
 });
 

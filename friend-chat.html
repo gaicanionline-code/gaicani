@@ -477,6 +477,23 @@
       display: block;
     }
 
+    /* ── Photo reveal (received photos only — sender always sees their own
+       clearly, since they already know what they sent) ── */
+    .fc-photo-wrap { position: relative; display: inline-block; cursor: pointer; }
+    .fc-photo-wrap .fc-gif-img.blurred {
+      filter: blur(22px);
+      transform: scale(1.03); /* hides the sharp edge blur() leaves at the image border */
+      transition: filter 0.25s ease;
+    }
+    .fc-photo-reveal-hint {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 4px;
+      color: #fff; font-size: 0.8em; font-weight: 700;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+      pointer-events: none; /* the wrapper itself handles the tap */
+    }
+    .fc-photo-reveal-hint .icon { font-size: 1.7em; }
+
     /* ── GIF Picker ── */
     #fc-gif-picker {
       position: fixed;
@@ -1150,6 +1167,7 @@
   const { token, username } = loadAuth();
   const friendName = getFriendParam();
   let myIsPro = false; // set from the auth:authenticated payload once connected
+  const revealedPhotoIds = new Set(); // photos tapped-to-reveal this session
 
   const elLoading   = $("fc-loading");
   const elMessages  = $("fc-messages");
@@ -1383,7 +1401,38 @@
       img.src = msg.photoUrl;
       img.className = "fc-gif-img";
       img.loading = "lazy";
-      bubble.appendChild(img);
+
+      // Only photos RECEIVED from the other person start blurred — the
+      // sender already knows what they sent, no need to hide it from them.
+      // Once tapped, a photo stays revealed for the rest of this page
+      // session (revealedPhotoIds), but defaults back to blurred on reload —
+      // a deliberately cautious default rather than persisting it anywhere.
+      const shouldBlur = !isMe && msg.id && !revealedPhotoIds.has(msg.id);
+      if (shouldBlur) {
+        img.classList.add("blurred");
+        const wrap = document.createElement("div");
+        wrap.className = "fc-photo-wrap";
+        const hint = document.createElement("div");
+        hint.className = "fc-photo-reveal-hint";
+        const icon = document.createElement("div");
+        icon.className = "icon";
+        icon.textContent = "👁";
+        const label = document.createElement("div");
+        label.textContent = "შეხე სანახავად";
+        hint.appendChild(icon);
+        hint.appendChild(label);
+        wrap.appendChild(img);
+        wrap.appendChild(hint);
+        wrap.addEventListener("click", (e) => {
+          e.stopPropagation(); // don't also trigger the bubble's double-tap-heart handler
+          img.classList.remove("blurred");
+          hint.remove();
+          if (msg.id) revealedPhotoIds.add(msg.id);
+        });
+        bubble.appendChild(wrap);
+      } else {
+        bubble.appendChild(img);
+      }
     } else {
       const textSpan = document.createElement("span");
       textSpan.textContent = msg.text; // auto-escapes

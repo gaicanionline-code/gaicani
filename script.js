@@ -63,6 +63,7 @@ let userBio             = "";
 let partnerConnected    = false;
 Object.defineProperty(window, 'partnerConnected', { get: () => partnerConnected });
 let partnerName         = "";
+let partnerIsVip        = false;
 let isFirstLogin        = true;
 let isReconnecting      = false;
 
@@ -311,7 +312,7 @@ function addSystemImageMessage(imgSrc, altText) {
 }
 
 // ── Partner-found card (avatar + name + status) ─────────────────────────────
-function addPartnerFoundCard(name) {
+function addPartnerFoundCard(name, isVip) {
   const card       = document.createElement("div");
   card.className   = "partner-found-card";
 
@@ -325,6 +326,12 @@ function addPartnerFoundCard(name) {
   const nameEl       = document.createElement("div");
   nameEl.className   = "pfc-name";
   nameEl.textContent = name;
+  if (isVip) {
+    const vip = document.createElement("span");
+    vip.className = "vip-badge";
+    vip.innerHTML = "VIP <span class=\"pro-star\">⭐</span>";
+    nameEl.appendChild(vip);
+  }
 
   const statusEl       = document.createElement("div");
   statusEl.className   = "pfc-status";
@@ -664,15 +671,22 @@ function updateBlockBtn() {
   if (reportBtn) reportBtn.disabled = !(partnerConnected || canBlockDisconnected);
 }
 
-function setPartnerNameDisplay(name) {
+function setPartnerNameDisplay(name, isVip) {
   const el = document.getElementById("partnerNameDisplay");
   if (!el) return;
+  el.innerHTML = ""; // clear, then rebuild with safe DOM nodes below
   if (name) {
-    el.textContent = `👤 ${name}`;
+    el.appendChild(document.createTextNode(`👤 ${name}`));
+    if (isVip) {
+      const vip = document.createElement("span");
+      vip.className = "vip-badge";
+      vip.innerHTML = "VIP <span class=\"pro-star\">⭐</span>";
+      el.appendChild(vip);
+    }
     el.style.opacity = "1";
     el.style.color = "";
   } else {
-    el.textContent = "👤 ---";
+    el.appendChild(document.createTextNode("👤 ---"));
     el.style.opacity = "0.25";
   }
 }
@@ -1432,13 +1446,14 @@ socket.on("partnerFound", (partner) => {
   isReconnecting       = false;  // clear any lingering reconnect state
   partnerConnected     = true;
   partnerName          = partner.name || "Anonymous";
+  partnerIsVip         = !!partner.partnerIsPro;
   lastPartnerName      = "";
   canBlockDisconnected = false;
 
   // ── DOM updates ────────────────────────────────────────────────────────
   clearChat();
-  setPartnerNameDisplay(partnerName);
-  addPartnerFoundCard(partnerName);
+  setPartnerNameDisplay(partnerName, partnerIsVip);
+  addPartnerFoundCard(partnerName, partnerIsVip);
 
   // Show partner's bio if they set one
   if (partner.partnerBio) {
@@ -1499,7 +1514,7 @@ socket.on("partnerRestored", (data) => {
   lastPartnerName      = "";
   canBlockDisconnected = false;
   removeReconnectingMessage();
-  setPartnerNameDisplay(partnerName);  // restore name in header (cleared on disconnect)
+  setPartnerNameDisplay(partnerName, partnerIsVip);  // restore name in header (cleared on disconnect)
   setInputsEnabled(true);
   updateBlockBtn();
   hideTypingIndicator();
