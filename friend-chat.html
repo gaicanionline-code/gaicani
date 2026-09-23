@@ -967,7 +967,7 @@
          non-pro users — the vast majority — see no extra clutter in an
          already-tight row. -->
     <button class="fc-extra-btn" id="fc-photo-btn" title="ფოტოს გაგზავნა" style="display:none">📷</button>
-    <input type="file" id="fc-photo-input" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" />
+    <input type="file" id="fc-photo-input" accept="image/*" style="display:none" />
     <textarea id="fc-input" placeholder="შეტყობინება..." rows="1" maxlength="2000"></textarea>
     <span id="fc-char-count" class="fc-char-count"></span>
     <button class="fc-heart-send" id="fc-heart-send" title="გულის გაგზავნა — დააჭირე გასაგრძელებლად ემოჯის შესაცვლელად">🤍</button>
@@ -2168,8 +2168,7 @@
   /* ── Photo sending (Pro only) ────────────────────────────────── */
   const elPhotoBtn   = $("fc-photo-btn");
   const elPhotoInput = $("fc-photo-input");
-  const PHOTO_MAX_BYTES = 5 * 1024 * 1024; // must match the server's cap
-  const PHOTO_ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+  const PHOTO_MAX_BYTES = 20 * 1024 * 1024; // must match the server's raw-input cap
 
   // Called once we actually know isPro (see the auth:authenticated and
   // auth:proStatusChanged handlers above) — reveals the button for pro
@@ -2190,12 +2189,18 @@
       elPhotoInput.value = ""; // reset so picking the SAME file again still fires 'change'
       if (!file) return;
 
-      if (!PHOTO_ALLOWED_TYPES.has(file.type)) {
+      // Deliberately lenient here — file.type is reported by the browser
+      // and isn't always reliable (some Android pickers leave it blank for
+      // less common formats like HEIC). The server decodes the actual
+      // bytes with sharp and is the real authority on whether this is a
+      // genuine image; this is just a fast pre-check to skip an obviously
+      // wrong upload (a PDF, a video, etc.) before spending the bandwidth.
+      if (file.type && !file.type.startsWith("image/")) {
         showToast("⚠️ მხოლოდ სურათის ფაილებია დაშვებული");
         return;
       }
       if (file.size > PHOTO_MAX_BYTES) {
-        showToast("⚠️ ფოტო ზედმეტად დიდია (მაქს. 5MB)");
+        showToast("⚠️ ფოტო ზედმეტად დიდია (მაქს. 20MB)");
         return;
       }
       if (!socket?.connected) {

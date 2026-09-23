@@ -22,6 +22,7 @@ const dataDirUsable = fs.existsSync(DATA_DIR) && (() => {
 const DATA_PATH = dataDirUsable ? DATA_DIR : __dirname;
 console.log(`[DATA] Persistent files will be stored in: ${DATA_PATH}`);
 const crypto     = require("crypto");
+const sharp      = require("sharp");
 
 // ── Private photo storage ────────────────────────────────────────────────
 // Lives under DATA_PATH (the same persistent volume as the JSON data,
@@ -149,11 +150,14 @@ const io     = new Server(server, {
   // Allow both polling and websocket so mobile fallback works
   transports: ["websocket", "polling"],
   // Default is 1MB, which would silently drop any photo upload anywhere
-  // near the application-level 5MB cap enforced in privateMsg:sendPhoto —
-  // the packet never reaches that handler's validation at all, so the
-  // sender would see nothing happen with no error. Sized for a 5MB raw
-  // image (~6.7MB as base64) plus its JSON envelope, with headroom.
-  maxHttpBufferSize: 8 * 1024 * 1024,
+  // near the application-level cap enforced in privateMsg:sendPhoto — the
+  // packet never reaches that handler's validation at all, so the sender
+  // would see nothing happen with no error. Sized for a 20MB raw image
+  // (~26.7MB as base64, since base64 expands by 4/3) plus its JSON
+  // envelope, with headroom. Real phone-camera photos can legitimately be
+  // in the 8-20MB range at full resolution, which is what this is for —
+  // they get resized down server-side after upload, not rejected outright.
+  maxHttpBufferSize: 30 * 1024 * 1024,
 });
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -2950,7 +2954,36 @@ io.on("connection", (socket) => {
     }
 
     if (typeof name !== "string") return;
-    const trimmed = name.trim();
+    let trimmed = name.trim();
+
+    // ── Guests can't choose a name ────────────────────────────────────────
+    // Only a real registered account keeps the name it asked for. Everyone
+    // else gets "სტუმარი####". Three cases deliberately pass through
+    // untouched:
+    //   * a real logged-in account          → their own name, as before
+    //   * a name already in guest format     → same person continuing across
+    //                                          pages (continuity, not a choice)
+    //   * a registered account's name        → left for the ownership check
+    //                                          below, which rejects impostors
+    //                                          and admits the real owner. This
+    //                                          also covers the brief race where
+    //                                          a registered user's socket
+    //                                          hasn't finished logging in yet —
+    //                                          converting their name here would
+    //                                          wrongly strand them as a guest.
+    const isRealAccount = !!(socket._regUser && !socket._regUser.isGuest);
+    if (!isRealAccount && !GUEST_NAME_RE.test(trimmed) && !authReservedNames.has(trimmed.toLowerCase())) {
+      // Reuse this socket's existing guest identity if it has one, so random
+      // chat and the rest of the site show the SAME name, not two different
+      // random numbers.
+      const existingGuestName = socket._regUser?.isGuest && GUEST_NAME_RE.test(socket._regUser.username)
+        ? socket._regUser.username
+        : null;
+      const assigned = existingGuestName || generateGuestName();
+      if (!assigned) { socket.emit("nameTaken"); return; }
+      trimmed = assigned;
+    }
+
     if (trimmed.length < NAME_MIN || trimmed.length > NAME_MAX) return;
 
     // Banned-word check on the display name itself.
@@ -4256,6 +4289,27 @@ function recordCheckersWin(winnerLc) {
 // least one live socket connected (i.e. actually online right now), excluding
 // the given username. Used to populate the "who's online" list in the
 // dashboard so registered users can find and add each other as friends.
+// ── Guest names ──────────────────────────────────────────────────────────
+// Anyone without a real registered account is always "სტუმარი" + 4 digits.
+// They can't choose a name — only registered (accountable) users can.
+// Every path that can set a name (random-chat setName, auth:guest, and
+// auth:guest:rename) goes through this same pattern, so there's no side
+// door left open. The pattern is ALSO what lets a guest keep the same
+// assigned name while moving between pages — an incoming name matching it
+// is accepted as "this is still me", anything else is replaced.
+const GUEST_NAME_RE = /^სტუმარი\d{4}$/;
+
+function generateGuestName() {
+  for (let i = 0; i < 50; i++) {
+    const n  = `სტუმარი${Math.floor(1000 + Math.random() * 9000)}`;
+    const lc = n.toLowerCase();
+    // Clear of both trackers: registeredUsers holds dashboard/game guest
+    // identities, activeUsernames holds live random-chat names.
+    if (!registeredUsers.has(lc) && !activeUsernames.has(lc)) return n;
+  }
+  return null; // 50 collisions in a row — effectively impossible, handled by callers
+}
+
 function getOnlineRegisteredUsers(excludeLc) {
   const list = [];
   for (const [lc, sockets] of onlineRegSockets) {
@@ -9013,10 +9067,13 @@ io.on("connection", (socket) => {
     // over instead of resetting on every navigation.
     const preferred = (data && typeof data.preferredUsername === "string") ? data.preferredUsername.trim() : null;
     const existingHolder = preferred ? registeredUsers.get(preferred.toLowerCase()) : null;
+    // Only an already-assigned "სტუმარი####" may be carried over — that's a
+    // guest continuing across pages. Anything else (a name they typed into
+    // random chat, say) is ignored and they get a fresh guest name instead.
+    // GUEST_NAME_RE is stricter than the old length/charset/banned-word
+    // checks it replaces, so those are implied.
     const preferredValid = preferred
-      && preferred.length >= NAME_MIN && preferred.length <= NAME_MAX
-      && /^[\w\u10D0-\u10FF\s\-.]+$/.test(preferred)
-      && !findBannedWord(preferred)   // a banned name just falls back to "სტუმარი####"
+      && GUEST_NAME_RE.test(preferred)
       && (!existingHolder || existingHolder.isGuest);
 
     let username, lc, guestUser;
@@ -9066,84 +9123,18 @@ io.on("connection", (socket) => {
     io.emit("users:onlineChanged");
   });
 
-  // ── auth:guest:rename — let a guest pick a new temporary name from the
-  // dashboard (registered accounts can't rename — their username is fixed
-  // to their real account). Moves their existing record (avatar, bio) to
-  // the new name rather than starting fresh, same as the name-reuse logic
-  // in auth:guest above. ──────────────────────────────────────────────
-  socket.on("auth:guest:rename", (data) => {
-    if (!socket._regUser || !socket._regUser.isGuest) return;
-    const oldLc = socket._regUser.usernameLower;
-    const oldUser = registeredUsers.get(oldLc);
-    if (!oldUser) return;
-
-    const newName = (data && typeof data.newName === "string") ? data.newName.trim() : "";
-    const newLc = newName.toLowerCase();
-
-    if (!newName || newName.length < NAME_MIN || newName.length > NAME_MAX || !/^[\w\u10D0-\u10FF\s\-.]+$/.test(newName)) {
-      socket.emit("auth:guest:renameResult", { success: false, error: "სახელი უნდა იყოს 2-20 სიმბოლო" });
-      return;
-    }
-    if (findBannedWord(newName)) {
-      socket.emit("auth:guest:renameResult", { success: false, error: ABUSE_WORD_MESSAGE });
-      return;
-    }
-    if (newLc === oldLc) {
-      socket.emit("auth:guest:renameResult", { success: false, error: "ეს უკვე შენი სახელია" });
-      return;
-    }
-    const existingHolder = registeredUsers.get(newLc);
-    if (existingHolder && !existingHolder.isGuest) {
-      socket.emit("auth:guest:renameResult", { success: false, error: "ეს სახელი დაკავებულია" });
-      return;
-    }
-    if (existingHolder && existingHolder.isGuest) {
-      // Belongs to some other active guest right now (extremely unlikely
-      // collision, but possible) — can't hand out a name someone else is
-      // actively using without knowing it's actually the same person.
-      const stillHeldByAnother = [...guestSocketMap.entries()].some(([sid, lc]) => sid !== socket.id && lc === newLc);
-      if (stillHeldByAnother) {
-        socket.emit("auth:guest:renameResult", { success: false, error: "ეს სახელი დაკავებულია" });
-        return;
-      }
-    }
-
-    // Move the record to the new key, carrying avatar/bio/etc. over.
-    registeredUsers.delete(oldLc);
-    oldUser.username = newName;
-    registeredUsers.set(newLc, oldUser);
-
-    // Re-point this socket's tracking to the new name.
-    guestSocketMap.set(socket.id, newLc);
-    const oldSockets = onlineRegSockets.get(oldLc);
-    if (oldSockets) {
-      oldSockets.delete(socket.id);
-      if (oldSockets.size === 0) onlineRegSockets.delete(oldLc);
-    }
-    if (!onlineRegSockets.has(newLc)) onlineRegSockets.set(newLc, new Set());
-    onlineRegSockets.get(newLc).add(socket.id);
-
-    socket.leave(`user:${oldLc}`);
-    socket.join(`user:${newLc}`);
-    socket._regUser = { usernameLower: newLc, username: newName, isGuest: true };
-    socket.userName = newName;
-
-    // Critical: any REST token(s) issued for the old name (this socket's
-    // guestToken, or others from another tab on the same identity) still
-    // point at usernameLower=oldLc in authTokens. If left alone, the very
-    // next REST call using one of them (profile lookups, forum/rooms
-    // reads) would 401 — requireRegAuth looks the token up, finds
-    // oldLc, and registeredUsers no longer has anything under that key
-    // since it was just moved above. Repoint every such token to newLc
-    // instead of only fixing this one socket's.
-    for (const entry of authTokens.values()) {
-      if (entry.usernameLower === oldLc) entry.usernameLower = newLc;
-    }
-
-    socket.emit("auth:guest:renameResult", { success: true, newName });
-    console.log(`[AUTH] guest renamed: ${oldLc} -> ${newName}`);
-    io.emit("users:onlineChanged");
+  // ── auth:guest:rename — DISABLED. Guests can no longer choose a name at
+  // all; only registered accounts get a name of their own. Rejected here on
+  // the server (not just hidden in the UI) so an old cached page or a
+  // hand-crafted request can't still rename. Registering is the way to get
+  // a real name, so the error says exactly that. ──────────────────────
+  socket.on("auth:guest:rename", () => {
+    socket.emit("auth:guest:renameResult", {
+      success: false,
+      error: "სტუმრებს სახელის შეცვლა არ შეუძლიათ — დარეგისტრირდი, რომ საკუთარი სახელი გქონდეს",
+    });
   });
+
 
   // ── auth:checkPartner — tell client if current partner is registered ──────
   socket.on("auth:checkPartner", () => {
@@ -9535,25 +9526,36 @@ io.on("connection", (socket) => {
   // more strictly than the plain text handler above: friendship is verified
   // in BOTH directions here rather than assumed from room membership, since
   // image content warrants the extra certainty.
-  const ALLOWED_PHOTO_MIME = {
-    "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
-  };
-  const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // 5MB decoded
+  //
+  // Every photo is processed through sharp before being saved:
+  //   * auto-rotated using the image's own EXIF orientation flag — phone
+  //     photos are very often stored "sideways" with a flag saying how to
+  //     display them the right way up; skipping this step means photos can
+  //     arrive rotated 90°.
+  //   * resized down to at most 2000px on the long edge. Modern phone
+  //     cameras routinely produce 8-20MB+ JPEGs at full resolution — far
+  //     more than anyone needs for viewing in a chat — so this is a
+  //     generous ceiling, not a quality compromise for normal use.
+  //   * re-encoded as JPEG, regardless of the source format. This is also
+  //     what makes HEIC/HEIC — the default format on iPhone cameras —
+  //     actually work: previously HEIC uploads were rejected outright,
+  //     which likely explains photo-sending appearing broken for anyone on
+  //     iPhone, probably most real users of this feature.
+  // sharp is also the SECURITY boundary here, not the declared mimeType:
+  // if sharp can't decode the bytes as a real image, they get rejected
+  // regardless of what the client claimed the file was.
+  const MAX_PHOTO_INPUT_BYTES = 20 * 1024 * 1024; // 20MB raw — covers real phone photos with margin
+  const PHOTO_MAX_DIMENSION   = 2000;
+  const PHOTO_JPEG_QUALITY    = 85;
 
-  socket.on("privateMsg:sendPhoto", ({ toUsername, photoData, mimeType, messageId }) => {
-    if (!socket._regUser || !toUsername || !photoData || !mimeType) return;
+  socket.on("privateMsg:sendPhoto", async ({ toUsername, photoData, mimeType, messageId }) => {
+    if (!socket._regUser || !toUsername || !photoData) return;
     if (socket._regUser.isGuest) { socket.emit("privateMsg:photoSent", { success: false, messageId, error: "სტუმრებს ფოტოს გაგზავნა არ შეუძლიათ" }); return; }
 
     const myLc = socket._regUser.usernameLower;
     const myUser = registeredUsers.get(myLc);
     if (!myUser?.isPro) {
       socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ფოტოს გაგზავნა მხოლოდ Pro მომხმარებლებს შეუძლიათ" });
-      return;
-    }
-
-    const ext = ALLOWED_PHOTO_MIME[mimeType];
-    if (!ext) {
-      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ამ ტიპის ფაილი დაუშვებელია" });
       return;
     }
 
@@ -9582,23 +9584,39 @@ io.on("connection", (socket) => {
       socket.emit("privateMsg:photoSent", { success: false, messageId }); return;
     }
 
-    let buffer;
+    let rawBuffer;
     try {
-      buffer = Buffer.from(String(photoData), "base64");
+      rawBuffer = Buffer.from(String(photoData), "base64");
     } catch {
       socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ფოტოს დამუშავება ვერ მოხერხდა" });
       return;
     }
-    if (!buffer.length || buffer.length > MAX_PHOTO_BYTES) {
-      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ფოტო ზედმეტად დიდია (მაქს. 5MB)" });
+    if (!rawBuffer.length || rawBuffer.length > MAX_PHOTO_INPUT_BYTES) {
+      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ფოტო ზედმეტად დიდია (მაქს. 20MB)" });
       return;
     }
 
-    // Random filename — never trust or reuse anything client-supplied for
-    // this, both to avoid path-traversal and so filenames can't collide.
-    const filename = crypto.randomBytes(20).toString("hex") + "." + ext;
+    let processedBuffer;
     try {
-      fs.writeFileSync(path.join(PRIVATE_PHOTOS_DIR, filename), buffer);
+      processedBuffer = await sharp(rawBuffer)
+        .rotate() // auto-orient from EXIF before anything else touches the pixels
+        .resize({ width: PHOTO_MAX_DIMENSION, height: PHOTO_MAX_DIMENSION, fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: PHOTO_JPEG_QUALITY, mozjpeg: true })
+        .toBuffer();
+    } catch (e) {
+      // sharp couldn't decode this as an image at all — this is the real
+      // format/content check, not the client-declared mimeType.
+      console.warn("[PHOTOS] sharp could not process upload:", e.message);
+      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ეს ფაილი სურათი არ არის ან დაზიანებულია" });
+      return;
+    }
+
+    // Output is always JPEG now, so the filename is always predictable —
+    // never trust or reuse anything client-supplied for the name itself,
+    // both to avoid path-traversal and so filenames can't collide.
+    const filename = crypto.randomBytes(20).toString("hex") + ".jpg";
+    try {
+      fs.writeFileSync(path.join(PRIVATE_PHOTOS_DIR, filename), processedBuffer);
     } catch (e) {
       console.error("[PHOTOS] Failed to save:", e.message);
       socket.emit("privateMsg:photoSent", { success: false, messageId, error: "შენახვა ვერ მოხერხდა" });
