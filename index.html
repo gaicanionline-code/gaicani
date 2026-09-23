@@ -345,10 +345,18 @@
           </div>
         </div>
 
+        <!-- Guests can't choose a name — the server assigns "სტუმარი####".
+             The box stays in the DOM (hidden) because registered users reuse
+             this same modal to change their random-chat display name, and
+             openChangeNameModal() reveals it for them. -->
+        <div id="guestNameNotice" class="guest-name-notice">
+          👤 სტუმრად შეხვალ ავტომატური სახელით — <strong>სტუმარი####</strong><br>
+          <span class="guest-name-notice-sub">საკუთარი სახელისთვის დარეგისტრირდი</span>
+        </div>
         <textarea id="nameInput" placeholder="შეიყვანეთ სახელი..."
                  autocomplete="off" autocorrect="off" autocapitalize="sentences"
                  spellcheck="false" inputmode="text" enterkeyhint="go"
-                 rows="1" maxlength="20"></textarea>
+                 rows="1" maxlength="20" style="display:none"></textarea>
         <div id="nameError" class="name-error"></div>
         <p class="safety-age-confirm">
           საუბრის დაწყებით ადასტურებთ რომ ხართ <strong>18+</strong> და ეთანხმებით

@@ -1328,7 +1328,9 @@
       if (changeAvatarBtn) changeAvatarBtn.style.display = "none";
       if (changeBioBtn) changeBioBtn.style.display = "none";
       const changeGuestNameBtn = document.getElementById("changeGuestNameBtn");
-      if (changeGuestNameBtn) changeGuestNameBtn.style.display = "";
+      // Guests can no longer choose a name (server rejects auth:guest:rename),
+      // so the button stays hidden rather than offering a control that always fails.
+      if (changeGuestNameBtn) changeGuestNameBtn.style.display = "none";
       const banner = document.getElementById("guestBanner");
       if (banner) banner.style.display = "";
 

@@ -1215,7 +1215,20 @@ function _resetSaveBtn() {
 }
 
 function saveName() {
-  const name = nameInput.value.trim();
+  let name;
+  if (window.gaicaniAuthUser) {
+    // Registered account — their own name (set by autoSetNameAfterAuth, or
+    // typed into the change-name modal).
+    name = nameInput.value.trim();
+  } else {
+    // Guests can't choose a name. Send the one this tab was already given,
+    // so it stays the same across pages; otherwise a placeholder. Either way
+    // the SERVER assigns the real "სტუმარი####" — this is only the request,
+    // and the name actually shown comes back in nameAccepted.
+    let stored = null;
+    try { stored = sessionStorage.getItem("gaicani_guest_username"); } catch (_) {}
+    name = (stored && /^სტუმარი\d{4}$/.test(stored)) ? stored : "სტუმარი";
+  }
   if (!name)            { showNameError("შეიყვანეთ სახელი ..."); return; }
   if (name.length < 2)  { showNameError("სახელი უნდა შედგებოდეს მინიმუმ ორი სიმბოლოსგან!"); return; }
   if (name.length > 20) { showNameError("20 სიმბოლოზე მეტი ვერ იქნება სახელი ! "); return; }
@@ -1843,6 +1856,17 @@ messageInput.addEventListener("input", () => {
 });
 
 function openChangeNameModal() {
+  // Guests can't choose a name at all — opening the modal would just offer
+  // a button that hands them back the same "სტუმარი####". Say why instead.
+  if (!window.gaicaniAuthUser) {
+    addSystemMessage("👤 სტუმრებს სახელის შეცვლა არ შეუძლიათ — დარეგისტრირდი, რომ საკუთარი სახელი გქონდეს");
+    return;
+  }
+  // Registered users reuse this modal to change their random-chat display
+  // name, so the box (hidden by default for guests) is revealed for them.
+  nameInput.style.display = "";
+  const guestNotice = document.getElementById("guestNameNotice");
+  if (guestNotice) guestNotice.style.display = "none";
   nameInput.value         = userName;
   saveNameBtn.textContent = "Save Name";
   clearNameError();
