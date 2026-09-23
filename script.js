@@ -241,10 +241,11 @@ function addDonationCard() {
 
   const txt = document.createElement("div");
   txt.className = "chat-donate-text";
-  txt.appendChild(document.createTextNode(
-    "თუ მოგწონს Gaicani.online და გინდა, რომ კიდევ უფრო გავაუმჯობესოთ, შეგიძლია მხარი დაგვიჭირო მცირე შემოწირულობით 💜"));
+  txt.appendChild(document.createTextNode("💜 მხარი დაუჭირე Gaicani.online-ს მცირე დონაციით 🙏"));
   txt.appendChild(document.createElement("br"));
-  txt.appendChild(document.createTextNode("შენი მხარდაჭერა ჩვენთვის ძალიან ბევრს ნიშნავს."));
+  txt.appendChild(document.createTextNode("შენი დახმარება საიტის განვითარებასა და გაუმჯობესებას მოხმარდება 🚀"));
+  txt.appendChild(document.createElement("br"));
+  txt.appendChild(document.createTextNode("ნებისმიერი თანხა ჩვენთვის მნიშვნელოვანია ❤️"));
 
   const btn = document.createElement("a");
   btn.className = "chat-donate-btn";
