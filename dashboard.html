@@ -127,6 +127,14 @@
       color: #fff; letter-spacing: -0.01em;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
+    .vip-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      background: linear-gradient(135deg,#f2c94c,#e0a020);
+      color: #1a1408; font-size: 0.62em; font-weight: 900;
+      padding: 2px 8px 2px 6px; border-radius: 20px; margin-left: 8px;
+      vertical-align: middle; letter-spacing: 0.02em;
+      box-shadow: 0 2px 6px rgba(242,201,76,0.35);
+    }
     .user-meta {
       font-size: 0.78em; color: var(--muted); margin-top: 4px;
       display: flex; align-items: center; gap: 5px;
@@ -732,6 +740,7 @@
     }
     .profile-card-avatar img { width: 100%; height: 100%; object-fit: cover; }
     .profile-card-name { font-size: 1.18em; font-weight: 800; color: #fff; margin-bottom: 7px; letter-spacing: -0.01em; }
+    .pro-star { font-size: 0.82em; filter: drop-shadow(0 0 3px rgba(242,201,76,0.6)); }
     .profile-card-status {
       display: inline-flex; align-items: center; gap: 6px; font-size: 0.82em;
       font-weight: 700; padding: 4px 13px; border-radius: 20px; margin-bottom: 14px;
@@ -867,7 +876,7 @@
       <div style="background:linear-gradient(135deg,#5865f2,#4752c4);border-radius:12px;padding:16px;">
         <div style="font-weight:800;font-size:1.02em;margin-bottom:6px;">✨ სტუმრის რეჟიმში ხარ</div>
         <div style="font-size:0.86em;line-height:1.6;opacity:0.95;margin-bottom:12px;">
-          დარეგისტრირდი და მიიღე: მეგობრები, პირადი ჩატი, ფორუმი და ოთახები — პროგრესი კი სამუდამოდ შენახული.
+          მეგობრები, ჩატი და შენახული პროგრესი — უფასოდ.
         </div>
         <a href="/" style="display:inline-block;background:#fff;color:#4752c4;font-weight:800;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.86em;">დარეგისტრირდი უფასოდ →</a>
       </div>
@@ -875,8 +884,9 @@
       <!-- Donation, shown under the register pitch for guests -->
       <div class="donate-card" style="margin:14px 0 0;">
         <div class="donate-text">
-          თუ მოგწონს Gaicani.online და გინდა, რომ კიდევ უფრო გავაუმჯობესოთ, შეგიძლია მხარი დაგვიჭირო მცირე შემოწირულობით 💜<br>
-          შენი მხარდაჭერა ჩვენთვის ძალიან ბევრს ნიშნავს.
+          💜 ამ კვირის მიზანი — 30₾<br>
+          🙏 თუ 30₾ შეგროვდება, რეკლამები 1 კვირით გაითიშება! 🚫📢<br>
+          ❤️ ნებისმიერი მცირე დახმარება მნიშვნელოვანია!
         </div>
         <a class="donate-btn" href="https://www.kisa.ge/donate/8fvhi1xii0" target="_blank" rel="noopener noreferrer">
           მხარდაჭერა 💜
@@ -1075,8 +1085,9 @@
     <!-- Donation — shown to everyone, near the bottom of the page -->
     <div class="donate-card">
       <div class="donate-text">
-        თუ მოგწონს Gaicani.online და გინდა, რომ კიდევ უფრო გავაუმჯობესოთ, შეგიძლია მხარი დაგვიჭირო მცირე შემოწირულობით 💜<br>
-        შენი მხარდაჭერა ჩვენთვის ძალიან ბევრს ნიშნავს.
+        💜 ამ კვირის მიზანი — 30₾<br>
+        🙏 თუ 30₾ შეგროვდება, რეკლამები 1 კვირით გაითიშება! 🚫📢<br>
+        ❤️ ნებისმიერი მცირე დახმარება მნიშვნელოვანია!
       </div>
       <a class="donate-btn" href="https://www.kisa.ge/donate/8fvhi1xii0" target="_blank" rel="noopener noreferrer">
         მხარდაჭერა 💜
@@ -1273,6 +1284,28 @@
     /* ── Guest mode — same interface, registered-only sections replaced
        with a banner, registered-only actions prompt to register instead
        of silently failing. Games, Rooms, and Forum stay reachable. ── */
+    /* ── VIP badge on the user's own card ─────────────────────────────
+       Called from both auth paths (initial /api/auth/verify load AND the
+       live socket auth:authenticated event) since whichever resolves first
+       shouldn't leave the other one stale — and again from
+       auth:proStatusChanged if an admin grants/revokes it mid-session. */
+    function renderVipBadge(isPro) {
+      const nameEl = document.getElementById("userName");
+      if (!nameEl) return;
+      let badge = document.getElementById("vipBadge");
+      if (isPro) {
+        if (!badge) {
+          badge = document.createElement("span");
+          badge.id = "vipBadge";
+          badge.className = "vip-badge";
+          badge.innerHTML = "VIP <span class=\"pro-star\">⭐</span>";
+          nameEl.appendChild(badge);
+        }
+      } else if (badge) {
+        badge.remove();
+      }
+    }
+
     function enterGuestMode() {
       document.body.classList.add("guest-mode");
 
@@ -1461,7 +1494,7 @@
         }
       });
 
-      socket.on("auth:authenticated", ({ username, friends, pendingRequests, avatar, bio, streaks, isGuest, guestToken, blockedUsers: serverBlockedUsers }) => {
+      socket.on("auth:authenticated", ({ username, friends, pendingRequests, avatar, bio, streaks, isGuest, guestToken, isPro, blockedUsers: serverBlockedUsers }) => {
         if (isGuest) {
           try { sessionStorage.setItem("gaicani_guest_username", username); } catch (_) {}
           authUser = { username, token: guestToken || null, friends: [], pendingRequests: [], avatar: avatar || AVAILABLE_AVATARS[0], bio: bio || "", isGuest: true };
@@ -1478,7 +1511,9 @@
           authUser.pendingRequests = pendingRequests || [];
           if (avatar) authUser.avatar = avatar;
           authUser.bio = bio || "";
+          authUser.isPro = !!isPro;
         }
+        renderVipBadge(!!isPro);
         blockedUsers = new Set(serverBlockedUsers || []);
         if (typeof window._bindReportListener === "function") window._bindReportListener(socket);
         friendStreaks = streaks || {};
@@ -1495,6 +1530,13 @@
         socket.emit("joker:listPublicRooms");
         socket.emit("imposter:listPublicRooms");
         socket.emit("blackjack:listPublicRooms");
+      });
+
+      // Admin granted/revoked pro status while this session is live —
+      // update the badge immediately rather than waiting for a reload.
+      socket.on("auth:proStatusChanged", ({ isPro }) => {
+        if (authUser) authUser.isPro = !!isPro;
+        renderVipBadge(!!isPro);
       });
 
       socket.on("guest:registerRequired", ({ feature }) => promptGuestToRegister(feature));
@@ -1928,7 +1970,7 @@
 
         body.innerHTML = `
           <div class="profile-card-avatar">${avatarHtml}</div>
-          <div class="profile-card-name">${esc(d.username)}</div>
+          <div class="profile-card-name">${esc(d.username)}${d.isPro ? ' <span class="pro-star" title="Pro">⭐</span>' : ""}</div>
           ${statusHtml}
           ${bioHtml}
           <div class="profile-card-actions">
@@ -2239,7 +2281,7 @@
                 <div class="friend-avatar">${avatarHtml}</div>
                 <span class="online-dot" title="ონლაინ"></span>
               </div>
-              <span class="friend-name">${esc(u.username)}</span>
+              <span class="friend-name">${esc(u.username)}${u.isPro ? ' <span class="pro-star" title="Pro">⭐</span>' : ""}</span>
               ${bioHtml}
               <div class="friend-actions">${actionHtml}</div>
             </div>`;
@@ -2434,6 +2476,7 @@
           pendingRequests: d.pendingRequests || [],
           avatar: d.avatar || AVAILABLE_AVATARS[0],
           bio: d.bio || "",
+          isPro: !!d.isPro,
         };
       } catch (_) {
         // Network error — best-effort: show page with stored username, no friend data yet
@@ -2447,6 +2490,7 @@
       paintUserBio();
       if (nameEl)    nameEl.textContent   = authUser.username;
       if (topUserEl) topUserEl.textContent = `🔐 ${authUser.username}`;
+      renderVipBadge(!!authUser.isPro);
 
       renderFriends(authUser.friends);
       renderBlocked();
