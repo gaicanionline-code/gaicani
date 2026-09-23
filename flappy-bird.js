@@ -394,7 +394,7 @@
       <div class="fb-overlay-title">დავიწყოთ თამაში?</div>
       <div class="fb-overlay-sub">თამაშის დასაწყებად გაიხსნება რეკლამა.</div>
       <button class="fb-restart-btn fb-gate-btn" id="fbGateBtn" type="button">▶ თამაშის დაწყება</button>
-      <div class="fb-overlay-sub fb-gate-reward">🏆 რეგისტრირებული იუზერით 20 ქულაზე — რეკლამები 24 საათით გაითიშება!</div>
+      <div class="fb-overlay-sub fb-gate-reward">🏆 20 ქულაზე — რეკლამები 24 საათით გაითიშება!</div>
     `;
     const gateBtn = document.getElementById("fbGateBtn");
     // The overlay sits INSIDE the canvas box, so without this the press
@@ -489,23 +489,37 @@
      being blocked — same everywhere-else-on-the-site pattern, so guests
      can play Flappy Bird too and still show up on the leaderboard.
      ══════════════════════════════════════════════════════════════════ */
+  // Registered accounts only — anyone else sees the registration gate. The
+  // server enforces the same rule (flappy:start rejects guests), so this is
+  // the friendly front door, not the lock.
+  function showRegisterGate() {
+    if (socket) { try { socket.disconnect(); } catch (_) {} }
+    elApp.classList.remove("visible");
+    elLoading.style.display = "none";
+    elGuestGate.classList.add("visible");
+  }
+
   async function init() {
     const { token, username } = loadAuth();
 
+    // No account on this device → straight to the gate. No point opening a
+    // connection as a guest just to be turned away.
+    if (!token) { showRegisterGate(); return; }
+
     socket = io();
     socket.on("connect", () => {
-      if (token) socket.emit("auth:token", { token });
-      else socket.emit("auth:guest", { preferredUsername: sessionStorage.getItem("gaicani_guest_username") || null });
+      socket.emit("auth:token", { token });
     });
 
+    socket.on("flappy:registerRequired", showRegisterGate);
+
     socket.on("auth:authenticated", ({ username: authedName, isGuest, isPro, adFreeUntil } = {}) => {
-      if (isGuest && authedName) {
-        try { sessionStorage.setItem("gaicani_guest_username", authedName); } catch (_) {}
-      }
-      // What ad-trigger.js's isAdExempt() reads. Guests are never exempt:
-      // their payload carries no pro status and no ad-free window.
+      // A real token never authenticates as a guest, but if it somehow did,
+      // guests don't get to play — show the gate rather than the game.
+      if (isGuest) { showRegisterGate(); return; }
+      // What ad-trigger.js's isAdExempt() reads.
       window.gaicaniAuthUser = {
-        isGuest: !!isGuest,
+        isGuest: false,
         isPro: !!isPro,
         adFreeUntil: Number(adFreeUntil) || 0,
       };

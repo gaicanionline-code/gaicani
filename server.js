@@ -4232,6 +4232,7 @@ function flappyGenSessionId() {
 function getFlappyTop3() {
   const rows = [];
   for (const [lc, u] of registeredUsers) {
+    if (u.isGuest) continue; // recycled temporary names — never on the podium
     if (u.flappyHighScore) {
       rows.push({ id: lc, username: u.username, score: u.flappyHighScore, achievedAt: u.flappyHighScoreAt || null });
     }
@@ -9263,9 +9264,13 @@ io.on("connection", (socket) => {
   });
 
   // ── flappy:start — begin a new anti-cheat session for "მფრინავი ჩიტი" ────
+  // Registered accounts only. Guests carry a _regUser too (isGuest: true),
+  // so checking for _regUser alone let them through. Enforced here on the
+  // server, not just hidden in the page, so a guest can't start a session
+  // by sending the event directly.
   socket.on("flappy:start", () => {
-    if (!socket._regUser) {
-      socket.emit("flappy:error", { error: "საჭიროა შესვლა" });
+    if (!socket._regUser || socket._regUser.isGuest) {
+      socket.emit("flappy:registerRequired");
       return;
     }
     const sessionId = flappyGenSessionId();
@@ -9280,7 +9285,7 @@ io.on("connection", (socket) => {
 
   // ── flappy:submitScore — validate + record a finished game's score ───────
   socket.on("flappy:submitScore", ({ sessionId, score }) => {
-    if (!socket._regUser) return;
+    if (!socket._regUser || socket._regUser.isGuest) return; // registered accounts only
 
     const numScore = Number(score);
     if (!Number.isFinite(numScore) || !Number.isInteger(numScore) || numScore < 0) return;
