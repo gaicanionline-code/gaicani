@@ -1495,6 +1495,31 @@ app.post("/captcha-verify", (req, res) => {
   res.redirect(302, "/");
 });
 
+// ── Never serve server-side code or data files ───────────────────────────
+// express.static below serves the WHOLE project folder, which also holds
+// server.js itself and, if the data disk isn't usable (see DATA_PATH),
+// every data file — registered_users.json with password hashes,
+// private_messages.json with everyone's private chats, IP logs. All of
+// that was downloadable by anyone who guessed the name. This runs first
+// and refuses them. It matches on the real file name AFTER decoding and
+// normalising, so /%73erver.js, //server.js or /x/../server.js don't slip
+// past. The one legitimate .json a page needs, /manifest.json, stays open.
+const PUBLIC_FILE_DENY = [
+  /^server(-[\w-]+)?\.js$/i,     // server.js and server-*.js patches
+  /^vt-checker\.js$/i,
+  /^package(-lock)?\.json$/i,
+  /\.jsonl?$/i,                  // every data file (+ the .jsonl flood log)
+];
+app.use((req, res, next) => {
+  let p;
+  try { p = decodeURIComponent(req.path); } catch { return res.status(400).end(); }
+  const base = path.posix.basename(path.posix.normalize(p));
+  if (base.startsWith(".")) return res.status(404).end();            // .env and other dotfiles
+  if (base.toLowerCase() === "manifest.json") return next();         // the PWA manifest is public
+  if (PUBLIC_FILE_DENY.some(re => re.test(base))) return res.status(404).end();
+  next();
+});
+
 app.use(express.static(path.join(__dirname)));
 // Uploaded private-chat photos live outside __dirname (see PRIVATE_PHOTOS_DIR
 // above), so they need their own explicit static route to be reachable.
@@ -9607,7 +9632,7 @@ io.on("connection", (socket) => {
     const myLc = socket._regUser.usernameLower;
     const myUser = registeredUsers.get(myLc);
     if (!myUser?.isPro) {
-      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ფოტოს გაგზავნა მხოლოდ Pro მომხმარებლებს შეუძლიათ" });
+      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ფოტოს გაგზავნა მხოლოდ VIP მომხმარებლებს შეუძლიათ" });
       return;
     }
 
