@@ -22,7 +22,18 @@ const dataDirUsable = fs.existsSync(DATA_DIR) && (() => {
 const DATA_PATH = dataDirUsable ? DATA_DIR : __dirname;
 console.log(`[DATA] Persistent files will be stored in: ${DATA_PATH}`);
 const crypto     = require("crypto");
-const sharp      = require("sharp");
+// sharp is OPTIONAL. It ships a native library; if it isn't installed on
+// the host, or its binary fails to load there, a plain require() would
+// crash the ENTIRE server at startup. Instead we fall back to saving photos
+// as uploaded (common formats only) — photos keep working, just without
+// resizing/HEIC conversion.
+let sharp = null;
+try {
+  sharp = require("sharp");
+  console.log("[PHOTOS] sharp loaded — photos are resized and converted to JPEG");
+} catch (e) {
+  console.warn("[PHOTOS] sharp NOT available (" + e.message + ") — photos will be saved as uploaded. Run `npm install` to enable resizing/HEIC.");
+}
 
 // ── Private photo storage ────────────────────────────────────────────────
 // Lives under DATA_PATH (the same persistent volume as the JSON data,
@@ -4716,22 +4727,33 @@ function scheduleSave() {
   }, SAVE_DEBOUNCE_MS);
 }
 
+// Fields that must never be written to disk. EVERYTHING ELSE on a user
+// object is saved automatically.
+//
+// This used to be a hand-written list of fields to save, and every new
+// feature had to remember to add itself to it. About ten didn't — VIP
+// status (isPro), the Flappy Bird ad-free reward, permanent block lists,
+// the Flappy/chess/checkers leaderboards, blackjack coins, last-known IPs
+// and unread markers were all silently WIPED on every server restart (every
+// deploy, every free-tier sleep). Saving by default means a new field
+// can't be lost that way again.
+const NEVER_PERSIST_USER_FIELDS = new Set(["isGuest"]);
+
 function _saveAuthUsersToDisk() {
   const obj = {};
   for (const [k, u] of registeredUsers) {
     if (u.isGuest) continue; // temporary guest sessions never touch disk — gone the moment they disconnect
-    obj[k] = {
-      username: u.username,
-      passwordHash: u.passwordHash,
-      createdAt: u.createdAt,
-      friends: u.friends || [],
-      pendingRequests: u.pendingRequests || [],
-      avatar: u.avatar || DEFAULT_AVATAR,
-      bio: u.bio || "",
-      isAdmin: !!u.isAdmin,
-      pokerCoins: typeof u.pokerCoins === "number" ? u.pokerCoins : undefined,
-      pokerCoinsLastRefillAt: u.pokerCoinsLastRefillAt || undefined
-    };
+    const out = {};
+    for (const [key, val] of Object.entries(u)) {
+      if (NEVER_PERSIST_USER_FIELDS.has(key)) continue;
+      if (val === undefined || typeof val === "function") continue;
+      // User fields are plain data today (arrays, numbers, strings). If a
+      // Set/Map is ever added, store it as an array rather than letting
+      // JSON.stringify silently turn it into an empty {}.
+      out[key] = (val instanceof Set) ? [...val] : (val instanceof Map ? [...val.entries()] : val);
+    }
+    if (!out.avatar) out.avatar = DEFAULT_AVATAR;
+    obj[k] = out;
   }
   try {
     fs.writeFileSync(USERS_FILE, JSON.stringify(obj), "utf8");
@@ -9627,24 +9649,40 @@ io.on("connection", (socket) => {
     }
 
     let processedBuffer;
-    try {
-      processedBuffer = await sharp(rawBuffer)
-        .rotate() // auto-orient from EXIF before anything else touches the pixels
-        .resize({ width: PHOTO_MAX_DIMENSION, height: PHOTO_MAX_DIMENSION, fit: "inside", withoutEnlargement: true })
-        .jpeg({ quality: PHOTO_JPEG_QUALITY, mozjpeg: true })
-        .toBuffer();
-    } catch (e) {
-      // sharp couldn't decode this as an image at all — this is the real
-      // format/content check, not the client-declared mimeType.
-      console.warn("[PHOTOS] sharp could not process upload:", e.message);
-      socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ეს ფაილი სურათი არ არის ან დაზიანებულია" });
-      return;
+    let outExt = "jpg";
+    if (sharp) {
+      try {
+        processedBuffer = await sharp(rawBuffer)
+          .rotate() // auto-orient from EXIF before anything else touches the pixels
+          .resize({ width: PHOTO_MAX_DIMENSION, height: PHOTO_MAX_DIMENSION, fit: "inside", withoutEnlargement: true })
+          .jpeg({ quality: PHOTO_JPEG_QUALITY, mozjpeg: true })
+          .toBuffer();
+      } catch (e) {
+        // sharp couldn't decode this as an image at all — this is the real
+        // format/content check, not the client-declared mimeType.
+        console.warn("[PHOTOS] sharp could not process upload:", e.message);
+        socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ეს ფაილი სურათი არ არის ან დაზიანებულია" });
+        return;
+      }
+    } else {
+      // No sharp on this host: identify the format from the file's own
+      // leading bytes (never the browser's label) and store it unchanged.
+      // HEIC needs sharp to convert, so it's refused with a clear message.
+      const b = rawBuffer;
+      if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) outExt = "jpg";
+      else if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) outExt = "png";
+      else if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) outExt = "gif";
+      else if (b.slice(0, 4).toString("latin1") === "RIFF" && b.slice(8, 12).toString("latin1") === "WEBP") outExt = "webp";
+      else {
+        socket.emit("privateMsg:photoSent", { success: false, messageId, error: "ეს ფორმატი ჯერ არ არის მხარდაჭერილი — სცადე JPG ან PNG" });
+        return;
+      }
+      processedBuffer = rawBuffer;
     }
 
-    // Output is always JPEG now, so the filename is always predictable —
-    // never trust or reuse anything client-supplied for the name itself,
+    // Never trust or reuse anything client-supplied for the name itself,
     // both to avoid path-traversal and so filenames can't collide.
-    const filename = crypto.randomBytes(20).toString("hex") + ".jpg";
+    const filename = crypto.randomBytes(20).toString("hex") + "." + outExt;
     try {
       fs.writeFileSync(path.join(PRIVATE_PHOTOS_DIR, filename), processedBuffer);
     } catch (e) {
