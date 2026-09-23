@@ -48,18 +48,34 @@
     badge.textContent = String(remaining);
   }
 
-  // Pro users are exempt entirely — no countdown shown, no ad ever fires.
-  // Checked here so every call site (present and future) benefits without
-  // needing its own guard.
-  function isCurrentUserPro() {
-    return !!(window.gaicaniAuthUser && window.gaicaniAuthUser.isPro);
+  // Exempt from ads entirely — no countdown shown, no ad ever fires — when
+  // the user is pro, OR is inside a 24h ad-free window earned by scoring
+  // 20+ in Flappy Bird. Checked here so every call site (present and
+  // future) benefits without needing its own guard. The window's end time
+  // comes from the server (adFreeUntil in the auth payload), so reloading
+  // the page or editing localStorage can't fake or extend it.
+  function isAdExempt() {
+    const u = window.gaicaniAuthUser;
+    if (!u) return false;
+    if (u.isPro) return true;
+    return typeof u.adFreeUntil === "number" && u.adFreeUntil > Date.now();
   }
+  // Exposed so other pages (e.g. Flappy Bird's pre-round ad gate) apply the
+  // exact same rule instead of re-implementing it.
+  window.isAdExempt = isAdExempt;
+
+  // Opens the ad in a new tab. Same URL as the click-counter above — kept
+  // here so it's defined in exactly one place. MUST be called directly
+  // inside a real click handler, or the popup blocker will swallow it.
+  window.openAdNow = function () {
+    window.open(AD_URL, "_blank", "noopener");
+  };
 
   // Call inside a real click handler. `storageKey` must be UNIQUE per
   // button (each button counts independently); `badgeId` names that
   // button's own badge; `btnEl` is the button the badge attaches to.
   window.registerAdClick = function (storageKey, badgeId, btnEl) {
-    if (isCurrentUserPro()) {
+    if (isAdExempt()) {
       // Make sure no stale badge/number lingers from before they went pro.
       const existing = document.getElementById(badgeId);
       if (existing) existing.remove();
@@ -84,7 +100,7 @@
   // Draws a button's badge at its current count without incrementing —
   // used once on page load so it shows the right number before any click.
   window.initAdCountdown = function (storageKey, badgeId, btnEl) {
-    if (isCurrentUserPro()) return; // no badge at all for pro users
+    if (isAdExempt()) return; // no badge at all for pro users
     const count = getCount(storageKey);
     const badge = ensureButtonBadge(btnEl, badgeId);
     render(badge, AD_EVERY_N - count);
@@ -96,7 +112,7 @@
   // known (after auth completes, or right after an admin grants it live) to
   // sweep any badge that was drawn too early.
   window.clearAdBadgesIfPro = function () {
-    if (!isCurrentUserPro()) return;
+    if (!isAdExempt()) return;
     document.querySelectorAll(".ad-click-badge").forEach(b => b.remove());
   };
 })();

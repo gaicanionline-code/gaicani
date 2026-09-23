@@ -2978,3 +2978,25 @@ body.rc-theme-light .chat-donate-text { color: #4b4f5a; }
 .guest-name-notice-sub { font-size: 0.88em; color: #96989d; }
 body.rc-theme-light .guest-name-notice { color: #2e3338; background: rgba(88,101,242,0.07); }
 body.rc-theme-light .guest-name-notice-sub { color: #6b7080; }
+
+/* ── Flappy Bird reward announcement (random chat feed) ──────────────────── */
+.chat-flappy-card {
+  align-self: center;
+  max-width: 440px;
+  width: calc(100% - 24px);
+  margin: 10px auto 4px;
+  background: linear-gradient(160deg, rgba(242,201,76,.16), rgba(224,160,32,.08));
+  border: 1px solid rgba(242,201,76,.38);
+  border-radius: 14px;
+  padding: 14px 16px;
+  text-align: center;
+}
+.chat-flappy-text { font-size: 0.86em; line-height: 1.6; color: #f2e3b0; font-weight: 600; margin-bottom: 11px; }
+.chat-flappy-btn {
+  display: inline-block; text-decoration: none;
+  background: linear-gradient(135deg, #f2c94c, #e0a020); color: #1a1408;
+  font-weight: 800; font-size: 0.84em; padding: 9px 22px; border-radius: 10px;
+  box-shadow: 0 6px 16px rgba(242,201,76,.28);
+}
+.chat-flappy-btn:hover { filter: brightness(1.06); }
+body.rc-theme-light .chat-flappy-text { color: #6b4d00; }

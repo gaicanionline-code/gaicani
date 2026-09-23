@@ -1889,7 +1889,10 @@
     /* Authenticated → join friend-chat room */
     socket.on("auth:authenticated", (d) => {
       myIsPro = !!(d && d.isPro);
-      window.gaicaniAuthUser = Object.assign(window.gaicaniAuthUser || {}, { isPro: myIsPro });
+      window.gaicaniAuthUser = Object.assign(window.gaicaniAuthUser || {}, {
+        isPro: myIsPro,
+        adFreeUntil: Number(d && d.adFreeUntil) || 0, // 24h ad-free earned in Flappy Bird
+      });
       if (typeof window.clearAdBadgesIfPro === "function") window.clearAdBadgesIfPro();
       refreshPhotoBtnVisibility();
       socket.emit("friendChat:join", { friendUsername: friendName });
@@ -1897,6 +1900,12 @@
 
     // Pro status changed while this session is live (admin granted/revoked
     // it just now) — update immediately rather than waiting for a reconnect.
+    // Earned 24h ad-free in Flappy Bird (possibly in another tab).
+    socket.on("ads:adFreeUntil", ({ adFreeUntil }) => {
+      window.gaicaniAuthUser = Object.assign(window.gaicaniAuthUser || {}, { adFreeUntil: Number(adFreeUntil) || 0 });
+      if (typeof window.clearAdBadgesIfPro === "function") window.clearAdBadgesIfPro();
+    });
+
     socket.on("auth:proStatusChanged", ({ isPro }) => {
       myIsPro = !!isPro;
       window.gaicaniAuthUser = Object.assign(window.gaicaniAuthUser || {}, { isPro: myIsPro });

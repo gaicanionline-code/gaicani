@@ -343,3 +343,12 @@ button, a, [role="button"] { touch-action: manipulation; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ── Pre-round ad gate ─────────────────────────────────────────────────── */
+.fb-gate-btn { margin-top: 14px; }
+.fb-gate-reward {
+  margin-top: 14px;
+  color: #f2c94c;
+  font-weight: 700;
+  max-width: 280px;
+}

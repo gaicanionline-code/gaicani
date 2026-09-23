@@ -363,17 +363,51 @@
   }
 
   /* ══════════════════════════════════════════════════════════════════
-     Start overlay — a single "ready to play" screen. Tapping/clicking
-     anywhere on the canvas (or pressing Space) while idle starts the
-     game immediately.
+     Start overlay + ad gate.
+
+     Players who aren't ad-exempt must press a button before EACH round,
+     which opens an ad in a new tab. It's deliberately two steps — press
+     the button (ad opens), then come back and tap to play — because the
+     ad tab takes the player away; starting the round at the same moment
+     would leave the bird falling while they're looking at the ad.
+
+     Exempt players (pro, or inside a 24h ad-free window earned by scoring
+     20+) skip the gate and just tap to start, as before.
      ══════════════════════════════════════════════════════════════════ */
+  let adOpenedForThisRound = false; // gate passed for the round about to start
+
+  function isExempt() {
+    return typeof window.isAdExempt === "function" && window.isAdExempt();
+  }
+
   function renderStartOverlay() {
     elStartOverlay.style.background = "";
+    if (isExempt() || adOpenedForThisRound) {
+      elStartOverlay.innerHTML = `
+        <div class="fb-overlay-title">მზად ხარ?</div>
+        <div class="fb-overlay-sub">შეხებით ან <strong>Space</strong>-ით ფრინავს აფრენ. მოერიდე მილებს!</div>
+        <div class="fb-tap-hint">▲ შეეხე დასაწყებად ▲</div>
+      `;
+      return;
+    }
     elStartOverlay.innerHTML = `
-      <div class="fb-overlay-title">მზად ხარ?</div>
-      <div class="fb-overlay-sub">შეხებით ან <strong>Space</strong>-ით ფრინავს აფრენ. მოერიდე მილებს!</div>
-      <div class="fb-tap-hint">▲ შეეხე დასაწყებად ▲</div>
+      <div class="fb-overlay-title">დავიწყოთ თამაში?</div>
+      <div class="fb-overlay-sub">თამაშის დასაწყებად გაიხსნება რეკლამა.</div>
+      <button class="fb-restart-btn fb-gate-btn" id="fbGateBtn" type="button">▶ თამაშის დაწყება</button>
+      <div class="fb-overlay-sub fb-gate-reward">🏆 რეგისტრირებული იუზერით 20 ქულაზე — რეკლამები 24 საათით გაითიშება!</div>
     `;
+    const gateBtn = document.getElementById("fbGateBtn");
+    // The overlay sits INSIDE the canvas box, so without this the press
+    // would also bubble down and register as a tap on the game itself.
+    gateBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+    gateBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      // Opened synchronously inside the click — a real user gesture — or
+      // the browser's popup blocker would silently swallow it.
+      if (typeof window.openAdNow === "function") window.openAdNow();
+      adOpenedForThisRound = true;
+      renderStartOverlay(); // now shows "tap to start"
+    });
   }
   renderStartOverlay();
 
@@ -382,6 +416,9 @@
      ══════════════════════════════════════════════════════════════════ */
   function handleFlapInput() {
     if (state === STATE.IDLE) {
+      // A tap on the game can't skip the gate — only the button opens it.
+      if (!isExempt() && !adOpenedForThisRound) return;
+      adOpenedForThisRound = false; // used up by this round; the next one gates again
       startPlaying();
       return;
     }
@@ -461,10 +498,21 @@
       else socket.emit("auth:guest", { preferredUsername: sessionStorage.getItem("gaicani_guest_username") || null });
     });
 
-    socket.on("auth:authenticated", ({ username: authedName, isGuest } = {}) => {
+    socket.on("auth:authenticated", ({ username: authedName, isGuest, isPro, adFreeUntil } = {}) => {
       if (isGuest && authedName) {
         try { sessionStorage.setItem("gaicani_guest_username", authedName); } catch (_) {}
       }
+      // What ad-trigger.js's isAdExempt() reads. Guests are never exempt:
+      // their payload carries no pro status and no ad-free window.
+      window.gaicaniAuthUser = {
+        isGuest: !!isGuest,
+        isPro: !!isPro,
+        adFreeUntil: Number(adFreeUntil) || 0,
+      };
+      // The start screen was first drawn before we knew who this is — redraw
+      // it so an exempt player isn't shown the ad gate by mistake.
+      if (state === STATE.IDLE) renderStartOverlay();
+
       elTopUsername.textContent = `🔐 ${authedName || username}`;
       elLoading.style.display = "none";
       elApp.classList.add("visible");
@@ -487,7 +535,7 @@
       }
     });
 
-    socket.on("flappy:scoreResult", ({ accepted, personalBest, isNewBest, score: acceptedScore }) => {
+    socket.on("flappy:scoreResult", ({ accepted, personalBest, isNewBest, score: acceptedScore, adFreeGranted, adFreeUntil } = {}) => {
       if (!accepted) return; // rejected by anti-cheat — leaderboard/best simply won't move
       if (typeof personalBest === "number") {
         myBest = personalBest;
@@ -498,6 +546,18 @@
         elNewBestBadge.style.display = "inline-flex";
         showToast("🎉 ახალი პირადი რეკორდი!");
       }
+      if (adFreeGranted) {
+        window.gaicaniAuthUser = Object.assign(window.gaicaniAuthUser || {}, { adFreeUntil: Number(adFreeUntil) || 0 });
+        showToast("🎉 20 ქულა! რეკლამები 24 საათით გაითიშა!", 5000);
+        // The next restart now skips the gate on its own (renderStartOverlay
+        // checks exemption fresh each time), so nothing else to do here.
+      }
+    });
+
+    // Earned in ANOTHER tab — pick it up here too.
+    socket.on("ads:adFreeUntil", ({ adFreeUntil }) => {
+      window.gaicaniAuthUser = Object.assign(window.gaicaniAuthUser || {}, { adFreeUntil: Number(adFreeUntil) || 0 });
+      if (state === STATE.IDLE) renderStartOverlay();
     });
 
     socket.on("flappy:error", ({ error }) => {

@@ -4289,6 +4289,12 @@ function recordCheckersWin(winnerLc) {
 // least one live socket connected (i.e. actually online right now), excluding
 // the given username. Used to populate the "who's online" list in the
 // dashboard so registered users can find and add each other as friends.
+// ── Flappy Bird ad-free reward ───────────────────────────────────────────
+// A registered user who reaches this score (validated by the existing
+// flappy anti-cheat) gets this long without ads, site-wide.
+const FLAPPY_ADFREE_SCORE = 20;
+const FLAPPY_ADFREE_MS    = 24 * 60 * 60 * 1000;
+
 // ── Guest names ──────────────────────────────────────────────────────────
 // Anyone without a real registered account is always "სტუმარი" + 4 digits.
 // They can't choose a name — only registered (accountable) users can.
@@ -5277,7 +5283,8 @@ app.post("/api/auth/verify", express.json({ limit: "1kb" }), (req, res) => {
     avatar: user.avatar || DEFAULT_AVATAR,
     bio: user.bio || "",
     isAdmin: !!user.isAdmin,
-    isPro: !!user.isPro
+    isPro: !!user.isPro,
+    adFreeUntil: user.adFreeUntil || 0
   });
 });
 
@@ -9000,7 +9007,7 @@ io.on("connection", (socket) => {
     onlineRegSockets.get(entry.usernameLower).add(socket.id);
 
     socket.join(`user:${entry.usernameLower}`);
-    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, isPro: !!user.isPro, blockedUsers: user.blockedUsers || [] });
+    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, isPro: !!user.isPro, adFreeUntil: user.adFreeUntil || 0, blockedUsers: user.blockedUsers || [] });
     console.log(`[AUTH] ${user.username} logged in`);
     io.emit("users:onlineChanged"); // let dashboards know the online list may have changed
   });
@@ -9034,7 +9041,7 @@ io.on("connection", (socket) => {
     if (!onlineRegSockets.has(entry.usernameLower)) onlineRegSockets.set(entry.usernameLower, new Set());
     onlineRegSockets.get(entry.usernameLower).add(socket.id);
     socket.join(`user:${entry.usernameLower}`);
-    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, isPro: !!user.isPro, blockedUsers: user.blockedUsers || [] });
+    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, isPro: !!user.isPro, adFreeUntil: user.adFreeUntil || 0, blockedUsers: user.blockedUsers || [] });
     console.log(`[AUTH] ${user.username} logged in via auth:token`);
     io.emit("users:onlineChanged"); // let dashboards know the online list may have changed
   });
@@ -9321,11 +9328,29 @@ io.on("connection", (socket) => {
       saveAuthUsers();
     }
 
+    // ── Reward: 24h without ads for reaching the target score ─────────────
+    // Sits AFTER every anti-cheat check above (session token, one submit per
+    // game, rate limit, and the minimum-plausible-time check), so a score
+    // only earns this if it already passed as a real game. Registered
+    // accounts only — guests can play, but the reward belongs to an account.
+    // Re-reaching 20 while already ad-free restarts the full 24h from now.
+    let adFreeGranted = false;
+    if (numScore >= FLAPPY_ADFREE_SCORE && !socket._regUser.isGuest && !user.isGuest) {
+      user.adFreeUntil = Date.now() + FLAPPY_ADFREE_MS;
+      saveAuthUsers();
+      adFreeGranted = true;
+      console.log(`[FLAPPY] ${user.username} scored ${numScore} — ads off until ${new Date(user.adFreeUntil).toISOString()}`);
+      // Every open tab of theirs drops ads immediately, not just this one.
+      io.to(`user:${socket._regUser.usernameLower}`).emit("ads:adFreeUntil", { adFreeUntil: user.adFreeUntil });
+    }
+
     socket.emit("flappy:scoreResult", {
       accepted: true,
       score: numScore,
       personalBest: user.flappyHighScore || 0,
       isNewBest,
+      adFreeGranted,
+      adFreeUntil: user.adFreeUntil || 0,
     });
 
     if (isNewBest) {
