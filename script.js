@@ -1631,7 +1631,7 @@ socket.on("partnerDisconnected", (data) => {
     chat.appendChild(offerEl);
     scheduleScroll();
 
-    document.getElementById("blockOfferBtn").addEventListener("click", () => {
+    offerEl.querySelector("#blockOfferBtn").addEventListener("click", () => {
       // Same underlying action as the main toolbar block button — counts
       // toward the SAME countdown. This button is dynamically created and
       // gets removed the instant it's clicked, so its own badge would just
@@ -1644,8 +1644,8 @@ socket.on("partnerDisconnected", (data) => {
       emitBlockUser(lastPartnerName);
     });
 
-    document.getElementById("reportOfferBtn").addEventListener("click", () => {
-      const btn = document.getElementById("reportOfferBtn");
+    offerEl.querySelector("#reportOfferBtn").addEventListener("click", () => {
+      const btn = offerEl.querySelector("#reportOfferBtn");
       if (!btn || btn.disabled) return;
       showReportReasonModal(lastPartnerName, (reason) => {
         btn.disabled = true;
@@ -1942,10 +1942,6 @@ function goToWelcome() {
   isReconnecting       = false;
   setInputsEnabled(false);
   updateBlockBtn();
-
-  // 🚫 CLEAR ALL BLOCKS — fresh session means fresh block list
-  blockedUsers = new Set();
-  blockedNames = [];
 
   socket.emit("next"); // tell server we're leaving current chat
   stopSearchRetry();

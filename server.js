@@ -415,6 +415,11 @@ function enqueueForVT(ip) {
   if (bannedIPs.has(ip)) return;      // already banned
   if (OWNER_IPS.has(ip)) return;      // never check owner IPs
 
+  // Bounded: this Set only avoids re-queueing the same IP, but it used to
+  // grow with every new foreign visitor for the life of the process. Every
+  // restart already starts it empty, so emptying it when it gets large
+  // behaves exactly like a restart does (the queue file below also dedupes).
+  if (vtQueued.size >= 20000) vtQueued.clear();
   vtQueued.add(ip);
 
   try {
@@ -2758,20 +2763,6 @@ function containsLink(text) { return new RegExp(_LINK_RE_SRC, 'i').test(text); }
 const LINK_RE = { test: containsLink, lastIndex: 0 };
 
 // ── Game helpers ──────────────────────────────────────────────────────────────
-function rand(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function generateMathQuestion() {
-  const ops = ["+", "-", "*"];
-  const op  = ops[rand(0, 2)];
-  let a, b, answer;
-  if (op === "+")      { a = rand(1, 50);  b = rand(1, 50); answer = a + b; }
-  else if (op === "-") { a = rand(10, 99); b = rand(1, a);  answer = a - b; }
-  else                 { a = rand(2, 12);  b = rand(2, 12); answer = a * b; }
-  const display = op === "*" ? `${a} \u00d7 ${b}` : `${a} ${op} ${b}`;
-  return { display, answer };
-}
 
 // ── Truth or Dare prompts (Georgian, PG-13 flirty/fun) ─────────────────────
 // Mix of light/normal questions and a few "spicier" flirty ones — kept
@@ -2821,45 +2812,6 @@ const DARE_PROMPTS = [
   "დაწერე „ფლირტული“ სახელი პარტნიორისთვის და ახსენი, რატომ ეს.",
   "დაწერე ერთწინადადებიანი კომპლიმენტი, რომელიც პარტნიორს დღეს გაუღიმებს.",
 ];
-
-function checkTTTWinner(board) {
-  const LINES = [
-    [0,1,2],[3,4,5],[6,7,8],
-    [0,3,6],[1,4,7],[2,5,8],
-    [0,4,8],[2,4,6],
-  ];
-  for (const [a, b, c] of LINES) {
-    if (board[a] && board[a] === board[b] && board[a] === board[c])
-      return { symbol: board[a], line: [a, b, c] };
-  }
-  return null;
-}
-
-function getRPSWinner(c1, c2) {
-  if (c1 === c2) return "draw";
-  if (
-    (c1 === "rock"     && c2 === "scissors") ||
-    (c1 === "scissors" && c2 === "paper")    ||
-    (c1 === "paper"    && c2 === "rock")
-  ) return "p1";
-  return "p2";
-}
-
-function cleanupGame(game) {
-  game.players.forEach(pid => gameBySocket.delete(pid));
-  gameById.delete(game.id);
-}
-
-function cleanupGameForSocket(socketId) {
-  const gameId = gameBySocket.get(socketId);
-  if (!gameId) return;
-  const game = gameById.get(gameId);
-  if (!game) { gameBySocket.delete(socketId); return; }
-  const partnerId = game.players.find(id => id !== socketId);
-  const ps        = partnerId ? io.sockets.sockets.get(partnerId) : null;
-  if (ps) ps.emit("game:partnerLeft");
-  cleanupGame(game);
-}
 
 // Pull a plain 11-char video ID out of any common YouTube URL shape
 // (watch?v=, youtu.be/, shorts/, embed/, music.youtube.com/watch?v=), or
