@@ -458,6 +458,7 @@ const ROUTE = {
   tempBan:      "/w4qd7np2xb8", // POST: 24h IP block with a shown reason
   tempBansList: "/j3nc6wp0xz5", // GET: list currently-active 24h blocks
   unbanTemp:    "/k9vd4qz2ym8", // POST: lift a 24h block early
+  pollResults:  "/r2pw7kx4ne9", // JSON: 5₾/month ad-free poll totals (admin only)
 };
 
 // ── Sensitive-URL visitor log ─────────────────────────────────────────────────
@@ -2227,6 +2228,11 @@ tr:hover td{background:rgba(255,255,255,.03)}
   <div class="section-body"><div id="tempBansList">Loading...</div></div>
 </details>
 
+<details class="section" open>
+  <summary>📊 Poll: 5₾/month to remove ads</summary>
+  <div class="section-body"><div id="pollResults">Loading...</div></div>
+</details>
+
 <details class="section">
   <summary>🌐 Block a User-Agent</summary>
   <div class="section-body">
@@ -2615,6 +2621,25 @@ async function loadAll() {
       </div>\`).join("");
     }
   } catch(e) { document.getElementById("tempBansList").textContent = "Error"; }
+
+  try {
+    const p = await api("GET", R.pollResults);
+    const el = document.getElementById("pollResults");
+    setSectionCount("pollResults", p.total);
+    const bar = function (label, n, pct, color) {
+      return '<div style="margin:8px 0">' +
+        '<div style="display:flex;justify-content:space-between;font-size:.9em;margin-bottom:4px">' +
+          '<span>' + label + '</span><span><b>' + n + '</b> (' + pct + '%)</span></div>' +
+        '<div style="background:#1e1f22;border-radius:6px;height:12px;overflow:hidden">' +
+          '<div style="width:' + pct + '%;height:100%;background:' + color + '"></div></div></div>';
+    };
+    el.innerHTML = '<div class="card">' +
+      '<div style="color:#fff;font-weight:700;margin-bottom:10px">' + esc(p.question) + '</div>' +
+      bar('✅ კი', p.yes, p.yesPct, '#3ba55d') +
+      bar('❌ არა', p.no, p.noPct, '#f23f42') +
+      '<div class="hint" style="margin-top:10px">Votes: <b>' + p.total + '</b> · shown to <b>' + p.shown +
+        '</b> visitors · answered: <b>' + p.responseRatePct + '%</b></div></div>';
+  } catch(e) { document.getElementById("pollResults").textContent = "Error"; }
 
   try {
     const d = await api("GET", R.blockedUAs);
@@ -5302,6 +5327,90 @@ app.post("/api/auth/delete-account", authLimiter, express.json({ limit: "2kb" })
   console.log(`[ACCOUNT] "${displayName}" deleted their own account`);
   res.json({ success: true });
 });
+
+// ── Poll: "would you pay 5₾/month to remove ads?" ─────────────────────────
+// Shown to each IP once. Results are admin-only.
+//
+// IPs are NOT stored. We only need to know "has this IP seen / voted", so
+// each IP is turned into a salted fingerprint (the salt lives in the poll
+// file and never leaves the server). The file therefore holds no IP
+// addresses, and the admin sees totals — never who voted what.
+//
+// IP source: Cloudflare's CF-Connecting-IP first. The usual header
+// (X-Forwarded-For) can be filled in by the visitor's own browser, which
+// would let one person stuff unlimited votes with a script; Cloudflare
+// overwrites CF-Connecting-IP with the real address, so it can't be forged.
+const POLL_FILE = path.join(DATA_PATH, "poll_ads5.json");
+const POLL_ANSWERS = new Set(["yes", "no"]);
+let poll = { salt: null, seen: {}, votes: {} };
+try {
+  const raw = JSON.parse(fs.readFileSync(POLL_FILE, "utf8"));
+  poll = { salt: raw.salt || null, seen: raw.seen || {}, votes: raw.votes || {} };
+} catch { /* first run */ }
+if (!poll.salt) poll.salt = crypto.randomBytes(16).toString("hex");
+
+function savePollNow() {
+  try { fs.writeFileSync(POLL_FILE, JSON.stringify(poll), "utf8"); }
+  catch (e) { console.error("[POLL] save failed:", e.message); }
+}
+let pollSaveTimer = null;
+function savePollSoon() { // "seen" marks are frequent — batch them
+  if (pollSaveTimer) return;
+  pollSaveTimer = setTimeout(() => { pollSaveTimer = null; savePollNow(); }, 3000);
+}
+if (!fs.existsSync(POLL_FILE)) savePollNow(); // persist the salt immediately
+
+function pollIpKey(req) {
+  const ip = String(req.headers["cf-connecting-ip"] || getClientIP(req) || "").trim();
+  if (!ip) return null;
+  return crypto.createHash("sha256").update(poll.salt + "|" + ip).digest("hex").slice(0, 20);
+}
+
+// Should this visitor be shown the poll? Deliberately returns ONLY a yes/no
+// — never the results.
+app.get("/api/poll/ads5", (req, res) => {
+  const k = pollIpKey(req);
+  res.json({ show: !!k && !poll.seen[k] && !poll.votes[k] });
+});
+
+// The page actually displayed it → never show this IP again, even if they
+// close it without answering. Recorded on display, not on the check above,
+// so someone who leaves before it appears isn't counted as having seen it.
+app.post("/api/poll/ads5/seen", (req, res) => {
+  const k = pollIpKey(req);
+  if (k && !poll.seen[k]) { poll.seen[k] = Date.now(); savePollSoon(); }
+  res.json({ ok: true });
+});
+
+// One vote per IP. A second vote from the same IP is ignored, not counted.
+app.post("/api/poll/ads5/vote", express.json({ limit: "1kb" }), (req, res) => {
+  const answer = req.body && req.body.answer;
+  if (!POLL_ANSWERS.has(answer)) return res.status(400).json({ error: "invalid answer" });
+  const k = pollIpKey(req);
+  if (!k) return res.status(400).json({ error: "no ip" });
+  if (poll.votes[k]) return res.json({ ok: true, alreadyVoted: true });
+  poll.votes[k] = answer;
+  if (!poll.seen[k]) poll.seen[k] = Date.now();
+  savePollNow(); // votes are rare and matter — written straight away
+  res.json({ ok: true });
+});
+
+// Admin-only results: totals only.
+function pollResults() {
+  const answers = Object.values(poll.votes);
+  const yes = answers.filter(a => a === "yes").length;
+  const no  = answers.filter(a => a === "no").length;
+  const total = yes + no;
+  const shown = Object.keys(poll.seen).length;
+  return {
+    question: "გადაიხდიდით თუ არა 5 ლარს თვიურად რეკლამების გასათიშად?",
+    yes, no, total, shown,
+    yesPct: total ? Math.round((yes / total) * 100) : 0,
+    noPct:  total ? Math.round((no  / total) * 100) : 0,
+    responseRatePct: shown ? Math.round((total / shown) * 100) : 0,
+  };
+}
+app.get(ROUTE.pollResults, ownerOnly, (req, res) => res.json(pollResults()));
 
 app.post("/api/auth/logout", express.json({ limit: "1kb" }), (req, res) => {
   const { token } = req.body || {};
