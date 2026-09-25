@@ -574,14 +574,6 @@
       if (state === STATE.IDLE) renderStartOverlay();
     });
 
-    // Ads only run 22:00–05:00 Tbilisi time (see ad-trigger.js). If that
-    // switches while someone is on the start screen, redraw it — the ad
-    // gate appears at 22:00 and disappears at 05:00. A round already in
-    // progress is left alone; the next restart picks up the new state.
-    window.addEventListener("ads:scheduleChanged", () => {
-      if (state === STATE.IDLE) renderStartOverlay();
-    });
-
     socket.on("flappy:error", ({ error }) => {
       if (error) showToast(`⚠️ ${esc(error)}`);
     });
