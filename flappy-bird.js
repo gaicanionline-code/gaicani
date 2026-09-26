@@ -374,40 +374,13 @@
      Exempt players (pro, or inside a 24h ad-free window earned by scoring
      20+) skip the gate and just tap to start, as before.
      ══════════════════════════════════════════════════════════════════ */
-  let adOpenedForThisRound = false; // gate passed for the round about to start
-
-  function isExempt() {
-    return typeof window.isAdExempt === "function" && window.isAdExempt();
-  }
-
   function renderStartOverlay() {
     elStartOverlay.style.background = "";
-    if (isExempt() || adOpenedForThisRound) {
-      elStartOverlay.innerHTML = `
-        <div class="fb-overlay-title">მზად ხარ?</div>
-        <div class="fb-overlay-sub">შეხებით ან <strong>Space</strong>-ით ფრინავს აფრენ. მოერიდე მილებს!</div>
-        <div class="fb-tap-hint">▲ შეეხე დასაწყებად ▲</div>
-      `;
-      return;
-    }
     elStartOverlay.innerHTML = `
-      <div class="fb-overlay-title">დავიწყოთ თამაში?</div>
-      <div class="fb-overlay-sub">თამაშის დასაწყებად გაიხსნება რეკლამა.</div>
-      <button class="fb-restart-btn fb-gate-btn" id="fbGateBtn" type="button">▶ თამაშის დაწყება</button>
-      <div class="fb-overlay-sub fb-gate-reward">🏆 20 ქულაზე — რეკლამები 24 საათით გაითიშება!</div>
+      <div class="fb-overlay-title">მზად ხარ?</div>
+      <div class="fb-overlay-sub">შეხებით ან <strong>Space</strong>-ით ფრინავს აფრენ. მოერიდე მილებს!</div>
+      <div class="fb-tap-hint">▲ შეეხე დასაწყებად ▲</div>
     `;
-    const gateBtn = document.getElementById("fbGateBtn");
-    // The overlay sits INSIDE the canvas box, so without this the press
-    // would also bubble down and register as a tap on the game itself.
-    gateBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
-    gateBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      // Opened synchronously inside the click — a real user gesture — or
-      // the browser's popup blocker would silently swallow it.
-      if (typeof window.openAdNow === "function") window.openAdNow();
-      adOpenedForThisRound = true;
-      renderStartOverlay(); // now shows "tap to start"
-    });
   }
   renderStartOverlay();
 
@@ -416,9 +389,6 @@
      ══════════════════════════════════════════════════════════════════ */
   function handleFlapInput() {
     if (state === STATE.IDLE) {
-      // A tap on the game can't skip the gate — only the button opens it.
-      if (!isExempt() && !adOpenedForThisRound) return;
-      adOpenedForThisRound = false; // used up by this round; the next one gates again
       startPlaying();
       return;
     }

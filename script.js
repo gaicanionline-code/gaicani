@@ -90,10 +90,6 @@ const sendBtn        = document.getElementById("sendBtn");
 const nextBtn        = document.getElementById("nextBtn");
 const scrollToTopBtn = document.getElementById("scrollToTopBtn");
 const blockBtn       = document.getElementById("blockBtn");
-if (typeof window.initAdCountdown === "function") {
-  window.initAdCountdown("gaicani_ad_next", "adBadgeNext", nextBtn);
-  window.initAdCountdown("gaicani_ad_block", "adBadgeBlock", blockBtn);
-}
 const reportBtn      = document.getElementById("reportBtn");
 const changeNameBtn  = document.getElementById("changeNameBtn");
 const interestsBtn   = document.getElementById("interestsBtn");
@@ -1632,14 +1628,6 @@ socket.on("partnerDisconnected", (data) => {
     scheduleScroll();
 
     offerEl.querySelector("#blockOfferBtn").addEventListener("click", () => {
-      // Same underlying action as the main toolbar block button — counts
-      // toward the SAME countdown. This button is dynamically created and
-      // gets removed the instant it's clicked, so its own badge would just
-      // flash and disappear; updating the persistent toolbar button's badge
-      // instead is what the user can actually see and watch count down.
-      if (typeof window.registerAdClick === "function") {
-        window.registerAdClick("gaicani_ad_block", "adBadgeBlock", blockBtn);
-      }
       offerEl.remove();
       emitBlockUser(lastPartnerName);
     });
@@ -1799,9 +1787,6 @@ socket.on("awayTimeout", () => {});
 // ── Button handlers ───────────────────────────────────────────────────────────
 
 nextBtn.addEventListener("click", () => {
-  if (typeof window.registerAdClick === "function") {
-    window.registerAdClick("gaicani_ad_next", "adBadgeNext", nextBtn);
-  }
   nextBtn.disabled = true;
   setTimeout(() => { nextBtn.disabled = false; }, 1200);
 
@@ -1825,9 +1810,6 @@ nextBtn.addEventListener("click", () => {
 });
 
 blockBtn.addEventListener("click", () => {
-  if (typeof window.registerAdClick === "function") {
-    window.registerAdClick("gaicani_ad_block", "adBadgeBlock", blockBtn);
-  }
   const targetName = partnerName || lastPartnerName;
   if (!targetName) return;
   showConfirmModal(
