@@ -231,27 +231,6 @@ function addSystemBigMessage(text)         { _appendInfoMessage(text, "system-me
 // ── Donation card — shown in the chat feed right after the "press the button
 //    to search" hint. Unlike the register promo this is shown to EVERYONE,
 //    registered users included. Built with DOM nodes rather than innerHTML.
-// ── Flappy Bird reward announcement — shown to everyone on arrival.
-//    Built with DOM nodes rather than innerHTML.
-function addFlappyPromoCard() {
-  const card = document.createElement("div");
-  card.className = "chat-flappy-card";
-
-  const txt = document.createElement("div");
-  txt.className = "chat-flappy-text";
-  txt.textContent = "🐦 თუ რეგისტრირებული იუზერით მფრინავ ჩიტში ახვალთ 20 ქულაზე რეკლამები გაგეთიშებათ 24 საათით!";
-
-  const btn = document.createElement("a");
-  btn.className = "chat-flappy-btn";
-  btn.href = "/flappy-bird.html";
-  btn.textContent = "🎮 თამაში";
-
-  card.appendChild(txt);
-  card.appendChild(btn);
-  chat.appendChild(card);
-  scheduleScroll();
-}
-
 function addDonationCard() {
   const card = document.createElement("div");
   card.className = "chat-donate-card";
@@ -1381,7 +1360,6 @@ socket.on("nameAccepted", (acceptedName) => {
     clearChat();
     // Do NOT auto-search — user must press the Search button manually
     addSystemMessage("🔎 ძებნის დასაწყებად დააჭირეთ ღილაკს");
-    addFlappyPromoCard();
     addRegisterPromoCard();
     addDonationCard();
   } else if (isReconnecting) {

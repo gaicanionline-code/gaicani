@@ -483,19 +483,10 @@
 
     socket.on("flappy:registerRequired", showRegisterGate);
 
-    socket.on("auth:authenticated", ({ username: authedName, isGuest, isPro, adFreeUntil } = {}) => {
+    socket.on("auth:authenticated", ({ username: authedName, isGuest } = {}) => {
       // A real token never authenticates as a guest, but if it somehow did,
       // guests don't get to play — show the gate rather than the game.
       if (isGuest) { showRegisterGate(); return; }
-      // What ad-trigger.js's isAdExempt() reads.
-      window.gaicaniAuthUser = {
-        isGuest: false,
-        isPro: !!isPro,
-        adFreeUntil: Number(adFreeUntil) || 0,
-      };
-      // The start screen was first drawn before we knew who this is — redraw
-      // it so an exempt player isn't shown the ad gate by mistake.
-      if (state === STATE.IDLE) renderStartOverlay();
 
       elTopUsername.textContent = `🔐 ${authedName || username}`;
       elLoading.style.display = "none";
@@ -519,7 +510,7 @@
       }
     });
 
-    socket.on("flappy:scoreResult", ({ accepted, personalBest, isNewBest, score: acceptedScore, adFreeGranted, adFreeUntil } = {}) => {
+    socket.on("flappy:scoreResult", ({ accepted, personalBest, isNewBest } = {}) => {
       if (!accepted) return; // rejected by anti-cheat — leaderboard/best simply won't move
       if (typeof personalBest === "number") {
         myBest = personalBest;
@@ -530,18 +521,6 @@
         elNewBestBadge.style.display = "inline-flex";
         showToast("🎉 ახალი პირადი რეკორდი!");
       }
-      if (adFreeGranted) {
-        window.gaicaniAuthUser = Object.assign(window.gaicaniAuthUser || {}, { adFreeUntil: Number(adFreeUntil) || 0 });
-        showToast("🎉 20 ქულა! რეკლამები 24 საათით გაითიშა!", 5000);
-        // The next restart now skips the gate on its own (renderStartOverlay
-        // checks exemption fresh each time), so nothing else to do here.
-      }
-    });
-
-    // Earned in ANOTHER tab — pick it up here too.
-    socket.on("ads:adFreeUntil", ({ adFreeUntil }) => {
-      window.gaicaniAuthUser = Object.assign(window.gaicaniAuthUser || {}, { adFreeUntil: Number(adFreeUntil) || 0 });
-      if (state === STATE.IDLE) renderStartOverlay();
     });
 
     socket.on("flappy:error", ({ error }) => {
