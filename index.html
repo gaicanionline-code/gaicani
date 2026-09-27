@@ -46,7 +46,7 @@
   </script>
 
   <!-- PWA / mobile chrome -->
-  <meta name="theme-color" content="#1e1f22" />
+  <meta name="theme-color" content="#130f26" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -116,6 +116,184 @@
     }
     .rc-theme-swatch.rc-light .rc-theme-swatch-label { color: #2b2d31; background: rgba(255,255,255,0.55); text-shadow: none; }
     .rc-theme-swatch:not(.rc-light) .rc-theme-swatch-label { color: rgba(255,255,255,0.92); background: rgba(0,0,0,0.28); }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Georgian:wdth,wght@62.5..100,100..900&display=swap" rel="stylesheet">
+  <style id="gaicani-enamel">
+/* ═══════════════════════════════════════════════════════════════════════
+   GAICANI random chat — "Minankari" design layer (matches the dashboard)
+   Georgian cloisonné enamel: jewel-toned fills held apart by gold lines.
+   VISUAL ONLY — no script, id or behaviour changes. Applies to the DEFAULT
+   chat theme only: the light, pink, ocean and sunset themes look exactly
+   as before. Remove this <style> block to get the previous look back.
+   ═══════════════════════════════════════════════════════════════════════ */
+@property --gc-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) {
+  --gold:#d6a84f; --gold-lt:#f4d98f; --cobalt:#4f6cff; --ruby:#e33b5f; --emerald:#1fc18a;
+  --amethyst:#9d5cff; --amber:#f0b93a; --night:#130f26;
+  --cloison:linear-gradient(135deg,rgba(244,217,143,.60),rgba(214,168,79,.16) 42%,rgba(214,168,79,.10) 62%,rgba(244,217,143,.48));
+  --cloison-soft:linear-gradient(135deg,rgba(214,168,79,.36),rgba(214,168,79,.07) 45%,rgba(214,168,79,.05) 62%,rgba(214,168,79,.26));
+  --cta:radial-gradient(90% 120% at 50% -20%,rgba(255,255,255,.28),transparent 55%),linear-gradient(135deg,#5b77ff,#6d4dff 55%,#9d5cff);
+  font-family:"Noto Sans Georgian",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:var(--night);
+}
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) button, body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) textarea, body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) input, body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) select { font-family: inherit; }
+
+/* ── Top bar ── */
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .top-bar { background: rgba(19,15,38,.88); border-bottom: 1px solid rgba(214,168,79,.22); box-shadow: 0 10px 26px -14px rgba(0,0,0,.8); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .site-name {
+  background: linear-gradient(180deg,#fff4d2 0%,var(--gold-lt) 45%,var(--gold) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent;
+  font-weight: 900; letter-spacing: .05em;
+}
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) #onlineCount { color: var(--gold-lt); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) #onlineCount::before {
+  content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: middle;
+  border-radius: 50%; background: var(--emerald); box-shadow: 0 0 8px rgba(31,193,138,.9);
+}
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .partner-name-display { color: #ff8aa1; background: rgba(227,59,95,.13); border: 1px solid rgba(227,59,95,.42); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .user-name-display { color: #cbb0ff; background: rgba(157,92,255,.14); border: 1px solid rgba(157,92,255,.44); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .reg-menu-btn { background: rgba(255,255,255,.05); border: 1px solid rgba(214,168,79,.40); color: var(--gold-lt); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .reg-menu-dropdown {
+  border: 1px solid transparent; border-radius: 14px;
+  background: linear-gradient(180deg,#261f49,#1c1735) padding-box, var(--cloison) border-box;
+  box-shadow: 0 20px 44px -14px rgba(0,0,0,.85);
+}
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .reg-menu-item:hover { background: rgba(214,168,79,.10); }
+
+/* ── Action buttons (sizes/shapes untouched — set by the mobile stylesheet) ── */
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .next-button {
+  border: 1.5px solid transparent;
+  background: var(--cta) padding-box, var(--cloison) border-box;
+  box-shadow: 0 10px 24px -10px rgba(109,77,255,.9), inset 0 1px 0 rgba(255,255,255,.25);
+}
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .block-button {
+  border: 1.5px solid transparent;
+  background: radial-gradient(90% 120% at 50% -20%,rgba(255,255,255,.25),transparent 55%) padding-box, linear-gradient(135deg,#ff5f80,#b8183f) padding-box, var(--cloison-soft) border-box;
+  box-shadow: 0 8px 18px -8px rgba(227,59,95,.85);
+}
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .report-button {
+  border: 1.5px solid transparent;
+  background: radial-gradient(90% 120% at 50% -20%,rgba(255,255,255,.25),transparent 55%) padding-box, linear-gradient(135deg,#f6c453,#d9820f) padding-box, var(--cloison-soft) border-box;
+  box-shadow: 0 8px 18px -8px rgba(240,185,58,.8);
+}
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .music-btn { background: #241e46; border: 1px solid rgba(214,168,79,.36); color: var(--gold-lt); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .my-page-btn { background: linear-gradient(135deg,#3f5cff,#2c38b8); box-shadow: 0 8px 18px -8px rgba(79,108,255,.85), inset 0 1px 0 rgba(255,255,255,.2); }
+
+/* ── Chat surface ── */
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) #chat.chat-container {
+  background:
+    radial-gradient(700px 420px at 50% -80px, rgba(79,108,255,.17), transparent 70%),
+    radial-gradient(600px 520px at 110% 110%, rgba(157,92,255,.09), transparent 70%),
+    #130f26 !important;   /* the default theme writes #1c1e24 inline; other themes keep their own */
+}
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .chat-container::-webkit-scrollbar-thumb { background: #2c2552; }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .message-content {
+  background: linear-gradient(180deg,#2f2858,#241e46); color: #f3eeff;
+  border: 1px solid rgba(214,168,79,.14);
+  box-shadow: 0 8px 18px -12px rgba(0,0,0,.85), inset 0 1px 0 rgba(255,255,255,.05);
+}
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .message-content.you {
+  background: radial-gradient(120% 140% at 0% 0%,rgba(255,255,255,.18),transparent 50%), linear-gradient(135deg,#5b77ff,#6d4dff 60%,#8b55ff);
+  color: #fff; border-color: rgba(244,217,143,.34);
+  box-shadow: 0 12px 24px -14px rgba(109,77,255,.95), inset 0 1px 0 rgba(255,255,255,.22);
+}
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .timestamp, body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .inline-ts { color: #9f96c6; }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .react-btn, body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .reply-btn { background: #261f47; border: 1px solid rgba(214,168,79,.30); color: var(--gold-lt); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .system-message { color: #a79fcd; }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .system-message-hint { color: #d2cbec; }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .system-message-disconnect { color: #ff8aa1; }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .system-message-reconnecting { color: var(--amber); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .typing-indicator { background: linear-gradient(180deg,#2f2858,#241e46); border: 1px solid rgba(214,168,79,.14); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .typing-indicator span { background: var(--gold-lt); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .question-card.you { background: linear-gradient(135deg,#3a2f86,#241e46); border-color: rgba(79,108,255,.55); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .question-card.partner { background: linear-gradient(135deg,#123d33,#241e46); border-color: rgba(31,193,138,.55); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .reply-quote.partner { background: rgba(214,168,79,.10); border-left-color: var(--gold); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .vip-badge { box-shadow: 0 0 14px rgba(240,185,58,.55); }
+
+/* ── The meeting moment: when a partner is found, the card's enamel border
+      sweeps once around and settles. The one bold moment on this page. ── */
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .partner-found-card {
+  border: 1.5px solid transparent; border-radius: 18px;
+  background:
+    radial-gradient(120% 100% at 0% 0%, rgba(79,108,255,.28), transparent 55%) padding-box,
+    linear-gradient(160deg,#2b2454,#1a1533) padding-box,
+    conic-gradient(from var(--gc-angle), var(--gold-lt), var(--cobalt), var(--emerald), var(--gold), var(--ruby), var(--amethyst), var(--gold-lt)) border-box;
+  box-shadow: 0 18px 40px -20px rgba(79,108,255,.75);
+  animation: gc-meet 2.6s cubic-bezier(.2,.8,.2,1) 1 both;
+}
+@keyframes gc-meet { from { --gc-angle: -220deg; } to { --gc-angle: 150deg; } }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .pfc-avatar { box-shadow: 0 0 0 2px var(--gold), 0 0 0 5px rgba(214,168,79,.18), 0 10px 22px -8px rgba(0,0,0,.85); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .pfc-name { color: #fff; font-weight: 900; }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .pfc-status { color: var(--emerald); }
+
+/* ── Cards in the chat feed ── */
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .register-promo-card {
+  border: 1px solid transparent; border-radius: 18px;
+  background: radial-gradient(100% 80% at 50% 0%,rgba(79,108,255,.24),transparent 65%) padding-box, linear-gradient(180deg,#221c42,#1b1634) padding-box, var(--cloison-soft) border-box;
+}
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .register-promo-title { color: var(--gold-lt); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .register-promo-line { color: #cfc7ea; }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .chat-donate-card {
+  border: 1px solid transparent; border-radius: 18px;
+  background: radial-gradient(100% 80% at 50% 0%,rgba(157,92,255,.30),transparent 65%) padding-box, linear-gradient(180deg,#251d45,#1c1735) padding-box, var(--cloison) border-box;
+}
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .chat-donate-text { color: #d6cff0; }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .chat-donate-btn { background: linear-gradient(135deg,#b07bff,#7c3aed); border-radius: 999px; box-shadow: 0 12px 26px -10px rgba(157,92,255,.9), inset 0 1px 0 rgba(255,255,255,.3); }
+
+/* ── Input bar (hairlines drawn with shadows so the auto-growing box keeps its exact size) ── */
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .chat-input { background: rgba(19,15,38,.94); border-top: 1px solid rgba(214,168,79,.24); box-shadow: 0 -14px 32px -16px rgba(0,0,0,.85); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .chat-input textarea { background: #221c42; color: #f5f0ff; box-shadow: inset 0 0 0 1px rgba(214,168,79,.20); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .chat-input textarea:focus { outline: none; box-shadow: inset 0 0 0 1px rgba(244,217,143,.60), 0 0 0 3px rgba(214,168,79,.14); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .chat-input textarea::placeholder { color: #8f87ad; }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .gif-btn, body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .question-btn { background: #221c42; border: 1px solid rgba(214,168,79,.36); color: var(--gold-lt); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) #sendBtn { background: var(--cta); box-shadow: 0 8px 18px -8px rgba(109,77,255,.95), inset 0 1px 0 rgba(255,255,255,.3); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) #sendBtn:disabled { background: #2a2446; box-shadow: none; }
+
+/* ── Panels ── */
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .gif-picker, body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .rc-theme-sheet, body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .bio-popup { background: linear-gradient(180deg,#261f49,#1c1735); box-shadow: inset 0 1px 0 rgba(214,168,79,.35), 0 -18px 44px -16px rgba(0,0,0,.85); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .rc-theme-swatch[style*="rgb(28, 30, 36)"], body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .rc-theme-swatch[style*="#1c1e24"] {
+  background: radial-gradient(circle at 30% 22%, rgba(79,108,255,.6), transparent 62%), radial-gradient(circle at 80% 90%, rgba(214,168,79,.45), transparent 55%), #130f26 !important;
+}
+
+/* ── Entry popup ── */
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .modal { background: rgba(10,8,22,.74); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .modal-content {
+  border: 1.5px solid transparent;
+  background: radial-gradient(120% 70% at 50% -10%,rgba(79,108,255,.26),transparent 60%) padding-box, linear-gradient(180deg,#261f49,#1a1533) padding-box, var(--cloison) border-box;
+  box-shadow: 0 30px 80px -20px rgba(0,0,0,.88), 0 0 64px -22px rgba(79,108,255,.5);
+}
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .auth-tabs { background: rgba(255,255,255,.04); box-shadow: inset 0 0 0 1px rgba(214,168,79,.20); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .auth-tab { color: #9a92bd; }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .auth-tab.active { background: linear-gradient(135deg,rgba(79,108,255,.38),rgba(157,92,255,.32)); color: #fff; box-shadow: inset 0 0 0 1px rgba(244,217,143,.38); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .modal-welcome { background: rgba(255,255,255,.035); border-color: rgba(214,168,79,.24); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .modal-welcome-title { color: var(--gold-lt); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .modal-feature-icon--qbtn { background: rgba(79,108,255,.16); border-color: rgba(79,108,255,.55); color: #aab8ff; }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .modal-feature-icon--int { background: rgba(31,193,138,.15); border-color: rgba(31,193,138,.5); color: #5fe0b0; }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .modal-feature-icon--game { background: rgba(157,92,255,.20); border-color: rgba(157,92,255,.55); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .guest-name-notice { background: rgba(79,108,255,.10); border-color: rgba(214,168,79,.30); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .guest-name-notice strong { color: var(--gold-lt); }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .modal-content button#saveNameBtn {
+  border: 1.5px solid transparent;
+  background: var(--cta) padding-box, var(--cloison) border-box;
+  box-shadow: 0 14px 30px -12px rgba(109,77,255,.9), inset 0 1px 0 rgba(255,255,255,.25);
+}
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .safety-link { color: var(--gold-lt); }
+
+/* ── Rules popup (styled inline in the page, so these need !important) ── */
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) #rulesGateOverlay { background: radial-gradient(700px 500px at 50% 0%, rgba(79,108,255,.20), transparent 70%), rgba(12,9,26,.94) !important; }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) #rulesGateOverlay > div {
+  border: 1.5px solid transparent !important;
+  background: linear-gradient(180deg,#261f49,#1a1533) padding-box, var(--cloison) border-box !important;
+  box-shadow: 0 30px 80px -20px rgba(0,0,0,.9), 0 0 60px -24px rgba(227,59,95,.5) !important;
+}
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) #rulesGateAgree { background: var(--cta) !important; box-shadow: 0 10px 24px -10px rgba(109,77,255,.9), inset 0 1px 0 rgba(255,255,255,.25) !important; }
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) #rulesGateDisagree { box-shadow: inset 0 0 0 1px rgba(227,59,95,.45) !important; }
+
+/* ── Quality floor ── */
+body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) :where(button, a, textarea, input, [role="button"]):focus-visible { outline: 2px solid var(--gold-lt); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { body:not(.rc-theme-light):not(.rc-theme-pink):not(.rc-theme-ocean):not(.rc-theme-sunset) .partner-found-card { animation: none; } }
   </style>
 </head>
 <body>
