@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ჩემი გვერდი – GAICANI</title>
-  <meta name="theme-color" content="#17181c" />
+  <meta name="theme-color" content="#130f26" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -837,6 +837,204 @@
       }
     }
   </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Georgian:wdth,wght@62.5..100,100..900&display=swap" rel="stylesheet">
+  <style id="gaicani-enamel">
+/* ═══════════════════════════════════════════════════════════════════════
+   GAICANI — "Minankari" design layer
+   Inspired by Georgian cloisonné enamel (ტიხრული მინანქარი): jewel-toned
+   fills held apart by fine gold lines. VISUAL ONLY — every id, class and
+   script hook on this page is unchanged. Remove this <style> block to get
+   the previous look back.
+   ═══════════════════════════════════════════════════════════════════════ */
+:root {
+  --bg:#130f26; --surface:#1c1735; --raised:#262046;
+  --border:rgba(214,168,79,.16); --border-2:rgba(214,168,79,.28);
+  --text:#f5f0ff; --text-dim:#d2cbec; --muted:#958db6;
+  --accent:#4f6cff; --accent-lt:#93a4ff; --accent-dk:#3048d0;
+  --success:#1fc18a; --danger:#e33b5f; --warn:#f0b93a;
+  --radius-lg:20px; --radius-md:14px; --radius-sm:10px;
+  --gold:#d6a84f; --gold-lt:#f4d98f; --cobalt:#4f6cff; --ruby:#e33b5f;
+  --emerald:#1fc18a; --amethyst:#9d5cff; --turquoise:#19b3a6;
+  --cloison:linear-gradient(135deg,rgba(244,217,143,.60),rgba(214,168,79,.16) 42%,rgba(214,168,79,.10) 62%,rgba(244,217,143,.48));
+  --cloison-soft:linear-gradient(135deg,rgba(214,168,79,.36),rgba(214,168,79,.07) 45%,rgba(214,168,79,.05) 62%,rgba(214,168,79,.26));
+  --font:"Noto Sans Georgian",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+}
+html, body {
+  font-family: var(--font);
+  color: var(--text);
+  background: radial-gradient(760px 460px at 50% -120px, rgba(79,108,255,.24), transparent 72%), var(--bg);
+}
+
+/* ── Top bar ── */
+.top-bar { background: rgba(19,15,38,.80); border-bottom: 1px solid rgba(214,168,79,.18); }
+.site-name {
+  font-weight: 900; font-stretch: 72%; font-size: 1.4em; letter-spacing: .05em;
+  background: linear-gradient(180deg,#fff4d2 0%,var(--gold-lt) 45%,var(--gold) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.top-bar-username { background: rgba(79,108,255,.16); color: var(--accent-lt); border: 1px solid rgba(79,108,255,.36); }
+.btn-logout { background: rgba(227,59,95,.10); color: #ff8aa1; border: 1px solid rgba(227,59,95,.36); }
+
+/* ── Profile medallion — the one bold moment on the page ── */
+.user-card {
+  gap: 15px; padding: 20px 16px; border-radius: 26px;
+  border: 1.5px solid transparent;
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(79,108,255,.32), transparent 55%) padding-box,
+    radial-gradient(90% 80% at 100% 100%, rgba(227,59,95,.20), transparent 60%) padding-box,
+    linear-gradient(160deg,#2b2454,#1a1533) padding-box,
+    var(--cloison) border-box;
+  box-shadow: 0 22px 50px -24px rgba(79,108,255,.65), inset 0 1px 0 rgba(255,255,255,.08);
+}
+.user-avatar {
+  position: relative; isolation: isolate; overflow: visible;
+  width: 68px; height: 68px; flex-shrink: 0;
+  background: linear-gradient(135deg,var(--cobalt),var(--amethyst));
+  box-shadow: 0 0 0 3px #1f1a3c;
+}
+.user-avatar::before {
+  content: ""; position: absolute; inset: -6px; border-radius: 50%; z-index: -1;
+  background: conic-gradient(var(--cobalt),var(--emerald),var(--gold-lt),var(--ruby),var(--amethyst),var(--cobalt));
+  -webkit-mask: radial-gradient(farthest-side,transparent calc(100% - 3.5px),#000 calc(100% - 3px));
+          mask: radial-gradient(farthest-side,transparent calc(100% - 3.5px),#000 calc(100% - 3px));
+  animation: gc-ring 16s linear infinite;
+}
+@keyframes gc-ring { to { transform: rotate(1turn); } }
+.user-name { font-size: 1.5em; font-weight: 900; font-stretch: 74%; line-height: 1.12; letter-spacing: .01em; }
+.user-meta { color: var(--text-dim); }
+.user-meta::before { background: var(--emerald); box-shadow: 0 0 0 3px rgba(31,193,138,.22), 0 0 10px rgba(31,193,138,.8); }
+.btn-change-avatar, .btn-change-bio, .btn-change-name-guest {
+  background: rgba(255,255,255,.05); color: var(--gold-lt);
+  border: 1px solid rgba(214,168,79,.38); border-radius: 12px;
+}
+.vip-badge { box-shadow: 0 0 14px rgba(240,185,58,.55); }
+
+/* ── Cards ── */
+.section {
+  border: 1px solid transparent; border-radius: 20px;
+  background: linear-gradient(180deg,#211b40,var(--surface)) padding-box, var(--cloison-soft) border-box;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+.section-label {
+  font-weight: 800; font-stretch: 86%; font-size: .9em; color: var(--text);
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid transparent;
+  border-image: linear-gradient(90deg,rgba(214,168,79,.45),rgba(214,168,79,.04)) 1;
+}
+.section-badge {
+  background: linear-gradient(135deg,var(--gold-lt),var(--gold)); color: #2a1d05;
+  font-weight: 900; border-radius: 999px; padding: 1px 8px; box-shadow: 0 0 12px rgba(214,168,79,.35);
+}
+.section-badge.pending-badge-alert { background: linear-gradient(135deg,#ff7090,var(--ruby)); color: #fff; box-shadow: 0 0 12px rgba(227,59,95,.55); }
+
+/* ── Primary action ── */
+.btn-start-chat {
+  border: 1.5px solid transparent; border-radius: 18px;
+  background:
+    radial-gradient(90% 120% at 50% -20%, rgba(255,255,255,.28), transparent 55%) padding-box,
+    linear-gradient(135deg,#5b77ff,#6d4dff 55%,#9d5cff) padding-box,
+    var(--cloison) border-box;
+  box-shadow: 0 16px 34px -14px rgba(109,77,255,.85), inset 0 1px 0 rgba(255,255,255,.25);
+  font-weight: 800; font-stretch: 86%; font-size: 1.05em; letter-spacing: .01em;
+}
+
+/* ── Rooms & forum plates ── */
+.nav-card {
+  border: 1.5px solid transparent; border-radius: 18px; font-stretch: 86%;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 14px 30px -18px rgba(0,0,0,.9);
+}
+.nav-card--rooms { background: radial-gradient(120% 100% at 0% 0%,rgba(255,255,255,.16),transparent 50%) padding-box, linear-gradient(160deg,#5a74ff,#2c38b8) padding-box, var(--cloison) border-box; }
+.nav-card--forum { background: radial-gradient(120% 100% at 0% 0%,rgba(255,255,255,.16),transparent 50%) padding-box, linear-gradient(160deg,#ff5f80,#b8183f) padding-box, var(--cloison) border-box; }
+.install-cta-title { font-stretch: 86%; }
+
+/* ── Games: each tile is an enamel inlay in its own jewel colour ── */
+.games-heading-label { font-weight: 900; font-stretch: 80%; font-size: 1.05em; color: var(--gold-lt); }
+.game-grid { gap: 12px; }
+@media (min-width: 500px) { .game-grid { grid-template-columns: repeat(4, 1fr); } }
+.game-tile {
+  border: 1px solid transparent; border-radius: 18px; padding: 18px 10px 14px;
+  background:
+    radial-gradient(130% 85% at 50% 0%, color-mix(in srgb, var(--tile-accent) 36%, transparent), transparent 62%) padding-box,
+    linear-gradient(180deg,#231c44,#18142e) padding-box,
+    linear-gradient(160deg, var(--tile-accent), rgba(214,168,79,.28) 45%, rgba(214,168,79,.10)) border-box;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.07);
+  transition: transform .15s ease, box-shadow .2s ease;
+}
+.game-tile::before { display: none; }
+.game-tile:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 14px 30px -16px color-mix(in srgb, var(--tile-accent) 75%, transparent); }
+.game-tile:active { transform: scale(.97); }
+.game-tile-icon {
+  width: 56px; height: 56px; border-radius: 17px; overflow: hidden;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tile-accent) 80%, transparent), 0 10px 22px -8px color-mix(in srgb, var(--tile-accent) 65%, transparent);
+}
+.game-tile-name { font-weight: 800; font-stretch: 86%; }
+.game-tile--flappy    { --tile-accent: #f0b93a; }
+.game-tile--drawguess { --tile-accent: #ec4f9c; }
+.game-tile--poker     { --tile-accent: #1fc18a; }
+.game-tile--chess     { --tile-accent: #cfc6ee; }
+.game-tile--checkers  { --tile-accent: #e33b5f; }
+.game-tile--joker     { --tile-accent: #9d5cff; }
+.game-tile--imposter  { --tile-accent: #6f5bff; }
+.game-tile--blackjack { --tile-accent: #19b3a6; }
+.dg-room-row { border: 1px solid rgba(214,168,79,.14); border-radius: 14px; background: linear-gradient(180deg,#2a2350,#231d44); }
+
+/* ── People rows ── */
+.friend-item { background: linear-gradient(180deg,#2a2350,#231d44); border: 1px solid rgba(214,168,79,.10); border-radius: 14px; }
+.friend-item:hover { border-color: rgba(214,168,79,.30); }
+.friend-avatar { box-shadow: 0 0 0 2px rgba(79,108,255,.5); }
+.friend-name { font-weight: 700; }
+.online-dot { background: var(--emerald); border-color: #251f47; box-shadow: 0 0 8px rgba(31,193,138,.9); }
+.act-btn { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.08); border-radius: 10px; }
+.act-btn.act-add { background: rgba(31,193,138,.14); color: #62e3b3; border-color: rgba(31,193,138,.38); }
+.already-friend-badge { color: var(--gold-lt); }
+.temp-user-badge { background: rgba(214,168,79,.10); color: var(--gold-lt); border: 1px solid rgba(214,168,79,.30); }
+.empty-state { color: var(--muted); }
+
+/* ── Collapsible lists (online & guest users) ── */
+.section[data-collapsible] > .section-label { cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; transition: background .2s; }
+.section[data-collapsible] > .section-label:hover { background: rgba(214,168,79,.05); }
+.collapse-chevron {
+  margin-left: auto; flex-shrink: 0; width: 28px; height: 28px; border-radius: 999px;
+  display: grid; place-items: center;
+  background: rgba(214,168,79,.10); border: 1px solid rgba(214,168,79,.30);
+  transition: transform .3s cubic-bezier(.2,.8,.2,1);
+}
+.collapse-chevron::before {
+  content: ""; width: 7px; height: 7px; margin-top: -3px;
+  border-right: 2px solid var(--gold-lt); border-bottom: 2px solid var(--gold-lt);
+  transform: rotate(45deg);
+}
+.section.is-collapsed .collapse-chevron { transform: rotate(-90deg); }
+.collapse-body { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .32s cubic-bezier(.2,.8,.2,1); }
+.collapse-inner { min-height: 0; overflow: hidden; }
+.section.is-collapsed .collapse-body { grid-template-rows: 0fr; }
+.section.is-collapsed > .section-label { border-image: none; border-bottom-color: transparent; }
+
+/* ── Support & danger ── */
+.donate-card {
+  border: 1px solid transparent; border-radius: 20px;
+  background: radial-gradient(100% 80% at 50% 0%,rgba(157,92,255,.30),transparent 65%) padding-box, linear-gradient(180deg,#251d45,#1c1735) padding-box, var(--cloison) border-box;
+}
+.donate-btn { background: linear-gradient(135deg,#b07bff,#7c3aed); border-radius: 999px; box-shadow: 0 12px 26px -10px rgba(157,92,255,.9), inset 0 1px 0 rgba(255,255,255,.3); }
+.section.danger-zone { background: linear-gradient(180deg,rgba(227,59,95,.11),rgba(227,59,95,.04)) padding-box, linear-gradient(135deg,rgba(227,59,95,.55),rgba(227,59,95,.10)) border-box; }
+.danger-zone .section-label { color: #ff8aa1; border-image: linear-gradient(90deg,rgba(227,59,95,.5),rgba(227,59,95,.04)) 1; }
+.support-footer a { color: var(--gold-lt); }
+
+/* ── Dialogs ── */
+.profile-card-modal, .rename-modal {
+  border: 1px solid transparent; border-radius: 22px;
+  background: linear-gradient(180deg,#261f49,#1c1735) padding-box, var(--cloison) border-box;
+}
+
+/* ── Quality floor ── */
+:where(a, button, [role="button"], input, textarea):focus-visible { outline: 2px solid var(--gold-lt); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .user-avatar::before { animation: none; }
+  .collapse-body, .collapse-chevron, .game-tile { transition: none; }
+}
+  </style>
 </head>
 <body>
   <script>
@@ -1070,22 +1268,24 @@
     </div>
 
     <!-- Online registered users -->
-    <div class="section" id="onlineUsersSection">
+    <div class="section" id="onlineUsersSection" data-collapsible>
       <div class="section-label">
         🟢 ონლაინ მომხმარებლები
         <span class="section-badge" id="onlineUsersCount">0</span>
+        <span class="collapse-chevron" aria-hidden="true"></span>
       </div>
-      <div class="friends-list" id="onlineUsersList">
+      <div class="collapse-body"><div class="collapse-inner"><div class="friends-list" id="onlineUsersList">
         <div class="empty-state">ახლა არავინაა ონლაინ.</div>
-      </div>
+      </div></div></div>
     </div>
 
-    <div class="section" id="tempUsersSection" style="display:none">
+    <div class="section" id="tempUsersSection" style="display:none" data-collapsible>
       <div class="section-label">
         🕐 დროებითი მომხმარებლები
         <span class="section-badge" id="tempUsersCount">0</span>
+        <span class="collapse-chevron" aria-hidden="true"></span>
       </div>
-      <div class="friends-list" id="tempUsersList"></div>
+      <div class="collapse-body"><div class="collapse-inner"><div class="friends-list" id="tempUsersList"></div></div></div>
     </div>
 
     <!-- Blocked (session) — hidden until there are entries -->
@@ -2618,5 +2818,34 @@
       });
     }
   </script>
+<script>
+  /* Collapsible online / guest lists — tap the heading to fold or unfold.
+     Visual only: the scripts that fill these lists are untouched. */
+  (function () {
+    document.querySelectorAll(".section[data-collapsible]").forEach(function (section) {
+      var label = section.querySelector(":scope > .section-label");
+      if (!label) return;
+      var key = "gaicani_collapsed_" + section.id;
+      label.setAttribute("role", "button");
+      label.setAttribute("tabindex", "0");
+      function apply(collapsed) {
+        section.classList.toggle("is-collapsed", collapsed);
+        label.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      }
+      var saved = false;
+      try { saved = localStorage.getItem(key) === "1"; } catch (_) {}
+      apply(saved);
+      function toggle() {
+        var collapsed = !section.classList.contains("is-collapsed");
+        apply(collapsed);
+        try { localStorage.setItem(key, collapsed ? "1" : "0"); } catch (_) {}
+      }
+      label.addEventListener("click", toggle);
+      label.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+      });
+    });
+  })();
+</script>
 </body>
 </html>
