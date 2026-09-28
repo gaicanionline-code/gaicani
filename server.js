@@ -5295,7 +5295,6 @@ app.post("/api/auth/verify", express.json({ limit: "1kb" }), (req, res) => {
     isAdmin: !!user.isAdmin,
     isPro: !!user.isPro,
     adFreeUntil: user.adFreeUntil || 0,
-    blockFriendRequests: !!user.blockFriendRequests,
     appearOffline: !!user.appearOffline
   });
 });
@@ -5477,11 +5476,10 @@ app.post("/api/friends/request", express.json({ limit: "2kb" }), (req, res) => {
   if (!fromUser || !toUser || toLc === entry.usernameLower)
     return res.status(400).json({ error: "Invalid target" });
   // Same rules as the socket route, which this endpoint used to skip —
-  // letting anyone get past blocks and switched-off requests.
+  // letting anyone get past blocks.
   if (fromUser.isGuest || toUser.isGuest) return res.status(403).json({ error: "სტუმრებს მეგობრობა არ შეუძლიათ" });
   if (toUser.blockedUsers?.includes(entry.usernameLower)) return res.status(403).json({ error: "ამ მომხმარებელს არ შეუძლია მოთხოვნის მიღება" });
   if (fromUser.blockedUsers?.includes(toLc)) return res.status(403).json({ error: "მოხსენით ბლოკი ჯერ, რომ მოთხოვნა გაგზავნოთ" });
-  if (toUser.blockFriendRequests) return res.status(403).json({ error: "ეს მომხმარებელი მეგობრობის მოთხოვნებს არ იღებს" });
 
   if (!toUser.pendingRequests) toUser.pendingRequests = [];
   if (!toUser.pendingRequests.includes(entry.usernameLower)) {
@@ -9025,14 +9023,13 @@ io.on("connection", (socket) => {
     onlineRegSockets.get(entry.usernameLower).add(socket.id);
 
     socket.join(`user:${entry.usernameLower}`);
-    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, isPro: !!user.isPro, adFreeUntil: user.adFreeUntil || 0, blockFriendRequests: !!user.blockFriendRequests, appearOffline: !!user.appearOffline, blockedUsers: user.blockedUsers || [] });
+    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, isPro: !!user.isPro, adFreeUntil: user.adFreeUntil || 0, appearOffline: !!user.appearOffline, blockedUsers: user.blockedUsers || [] });
     console.log(`[AUTH] ${user.username} logged in`);
     io.emit("users:onlineChanged"); // let dashboards know the online list may have changed
   });
 
-  // ── settings:update — dashboard privacy switches ───────────────────────────
-  //   blockFriendRequests: nobody can send you a friend request
-  //   appearOffline:       you're hidden from presence everywhere others see it
+  // ── settings:update — dashboard privacy switch ─────────────────────────────
+  //   appearOffline: you're hidden from presence everywhere others see it
   // Saved on the account, so they survive restarts and apply on every device.
   socket.on("settings:update", (data) => {
     if (!socket._regUser || socket._regUser.isGuest || !data || typeof data !== "object") return;
@@ -9043,14 +9040,13 @@ io.on("connection", (socket) => {
     const user = registeredUsers.get(lc);
     if (!user) return;
     let changed = false, presenceChanged = false;
-    if (typeof data.blockFriendRequests === "boolean") { user.blockFriendRequests = data.blockFriendRequests; changed = true; }
     if (typeof data.appearOffline === "boolean") {
       if (!!user.appearOffline !== data.appearOffline) presenceChanged = true;
       user.appearOffline = data.appearOffline; changed = true;
     }
     if (changed) saveAuthUsers();
     // Every open tab of this account shows the same switch positions.
-    io.to(`user:${lc}`).emit("settings:state", { blockFriendRequests: !!user.blockFriendRequests, appearOffline: !!user.appearOffline });
+    io.to(`user:${lc}`).emit("settings:state", { appearOffline: !!user.appearOffline });
     if (presenceChanged) io.emit("users:onlineChanged");
   });
 
@@ -9083,7 +9079,7 @@ io.on("connection", (socket) => {
     if (!onlineRegSockets.has(entry.usernameLower)) onlineRegSockets.set(entry.usernameLower, new Set());
     onlineRegSockets.get(entry.usernameLower).add(socket.id);
     socket.join(`user:${entry.usernameLower}`);
-    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, isPro: !!user.isPro, adFreeUntil: user.adFreeUntil || 0, blockFriendRequests: !!user.blockFriendRequests, appearOffline: !!user.appearOffline, blockedUsers: user.blockedUsers || [] });
+    socket.emit("auth:authenticated", { username: user.username, friends: user.friends || [], pendingRequests: user.pendingRequests || [], avatar: user.avatar || DEFAULT_AVATAR, bio: user.bio || "", streaks: getStreaksForFriends(entry.usernameLower, user.friends || []), isAdmin: !!user.isAdmin, isPro: !!user.isPro, adFreeUntil: user.adFreeUntil || 0, appearOffline: !!user.appearOffline, blockedUsers: user.blockedUsers || [] });
     console.log(`[AUTH] ${user.username} logged in via auth:token`);
     io.emit("users:onlineChanged"); // let dashboards know the online list may have changed
   });
@@ -9230,11 +9226,6 @@ io.on("connection", (socket) => {
     }
     if (myUser?.blockedUsers && myUser.blockedUsers.includes(targetLc)) {
       socket.emit("friend:error", { msg: "მოხსენით ბლოკი ჯერ, რომ მოთხოვნა გაგზავნოთ", targetUsername: targetUser.username });
-      return;
-    }
-    // The target switched off friend requests (dashboard → 🔒 privacy).
-    if (targetUser.blockFriendRequests) {
-      socket.emit("friend:error", { msg: "ეს მომხმარებელი მეგობრობის მოთხოვნებს არ იღებს", targetUsername: targetUser.username });
       return;
     }
 

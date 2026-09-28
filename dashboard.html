@@ -1135,16 +1135,6 @@ html, body {
       <div class="section-label">🔒 კონფიდენციალურობა</div>
       <div class="privacy-row">
         <div style="min-width:0;">
-          <div style="font-weight:700;font-size:0.92em;">👥 მეგობრობის მოთხოვნების მიღება</div>
-          <div style="font-size:0.78em;color:var(--muted);margin-top:2px;line-height:1.4;">გამორთე და სხვები ვეღარ გამოგიგზავნიან მოთხოვნას</div>
-        </div>
-        <label class="dnd-toggle-switch" style="flex-shrink:0;">
-          <input type="checkbox" id="allowRequestsToggle" checked>
-          <span class="dnd-toggle-slider"></span>
-        </label>
-      </div>
-      <div class="privacy-row">
-        <div style="min-width:0;">
           <div style="font-weight:700;font-size:0.92em;">👻 ოფლაინად ჩვენება</div>
           <div style="font-size:0.78em;color:var(--muted);margin-top:2px;line-height:1.4;">სხვები ვერ დაინახავენ, რომ ონლაინ ხარ</div>
         </div>
@@ -1736,18 +1726,11 @@ html, body {
        The server is the source of truth; these only reflect and request. */
     function applyPrivacyState(st) {
       st = st || {};
-      const allow = document.getElementById("allowRequestsToggle");
       const off = document.getElementById("appearOfflineToggle");
-      if (allow) allow.checked = !st.blockFriendRequests;
       if (off) off.checked = !!st.appearOffline;
       const meta = document.getElementById("userMeta");
       if (meta) meta.classList.toggle("is-invisible", !!st.appearOffline);
     }
-    document.getElementById("allowRequestsToggle")?.addEventListener("change", (e) => {
-      if (!socket) return;
-      socket.emit("settings:update", { blockFriendRequests: !e.target.checked });
-      showToast(e.target.checked ? "✅ მეგობრობის მოთხოვნები ჩართულია" : "🔒 მეგობრობის მოთხოვნები გამორთულია");
-    });
     document.getElementById("appearOfflineToggle")?.addEventListener("change", (e) => {
       if (!socket) return;
       socket.emit("settings:update", { appearOffline: e.target.checked });
@@ -1771,8 +1754,8 @@ html, body {
         }
       });
 
-      socket.on("auth:authenticated", ({ username, friends, pendingRequests, avatar, bio, streaks, isGuest, guestToken, isPro, blockFriendRequests, appearOffline, blockedUsers: serverBlockedUsers }) => {
-        applyPrivacyState({ blockFriendRequests, appearOffline });
+      socket.on("auth:authenticated", ({ username, friends, pendingRequests, avatar, bio, streaks, isGuest, guestToken, isPro, appearOffline, blockedUsers: serverBlockedUsers }) => {
+        applyPrivacyState({ appearOffline });
         if (isGuest) {
           try { sessionStorage.setItem("gaicani_guest_username", username); } catch (_) {}
           authUser = { username, token: guestToken || null, friends: [], pendingRequests: [], avatar: avatar || AVAILABLE_AVATARS[0], bio: bio || "", isGuest: true };
