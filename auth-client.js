@@ -70,7 +70,7 @@
     "avatar9.jpg", "avatar10.jpg", "avatar11.jpg", "avatar12.jpg",
     "avatar13.jpg", "avatar14.jpg", "avatar15.jpg", "avatar16.jpg",
     "avatar17.jpg", "avatar18.jpg", "avatar19.jpg", "avatar20.jpg",
-    "avatar21.jpg",
+    "avatar21.jpg", "avatar22.jpg", "avatar23.jpg", "avatar24.jpg",
   ];
   const AVATAR_DIR = "/";
   let signupSelectedAvatar = AVAILABLE_AVATARS[0];
