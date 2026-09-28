@@ -1035,6 +1035,12 @@ html, body {
   .collapse-body, .collapse-chevron, .game-tile { transition: none; }
 }
   </style>
+  <style id="privacy-settings">
+    .privacy-row { display:flex; align-items:center; justify-content:space-between; gap:12px; background:var(--raised); border-radius:var(--radius-md); padding:14px 16px; margin:10px 12px; }
+    .privacy-row + .privacy-row { margin-top: 0; }
+    #privacySection { padding-bottom: 2px; }
+    .user-meta.is-invisible::before { background: #7d7896 !important; box-shadow: none !important; }
+  </style>
 </head>
 <body>
   <script>
@@ -1119,6 +1125,31 @@ html, body {
         </div>
         <label class="dnd-toggle-switch" style="flex-shrink:0;">
           <input type="checkbox" id="dndToggleInput">
+          <span class="dnd-toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Privacy — registered accounts only (revealed after login; guests never see it) -->
+    <div class="section" id="privacySection" style="display:none">
+      <div class="section-label">🔒 კონფიდენციალურობა</div>
+      <div class="privacy-row">
+        <div style="min-width:0;">
+          <div style="font-weight:700;font-size:0.92em;">👥 მეგობრობის მოთხოვნების მიღება</div>
+          <div style="font-size:0.78em;color:var(--muted);margin-top:2px;line-height:1.4;">გამორთე და სხვები ვეღარ გამოგიგზავნიან მოთხოვნას</div>
+        </div>
+        <label class="dnd-toggle-switch" style="flex-shrink:0;">
+          <input type="checkbox" id="allowRequestsToggle" checked>
+          <span class="dnd-toggle-slider"></span>
+        </label>
+      </div>
+      <div class="privacy-row">
+        <div style="min-width:0;">
+          <div style="font-weight:700;font-size:0.92em;">👻 ოფლაინად ჩვენება</div>
+          <div style="font-size:0.78em;color:var(--muted);margin-top:2px;line-height:1.4;">სხვები ვერ დაინახავენ, რომ ონლაინ ხარ</div>
+        </div>
+        <label class="dnd-toggle-switch" style="flex-shrink:0;">
+          <input type="checkbox" id="appearOfflineToggle">
           <span class="dnd-toggle-slider"></span>
         </label>
       </div>
@@ -1701,8 +1732,32 @@ html, body {
     let sentRequestsTo = new Set(); // lowercase usernames we've sent a request to this session
 
     /* ── Socket setup ────────────────────────────────────────────── */
+    /* ── Privacy switches ─────────────────────────────────────────────
+       The server is the source of truth; these only reflect and request. */
+    function applyPrivacyState(st) {
+      st = st || {};
+      const allow = document.getElementById("allowRequestsToggle");
+      const off = document.getElementById("appearOfflineToggle");
+      if (allow) allow.checked = !st.blockFriendRequests;
+      if (off) off.checked = !!st.appearOffline;
+      const meta = document.getElementById("userMeta");
+      if (meta) meta.classList.toggle("is-invisible", !!st.appearOffline);
+    }
+    document.getElementById("allowRequestsToggle")?.addEventListener("change", (e) => {
+      if (!socket) return;
+      socket.emit("settings:update", { blockFriendRequests: !e.target.checked });
+      showToast(e.target.checked ? "✅ მეგობრობის მოთხოვნები ჩართულია" : "🔒 მეგობრობის მოთხოვნები გამორთულია");
+    });
+    document.getElementById("appearOfflineToggle")?.addEventListener("change", (e) => {
+      if (!socket) return;
+      socket.emit("settings:update", { appearOffline: e.target.checked });
+      document.getElementById("userMeta")?.classList.toggle("is-invisible", e.target.checked);
+      showToast(e.target.checked ? "👻 ახლა ოფლაინად ჩანხარ" : "🟢 ახლა ონლაინ ჩანხარ");
+    });
+
     function setupSocket(token) {
       socket = io(); attachTempBanGuard(socket);
+      socket.on("settings:state", applyPrivacyState);
       socket.on("connect", () => {
         if (token) {
           socket.emit("auth:token", token);
@@ -1716,7 +1771,8 @@ html, body {
         }
       });
 
-      socket.on("auth:authenticated", ({ username, friends, pendingRequests, avatar, bio, streaks, isGuest, guestToken, isPro, blockedUsers: serverBlockedUsers }) => {
+      socket.on("auth:authenticated", ({ username, friends, pendingRequests, avatar, bio, streaks, isGuest, guestToken, isPro, blockFriendRequests, appearOffline, blockedUsers: serverBlockedUsers }) => {
+        applyPrivacyState({ blockFriendRequests, appearOffline });
         if (isGuest) {
           try { sessionStorage.setItem("gaicani_guest_username", username); } catch (_) {}
           authUser = { username, token: guestToken || null, friends: [], pendingRequests: [], avatar: avatar || AVAILABLE_AVATARS[0], bio: bio || "", isGuest: true };
@@ -1727,6 +1783,8 @@ html, body {
           // nothing persisted to delete.
           const dz = document.getElementById("dangerZone");
           if (dz) dz.style.display = "";
+          const ps = document.getElementById("privacySection");
+          if (ps) ps.style.display = "";
         }
         if (authUser) {
           authUser.friends = friends || [];
